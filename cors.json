@@ -1,0 +1,41 @@
+[
+  {
+    "origin": [
+      "https://smartskylt.netlify.app",
+      "https://smartskylt.se",
+      "https://www.smartskylt.se",
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://staging--smartskylt.netlify.app"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Authorization",
+      "Content-Type",
+      "Content-Length",
+      "x-goog-meta-*",
+      "x-goog-resumable",
+      "x-goog-date"
+    ],
+    "maxAgeSeconds": 3600
+  },
+  {
+    "origin": [
+      "https://smartskylt.netlify.app",
+      "https://smartskylt.se",
+      "https://www.smartskylt.se",
+      "https://skylt.smartskylt.se",
+      "http://localhost:3000",
+      "http://localhost:5173"
+      /* Samma här: lägg till staging-visning om du har en separat domän */
+    ],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Authorization",
+      "Content-Type",
+      "Content-Length",
+      "x-goog-date"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
