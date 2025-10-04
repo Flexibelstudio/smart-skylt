@@ -1,0 +1,425 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem } from '../types';
+import { useToast } from '../context/ToastContext';
+import { StarIcon, PencilIcon, CalendarDaysIcon } from './icons';
+import { ConfirmDialog } from './ConfirmDialog';
+import { useLocation } from '../context/StudioContext';
+
+import { 
+    fileToBase64, 
+    generateDisplayPostCampaign, 
+    generateCampaignIdeasForEvent,
+    generateDisplayPostImage
+} from '../services/geminiService';
+
+import { PreviewPane } from './DisplayScreenEditor/PreviewPanes';
+import { PostEditor } from './DisplayScreenEditor/PostEditor';
+import { ControlPanel } from './DisplayScreenEditor/ControlPanel';
+import { PlanningView } from './DisplayScreenEditor/PlanningView';
+import { 
+    ShareToFacebookModal, 
+    CreatePostModal, 
+    InputDialog, 
+    AICampaignGeneratorModal,
+    CampaignIdeaModal
+} from './DisplayScreenEditor/Modals';
+
+
+interface DisplayScreenEditorScreenProps {
+    screen: DisplayScreen;
+    onUpdateDisplayScreens: (organizationId: string, displayScreens: DisplayScreen[]) => Promise<void>;
+    onUpdateOrganization: (organizationId: string, data: Partial<Organization>) => Promise<void>;
+}
+
+export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps> = ({ screen: initialScreen, onUpdateDisplayScreens, onUpdateOrganization }) => {
+    const { selectedOrganization: organization } = useLocation();
+    const { showToast } = useToast();
+
+    // The screen object needs to be derived from the potentially updated organization object from context
+    const screen = useMemo(() => organization?.displayScreens?.find(s => s.id === initialScreen.id) || initialScreen, [organization, initialScreen]);
+
+    const [editingPost, setEditingPost] = useState<DisplayPost | null>(null);
+    const [originalPost, setOriginalPost] = useState<DisplayPost | null>(null);
+    const [postToShare, setPostToShare] = useState<DisplayPost | null>(null);
+    const [showStarAnimation, setShowStarAnimation] = useState(false);
+    const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+    
+    const [isAiCampaignModalOpen, setIsAiCampaignModalOpen] = useState(false);
+    const [isCampaignGenerating, setIsCampaignGenerating] = useState(false);
+    const [campaignGenerationStatus, setCampaignGenerationStatus] = useState('');
+    const [view, setView] = useState<'editor' | 'planning'>('editor');
+
+    const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
+    const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
+    const [generatedIdeas, setGeneratedIdeas] = useState<CampaignIdea[] | null>(null);
+    const [ideaGenerationError, setIdeaGenerationError] = useState<string | null>(null);
+    const [selectedEventForIdeas, setSelectedEventForIdeas] = useState<{ name: string } | null>(null);
+
+    const [isCreatePostModalOpen, setIsCreatePostModalOpen] = useState(false);
+    const [postToSaveAsTemplate, setPostToSaveAsTemplate] = useState<DisplayPost | null>(null);
+
+    useEffect(() => {
+        if (showStarAnimation) {
+             const timer = setTimeout(() => setShowStarAnimation(false), 1300);
+             return () => clearTimeout(timer);
+        }
+    }, [showStarAnimation]);
+
+    const handleSavePost = async () => {
+        if (!editingPost || !organization) return;
+
+        const postToSave = { ...editingPost };
+        const newMediaItems: MediaItem[] = [];
+        const existingUrls = new Set((organization.mediaLibrary || []).map(item => item.url));
+
+        const checkAndAddMedia = (url: string | undefined, type: 'image' | 'video', isAi: boolean, customTitle?: string) => {
+            if (url && !existingUrls.has(url) && !url.startsWith('data:image/svg+xml')) {
+                newMediaItems.push({
+                    id: `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                    type,
+                    url,
+                    internalTitle: customTitle || `${type === 'image' ? 'Bild' : 'Video'} från "${postToSave.internalTitle}"`,
+                    createdAt: new Date().toISOString(),
+                    createdBy: isAi ? 'ai' : 'user',
+                });
+                existingUrls.add(url);
+            }
+        };
+
+        checkAndAddMedia(postToSave.imageUrl, 'image', postToSave.isAiGeneratedImage || false);
+        checkAndAddMedia(postToSave.videoUrl, 'video', postToSave.isAiGeneratedVideo || false);
+
+        (postToSave.collageItems || []).forEach(item => {
+            const isItemAi = (item.type === 'image' && item.isAiGeneratedImage) || (item.type === 'video' && item.isAiGeneratedVideo);
+            checkAndAddMedia(item.imageUrl || item.videoUrl, item.type, isItemAi || false);
+        });
+
+        (postToSave.subImages || []).forEach(subImage => {
+            checkAndAddMedia(
+                subImage.imageUrl, 'image', false,
+                `Karusellbild från "${postToSave.internalTitle}"`
+            );
+        });
+
+        if (newMediaItems.length > 0) {
+            try {
+                const updatedLibrary = [...(organization.mediaLibrary || []), ...newMediaItems];
+                await onUpdateOrganization(organization.id, { mediaLibrary: updatedLibrary });
+                showToast({
+                    message: `${newMediaItems.length} ny${newMediaItems.length > 1 ? 'a' : ''} mediafil${newMediaItems.length > 1 ? 'er' : ''} sparades automatiskt i galleriet.`,
+                    type: 'success'
+                });
+            } catch (e) {
+                console.error("Failed to save media to gallery:", e);
+                showToast({ message: "Kunde inte spara media till galleriet.", type: 'error' });
+            }
+        }
+        
+        const isNew = postToSave.id.startsWith('new-');
+        const finalPost = isNew ? { ...postToSave, id: `post-${Date.now()}` } : postToSave;
+
+        const updatedPosts = isNew
+            ? [...(screen.posts || []), finalPost]
+            : (screen.posts || []).map(p => p.id === finalPost.id ? finalPost : p);
+
+        const updatedScreen = { ...screen, posts: updatedPosts };
+        const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
+        await onUpdateDisplayScreens(organization.id, updatedScreens);
+        setEditingPost(null);
+        setOriginalPost(null);
+        if (isNew) setShowStarAnimation(true);
+    };
+
+    const handleCreatePostFromTemplate = (template?: PostTemplate) => {
+        if (!organization) return;
+        const basePost = template ? { ...template.postData } : { layout: 'image-fullscreen' as const, durationSeconds: 10, backgroundColor: 'black', textColor: 'white' };
+        const newPostHeadline = (basePost as Partial<DisplayPost>).headline;
+        const newPost: DisplayPost = {
+            id: `new-${Date.now()}`,
+            internalTitle: newPostHeadline || (template ? template.templateName : 'Nytt inlägg'),
+            ...basePost,
+            headlineFontFamily: template?.postData.headlineFontFamily ?? organization.headlineFontFamily,
+            bodyFontFamily: template?.postData.bodyFontFamily ?? organization.bodyFontFamily,
+        };
+        setOriginalPost(JSON.parse(JSON.stringify(newPost)));
+        setEditingPost(newPost);
+        setIsCreatePostModalOpen(false);
+    };
+    
+    const handleCreatePostFromIdea = (idea: CampaignIdea) => {
+        if (!organization) return;
+        const newPost: DisplayPost = {
+            id: `new-${Date.now()}`,
+            internalTitle: idea.headline || 'Namnlöst AI-inlägg',
+            layout: 'image-fullscreen',
+            headline: idea.headline,
+            body: idea.body,
+            durationSeconds: 15,
+            backgroundColor: 'black',
+            textColor: 'white',
+            imageOverlayEnabled: true,
+            headlineFontFamily: organization.headlineFontFamily,
+            bodyFontFamily: organization.bodyFontFamily,
+        };
+        setOriginalPost(JSON.parse(JSON.stringify(newPost)));
+        setEditingPost(newPost);
+        setIsIdeaModalOpen(false);
+    };
+
+    const handleCancelEdit = () => {
+        if (originalPost && editingPost) {
+            const isDirty = JSON.stringify(originalPost) !== JSON.stringify(editingPost);
+            if (isDirty) {
+                setIsCancelConfirmOpen(true);
+                return;
+            }
+        }
+        setEditingPost(null);
+        setOriginalPost(null);
+    };
+
+    const handleConfirmCancel = () => {
+        setEditingPost(null);
+        setOriginalPost(null);
+        setIsCancelConfirmOpen(false);
+    };
+
+    const handleDeletePost = (postId: string) => {
+        if (window.confirm("Är du säker på att du vill ta bort detta inlägg?") && organization) {
+            const updatedPosts = (screen.posts || []).filter(p => p.id !== postId);
+            const updatedScreen = { ...screen, posts: updatedPosts };
+            const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
+            onUpdateDisplayScreens(organization.id, updatedScreens);
+        }
+    };
+
+    const handleGenerateCampaign = async (prompt: string, postCount: number, files: File[], startDate?: string, endDate?: string) => {
+        if (!organization) return;
+        setIsCampaignGenerating(true);
+        setCampaignGenerationStatus('Förbereder bilder...');
+        try {
+            const userMedia = files.length > 0
+                ? await Promise.all(files.map(file => fileToBase64(file)))
+                : undefined;
+
+            setCampaignGenerationStatus('AI:n komponerar kampanjtext...');
+            const campaignPosts = await generateDisplayPostCampaign(
+                prompt, postCount, organization.name, userMedia, organization.businessType, organization.businessDescription
+            );
+            
+            setCampaignGenerationStatus('AI:n skissar på bilder...');
+            const newPosts: DisplayPost[] = [];
+            let imageIndex = 0;
+            for (const generatedPost of campaignPosts) {
+                let imageUrl: string | undefined = undefined;
+                if (generatedPost.userMediaIndex !== undefined && userMedia?.[generatedPost.userMediaIndex]) {
+                    const media = userMedia[generatedPost.userMediaIndex];
+                    imageUrl = `data:${media.mimeType};base64,${media.data}`;
+                } else if (generatedPost.imagePrompt) {
+                     imageIndex++;
+                     setCampaignGenerationStatus(`Genererar bild ${imageIndex}...`);
+                    imageUrl = await generateDisplayPostImage(generatedPost.imagePrompt, screen.aspectRatio);
+                }
+                newPosts.push({
+                    id: `post-${Date.now()}-${imageIndex}`,
+                    internalTitle: generatedPost.headline || generatedPost.internalTitle,
+                    headline: generatedPost.headline, body: generatedPost.body, layout: generatedPost.layout,
+                    durationSeconds: generatedPost.durationSeconds, imageUrl, isAiGeneratedImage: !!generatedPost.imagePrompt,
+                    backgroundColor: 'black', textColor: 'white', imageOverlayEnabled: generatedPost.layout.includes('image-fullscreen'),
+                    startDate: startDate ? new Date(startDate).toISOString() : undefined,
+                    endDate: endDate ? new Date(endDate).toISOString() : undefined,
+                    headlineFontFamily: organization.headlineFontFamily,
+                    bodyFontFamily: organization.bodyFontFamily,
+                });
+            }
+            
+            setCampaignGenerationStatus('Sammanställer kampanjen...');
+            const updatedScreen = { ...screen, posts: [...(screen.posts || []), ...newPosts] };
+            const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
+            await onUpdateDisplayScreens(organization.id, updatedScreens);
+            setIsAiCampaignModalOpen(false);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'Ett okänt fel inträffade.');
+        } finally {
+            setIsCampaignGenerating(false);
+            setCampaignGenerationStatus('');
+        }
+    };
+    
+    const handleGetCampaignIdeas = async (eventName: string) => {
+        if (!organization) return;
+        setSelectedEventForIdeas({ name: eventName });
+        setIsIdeaModalOpen(true);
+        setIsGeneratingIdeas(true);
+        setGeneratedIdeas(null);
+        setIdeaGenerationError(null);
+        try {
+            const ideas = await generateCampaignIdeasForEvent(eventName, organization.name, organization.businessType, organization.businessDescription);
+            setGeneratedIdeas(ideas);
+        } catch (error) {
+            setIdeaGenerationError(error instanceof Error ? error.message : "Kunde inte hämta idéer.");
+        } finally {
+            setIsGeneratingIdeas(false);
+        }
+    };
+
+    const handleUpdatePosts = (updatedPosts: DisplayPost[]) => {
+        if (!organization) return;
+        const updatedScreen = { ...screen, posts: updatedPosts };
+        const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
+        onUpdateDisplayScreens(organization.id, updatedScreens);
+    };
+
+    const handleSavePostAsTemplate = async (templateName: string) => {
+        if (!postToSaveAsTemplate || !organization) return;
+        const { id, startDate, endDate, internalTitle, ...postData } = postToSaveAsTemplate;
+        const newTemplate: PostTemplate = { id: `template-${Date.now()}`, templateName: templateName.trim(), postData };
+        const updatedTemplates = [...(organization.postTemplates || []), newTemplate];
+        try {
+            await onUpdateOrganization(organization.id, { postTemplates: updatedTemplates });
+            showToast({ message: `Mallen "${templateName.trim()}" har sparats.`, type: 'success' });
+            setPostToSaveAsTemplate(null);
+        } catch (e) {
+            showToast({ message: `Kunde inte spara mall: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
+        }
+    };
+
+    const handleUpdateTagPosition = (tagId: string, newPosition: { x: number, y: number, rotation: number }) => {
+        if (!editingPost) return;
+        const currentOverrides = editingPost.tagPositionOverrides || [];
+        const existingOverrideIndex = currentOverrides.findIndex(o => o.tagId === tagId);
+        const newOverrides = existingOverrideIndex > -1
+            ? currentOverrides.map(o => o.tagId === tagId ? { ...o, ...newPosition } : o)
+            : [...currentOverrides, { tagId, ...newPosition }];
+        setEditingPost({ ...editingPost, tagPositionOverrides: newOverrides });
+    };
+
+    const handleUpdateTextPosition = (pos: { x: number, y: number }) => {
+        if (!editingPost) return;
+        setEditingPost(prev => prev ? { ...prev, textPositionX: pos.x, textPositionY: pos.y } : null);
+    };
+
+    if (!organization) {
+        return <div>Laddar organisation...</div>;
+    }
+
+    return (
+        <div className="w-full max-w-full mx-auto animate-fade-in pb-12 relative">
+             {showStarAnimation && (
+                <div className="absolute top-4 right-4 z-[100] animate-shoot-star pointer-events-none">
+                    <StarIcon className="w-16 h-16 text-yellow-300 drop-shadow-[0_0_10px_rgba(253,224,71,0.9)]" filled={true} />
+                </div>
+            )}
+             <div className="mb-6">
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Redigerar: {screen.name}</h1>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">Växla mellan att redigera enskilda inlägg och planera ditt innehåll i kalendern.</p>
+             </div>
+             
+             <div className="border-b border-slate-200 dark:border-slate-700 mb-8">
+                <div className="flex items-center gap-4">
+                    <button 
+                        onClick={() => setView('editor')} 
+                        className={`flex items-center gap-2 px-3 py-3 text-base font-semibold border-b-2 transition-colors ${view === 'editor' ? 'border-primary text-primary' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-primary'}`}
+                    >
+                        <PencilIcon className="h-5 w-5"/> Redigera Inlägg
+                    </button>
+                    <button 
+                        onClick={() => setView('planning')} 
+                        className={`flex items-center gap-2 px-3 py-3 text-base font-semibold border-b-2 transition-colors relative ${view === 'planning' ? 'border-primary text-primary' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-primary'}`}
+                    >
+                        <CalendarDaysIcon className="h-5 w-5"/> Planering & Kalender
+                        <span className="ml-2 bg-teal-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">NY FUNKTION</span>
+                    </button>
+                </div>
+            </div>
+            
+            {view === 'editor' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                    <div className="lg:sticky lg:top-8 self-start">
+                        <PreviewPane
+                            editingPost={editingPost}
+                            screen={screen}
+                            organization={organization}
+                            onUpdateTagPosition={handleUpdateTagPosition}
+                            onUpdateTextPosition={handleUpdateTextPosition}
+                        />
+                    </div>
+                    <div className="space-y-6">
+                        {editingPost ? (
+                            <PostEditor 
+                                post={editingPost} 
+                                organization={organization} 
+                                onSave={handleSavePost}
+                                onPostChange={setEditingPost}
+                                onCancel={handleCancelEdit} 
+                                isSaving={false} 
+                                aspectRatio={screen.aspectRatio}
+                                onUpdateOrganization={onUpdateOrganization}
+                            />
+                        ) : (
+                            <ControlPanel
+                                screen={screen} 
+                                organization={organization} 
+                                onUpdateDisplayScreens={onUpdateDisplayScreens}
+                                onEditPost={(post) => {
+                                    setOriginalPost(JSON.parse(JSON.stringify(post)));
+                                    setEditingPost(post);
+                                }} 
+                                onDeletePost={handleDeletePost}
+                                onSharePost={setPostToShare}
+                                onGenerateCampaign={handleGenerateCampaign}
+                                isAiCampaignModalOpen={isAiCampaignModalOpen}
+                                setIsAiCampaignModalOpen={setIsAiCampaignModalOpen}
+                                isCampaignGenerating={isCampaignGenerating}
+                                campaignGenerationStatus={campaignGenerationStatus}
+                                onInitiateCreatePost={() => setIsCreatePostModalOpen(true)}
+                                onSaveAsTemplate={setPostToSaveAsTemplate}
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {view === 'planning' && (
+                <PlanningView
+                    screen={screen}
+                    posts={screen.posts || []}
+                    organization={organization}
+                    onUpdateOrganization={onUpdateOrganization}
+                    onGetCampaignIdeas={handleGetCampaignIdeas}
+                    isAIAssistantEnabled={true}
+                    onUpdatePosts={handleUpdatePosts}
+                />
+            )}
+            
+            <CampaignIdeaModal
+                isOpen={isIdeaModalOpen} onClose={() => setIsIdeaModalOpen(false)}
+                isLoading={isGeneratingIdeas} ideas={generatedIdeas} error={ideaGenerationError}
+                eventName={selectedEventForIdeas?.name} onCreatePost={handleCreatePostFromIdea}
+            />
+            <ShareToFacebookModal
+                isOpen={!!postToShare} onClose={() => setPostToShare(null)}
+                post={postToShare} organization={organization} screen={screen}
+            />
+            <CreatePostModal
+                isOpen={isCreatePostModalOpen} onClose={() => setIsCreatePostModalOpen(false)}
+                templates={organization.postTemplates || []} onCreate={handleCreatePostFromTemplate}
+            />
+            <InputDialog
+                isOpen={!!postToSaveAsTemplate} onClose={() => setPostToSaveAsTemplate(null)}
+                onSave={handleSavePostAsTemplate} title="Spara inlägg som mall"
+                labelText="Vad vill du kalla mallen?" initialValue={postToSaveAsTemplate?.internalTitle || ''}
+                saveText="Spara mall"
+            />
+            <ConfirmDialog
+                isOpen={isCancelConfirmOpen}
+                onClose={() => setIsCancelConfirmOpen(false)}
+                onConfirm={handleConfirmCancel}
+                title="Avbryt ändringar"
+                confirmText="Ja, avbryt"
+            >
+                Är du säker på att du vill avbryta? Dina ändringar kommer inte att sparas.
+            </ConfirmDialog>
+        </div>
+    );
+};
