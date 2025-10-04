@@ -1111,4 +1111,265 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, organization, aspe
                                                     onClick={() => handleRemoveSubImage(img.id)}
                                                     className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                                                 >
-                                                    <TrashIcon className="h-3
+                                                    <TrashIcon className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-4">
+                                        <input type="file" multiple ref={subImageFileInputRef} onChange={handleSubImageUpload} accept="image/*" className="hidden" />
+                                        <SecondaryButton onClick={() => subImageFileInputRef.current?.click()} loading={aiLoading === 'upload-sub'}>
+                                            Ladda upp bilder
+                                        </SecondaryButton>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Inställningar för karusell</h4>
+                                    <div className="space-y-4">
+                                        <CompactToggleSwitch checked={!!post.subImages && post.subImages.length > 0} onChange={(checked) => {
+                                            if (!checked) onPostChange({ ...post, subImages: [] });
+                                        }} />
+                                        <div className={(!post.subImages || post.subImages.length === 0) ? 'opacity-50 pointer-events-none' : ''}>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Animation</label>
+                                                    <StyledSelect value={post.subImageConfig?.animation || 'scroll'} onChange={e => handleSubImageConfigChange('animation', e.target.value)}>
+                                                        <option value="scroll">Rullande</option>
+                                                        <option value="fade">Tona</option>
+                                                    </StyledSelect>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Position</label>
+                                                    <StyledSelect value={post.subImageConfig?.position || 'bottom'} onChange={e => handleSubImageConfigChange('position', e.target.value)}>
+                                                        {post.subImageConfig?.animation === 'fade' ? (
+                                                            <>
+                                                                <option value="top-left">Topp Vänster</option>
+                                                                <option value="top-right">Topp Höger</option>
+                                                                <option value="bottom-left">Nere Vänster</option>
+                                                                <option value="bottom-right">Nere Höger</option>
+                                                                <option value="center">Centrerad</option>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <option value="top">Topp</option>
+                                                                <option value="middle">Mitten</option>
+                                                                <option value="bottom">Botten</option>
+                                                            </>
+                                                        )}
+                                                    </StyledSelect>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Storlek</label>
+                                                    <StyledSelect value={post.subImageConfig?.size || 'md'} onChange={e => handleSubImageConfigChange('size', e.target.value)}>
+                                                        <option value="sm">Liten</option>
+                                                        <option value="md">Mellan</option>
+                                                        <option value="lg">Stor</option>
+                                                        <option value="xl">XL</option>
+                                                        <option value="2xl">XXL</option>
+                                                    </StyledSelect>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
+                                                        {post.subImageConfig?.animation === 'fade' ? 'Tid per bild (s)' : 'Scrolltid (s)'}
+                                                    </label>
+                                                    <StyledInput type="number" value={post.subImageConfig?.intervalSeconds || 5} onChange={e => handleSubImageConfigChange('intervalSeconds', parseInt(e.target.value, 10))} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </AccordionSection>
+                    )}
+
+                    <AccordionSection title="Text & Utseende">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="flex items-center justify-between text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
+                                    <span>Rubrik</span>
+                                    <AiTextActions
+                                        isLoading={!!aiLoading && aiLoading.startsWith('text-')}
+                                        onRefine={handleAiTextRefine}
+                                        onSuggest={handleAiSuggestHeadlines}
+                                    />
+                                </label>
+                                <textarea rows={2} value={post.headline || ''} onChange={e => handleFieldChange('headline', e.target.value)} className="w-full bg-slate-100 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600" />
+                            </div>
+                            <div>
+                                <label className="flex items-center justify-between text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
+                                    <span>Brödtext</span>
+                                    <AiTextActions
+                                        isLoading={!!aiLoading && aiLoading.startsWith('text-')}
+                                        onRefine={handleAiTextRefine}
+                                    />
+                                </label>
+                                <textarea rows={4} value={post.body || ''} onChange={e => handleFieldChange('body', e.target.value)} className="w-full bg-slate-100 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Rubrikstorlek</label>
+                                    <StyledSelect value={post.headlineFontSize || '4xl'} onChange={e => handleFieldChange('headlineFontSize', e.target.value)}>
+                                        {['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl', '9xl'].map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}
+                                    </StyledSelect>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Textjustering</label>
+                                    <StyledSelect value={post.textAlign || 'center'} onChange={e => handleFieldChange('textAlign', e.target.value)}>
+                                        <option value="left">Vänster</option>
+                                        <option value="center">Centrerad</option>
+                                        <option value="right">Höger</option>
+                                    </StyledSelect>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Brödtextstorlek</label>
+                                    <StyledSelect value={post.bodyFontSize || 'lg'} onChange={e => handleFieldChange('bodyFontSize', e.target.value)}>
+                                        {['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl'].map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}
+                                    </StyledSelect>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Textanimation</label>
+                                    <StyledSelect value={post.textAnimation || 'none'} onChange={e => handleFieldChange('textAnimation', e.target.value)}>
+                                        <option value="none">Ingen</option>
+                                        <option value="typewriter">Skrivmaskin</option>
+                                        <option value="fade-up-word">Tona in ord</option>
+                                        <option value="blur-in">Tona in med oskärpa</option>
+                                    </StyledSelect>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Rubriktypsnitt</label>
+                                    <FontSelector value={post.headlineFontFamily || organization.headlineFontFamily || 'display'} onChange={font => handleFieldChange('headlineFontFamily', font)} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Brödtexttypsnitt</label>
+                                    <FontSelector value={post.bodyFontFamily || organization.bodyFontFamily || 'sans'} onChange={font => handleFieldChange('bodyFontFamily', font)} />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <ColorPaletteInput label="Bakgrundsfärg" value={post.backgroundColor || 'black'} onChange={color => handleFieldChange('backgroundColor', color)} organization={organization} />
+                                <ColorPaletteInput label="Textfärg" value={post.textColor || 'white'} onChange={color => handleFieldChange('textColor', color)} organization={organization} />
+                            </div>
+                        </div>
+                    </AccordionSection>
+
+                    <AccordionSection title="Extra Effekter">
+                        <div className="space-y-4">
+                            <ToggleSwitch label="Toning över media" checked={post.imageOverlayEnabled ?? false} onChange={c => handleFieldChange('imageOverlayEnabled', c)} />
+                            {post.imageOverlayEnabled && (
+                                <div className="pl-4">
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Toningsfärg & opacitet</label>
+                                    <ColorOpacityControl value={post.imageOverlayColor || '#00000080'} onChange={c => handleFieldChange('imageOverlayColor', c)} />
+                                </div>
+                            )}
+                             <ToggleSwitch label="Textbakgrund" checked={post.textBackgroundEnabled ?? false} onChange={c => handleFieldChange('textBackgroundEnabled', c)} />
+                            {post.textBackgroundEnabled && (
+                                <div className="pl-4">
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Färg & opacitet</label>
+                                    <ColorOpacityControl value={post.textBackgroundColor || '#00000080'} onChange={c => handleFieldChange('textBackgroundColor', c)} />
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Bildeffekt</label>
+                                <StyledSelect value={post.imageEffect || 'none'} onChange={e => handleFieldChange('imageEffect', e.target.value)}>
+                                    <option value="none">Ingen</option>
+                                    <option value="ken-burns-slow">Ken Burns (Långsam)</option>
+                                    <option value="ken-burns-fast">Ken Burns (Snabb)</option>
+                                </StyledSelect>
+                            </div>
+                             <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Bakgrundseffekt</label>
+                                <StyledSelect value={post.backgroundEffect || 'none'} onChange={e => handleFieldChange('backgroundEffect', e.target.value)}>
+                                    <option value="none">Ingen</option>
+                                    <option value="confetti">Konfetti</option>
+                                    <option value="hearts">Hjärtan</option>
+                                    <option value="pulse-light">Puls (Lätt)</option>
+                                    <option value="pulse-medium">Puls (Medium)</option>
+                                    <option value="pulse-intense">Puls (Intensiv)</option>
+                                </StyledSelect>
+                            </div>
+                            {post.backgroundEffect?.startsWith('pulse') && (
+                                <div className="pl-4">
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Pulsfärg</label>
+                                    <input type="color" value={post.pulseColor || '#14b8a6'} onChange={e => handleFieldChange('pulseColor', e.target.value)} className="w-full h-10 p-1 bg-white dark:bg-black rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"/>
+                                </div>
+                            )}
+                        </div>
+                    </AccordionSection>
+
+                    <AccordionSection title="Taggar & QR-kod">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Välj taggar som ska visas</label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {(organization.tags || []).map(tag => (
+                                        <label key={tag.id} className="flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer">
+                                            <input type="checkbox" checked={(post.tagIds || []).includes(tag.id)} onChange={e => handleTagChange(tag.id, e.target.checked)} className="h-4 w-4 rounded text-primary focus:ring-primary"/>
+                                            <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{tag.text}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">QR-kod (valfritt)</label>
+                                <StyledInput type="url" placeholder="URL för QR-kod" value={post.qrCodeUrl || ''} onChange={e => handleFieldChange('qrCodeUrl', e.target.value.trim() ? e.target.value.trim() : undefined)} />
+                                {post.qrCodeUrl && (
+                                    <div className="grid grid-cols-2 gap-4 mt-2">
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Position</label>
+                                            <StyledSelect value={post.qrCodePosition || 'bottom-right'} onChange={e => handleFieldChange('qrCodePosition', e.target.value)}>
+                                                <option value="top-left">Topp Vänster</option>
+                                                <option value="top-right">Topp Höger</option>
+                                                <option value="bottom-left">Nere Vänster</option>
+                                                <option value="bottom-right">Nere Höger</option>
+                                            </StyledSelect>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Storlek</label>
+                                            <StyledSelect value={post.qrCodeSize || 'md'} onChange={e => handleFieldChange('qrCodeSize', e.target.value)}>
+                                                <option value="sm">Liten</option>
+                                                <option value="md">Mellan</option>
+                                                <option value="lg">Stor</option>
+                                                <option value="xl">Extra stor</option>
+                                            </StyledSelect>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </AccordionSection>
+
+                    <AccordionSection title="Tidsstyrning & Övergång">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
+                                <StyledInput type="number" min="5" value={post.durationSeconds} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10))} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Startdatum (valfritt)</label>
+                                    <StyledInput type="datetime-local" value={post.startDate ? post.startDate.slice(0, 16) : ''} onChange={e => handleFieldChange('startDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Slutdatum (valfritt)</label>
+                                    <StyledInput type="datetime-local" value={post.endDate ? post.endDate.slice(0, 16) : ''} onChange={e => handleFieldChange('endDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Övergång till nästa inlägg</label>
+                                <StyledSelect value={post.transitionToNext || 'fade'} onChange={e => handleFieldChange('transitionToNext', e.target.value)}>
+                                    <option value="fade">Tona</option>
+                                    <option value="slide">Skjut</option>
+                                    <option value="dissolve">Lös upp</option>
+                                </StyledSelect>
+                            </div>
+                        </div>
+                    </AccordionSection>
+                </>
+            )}
+
+            <div className="flex justify-end gap-4 mt-8 border-t border-slate-200 dark:border-slate-700 pt-6">
+                <SecondaryButton onClick={onCancel} disabled={isSaving}>Avbryt</SecondaryButton>
+                <PrimaryButton onClick={onSave} loading={isSaving}>Spara inlägg</PrimaryButton>
+            </div>
+        </div>
+    );
+};
