@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { StarIcon, PencilIcon, CalendarDaysIcon } from './icons';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useLocation } from '../context/StudioContext';
+import { uploadMediaForGallery } from '../services/firebaseService';
 
 import { 
     fileToBase64, 
@@ -67,67 +68,100 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
 
     const handleSavePost = async () => {
         if (!editingPost || !organization) return;
-
-        const postToSave = { ...editingPost };
-        const newMediaItems: MediaItem[] = [];
-        const existingUrls = new Set((organization.mediaLibrary || []).map(item => item.url));
-
-        const checkAndAddMedia = (url: string | undefined, type: 'image' | 'video', isAi: boolean, customTitle?: string) => {
-            if (url && !existingUrls.has(url) && !url.startsWith('data:image/svg+xml')) {
-                newMediaItems.push({
+    
+        try {
+            const dataUriToFile = async (uri: string): Promise<File | null> => {
+                try {
+                    const response = await fetch(uri);
+                    const blob = await response.blob();
+                    const filename = `media-${Date.now()}.${blob.type.split('/')[1] || 'png'}`;
+                    return new File([blob], filename, { type: blob.type });
+                } catch (e) {
+                    console.error("Could not convert data URI to file", e);
+                    return null;
+                }
+            };
+    
+            const postWithStorageUrls = { ...editingPost };
+            const newMediaForLibrary: MediaItem[] = [];
+            const urlUploadCache = new Map<string, string>();
+    
+            const processUri = async (uri: string | undefined, isAi: boolean, title: string): Promise<string | undefined> => {
+                if (!uri || !uri.startsWith('data:') || uri.startsWith('data:image/svg+xml')) {
+                    return uri;
+                }
+    
+                if (urlUploadCache.has(uri)) {
+                    return urlUploadCache.get(uri);
+                }
+    
+                const file = await dataUriToFile(uri);
+                if (!file) return uri;
+    
+                const { url, type } = await uploadMediaForGallery(organization.id, file, () => {});
+                urlUploadCache.set(uri, url);
+    
+                newMediaForLibrary.push({
                     id: `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-                    type,
-                    url,
-                    internalTitle: customTitle || `${type === 'image' ? 'Bild' : 'Video'} från "${postToSave.internalTitle}"`,
-                    createdAt: new Date().toISOString(),
+                    type, url, internalTitle: title, createdAt: new Date().toISOString(),
                     createdBy: isAi ? 'ai' : 'user',
                 });
-                existingUrls.add(url);
+    
+                return url;
+            };
+    
+            postWithStorageUrls.imageUrl = await processUri(postWithStorageUrls.imageUrl, postWithStorageUrls.isAiGeneratedImage ?? false, `Bild från "${postWithStorageUrls.internalTitle}"`);
+    
+            if (postWithStorageUrls.subImages) {
+                postWithStorageUrls.subImages = await Promise.all(
+                    postWithStorageUrls.subImages.map(async sub => ({...sub, imageUrl: await processUri(sub.imageUrl, false, `Karusellbild`) ?? sub.imageUrl}))
+                );
             }
-        };
-
-        checkAndAddMedia(postToSave.imageUrl, 'image', postToSave.isAiGeneratedImage || false);
-        checkAndAddMedia(postToSave.videoUrl, 'video', postToSave.isAiGeneratedVideo || false);
-
-        (postToSave.collageItems || []).forEach(item => {
-            const isItemAi = (item.type === 'image' && item.isAiGeneratedImage) || (item.type === 'video' && item.isAiGeneratedVideo);
-            checkAndAddMedia(item.imageUrl || item.videoUrl, item.type, isItemAi || false);
-        });
-
-        (postToSave.subImages || []).forEach(subImage => {
-            checkAndAddMedia(
-                subImage.imageUrl, 'image', false,
-                `Karusellbild från "${postToSave.internalTitle}"`
-            );
-        });
-
-        if (newMediaItems.length > 0) {
-            try {
-                const updatedLibrary = [...(organization.mediaLibrary || []), ...newMediaItems];
-                await onUpdateOrganization(organization.id, { mediaLibrary: updatedLibrary });
-                showToast({
-                    message: `${newMediaItems.length} ny${newMediaItems.length > 1 ? 'a' : ''} mediafil${newMediaItems.length > 1 ? 'er' : ''} sparades automatiskt i galleriet.`,
-                    type: 'success'
+            
+            if (postWithStorageUrls.collageItems) {
+                postWithStorageUrls.collageItems = await Promise.all(
+                    postWithStorageUrls.collageItems.map(async item => {
+                        if (item.type === 'image') {
+                            return {...item, imageUrl: await processUri(item.imageUrl, item.isAiGeneratedImage ?? false, `Collagebild`) ?? item.imageUrl};
+                        }
+                        return item;
+                    })
+                );
+            }
+    
+            const isNewPost = postWithStorageUrls.id.startsWith('new-');
+            const finalPost = isNewPost ? { ...postWithStorageUrls, id: `post-${Date.now()}` } : postWithStorageUrls;
+    
+            const updatedPosts = isNewPost
+                ? [...(screen.posts || []), finalPost]
+                : (screen.posts || []).map(p => p.id === finalPost.id ? finalPost : p);
+            
+            const updatedScreen = { ...screen, posts: updatedPosts };
+            const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
+    
+            const hasLibraryUpdates = newMediaForLibrary.length > 0;
+            
+            if (hasLibraryUpdates) {
+                const updatedLibrary = [...(organization.mediaLibrary || []), ...newMediaForLibrary];
+                await onUpdateOrganization(organization.id, { 
+                    displayScreens: updatedScreens,
+                    mediaLibrary: updatedLibrary 
                 });
-            } catch (e) {
-                console.error("Failed to save media to gallery:", e);
-                showToast({ message: "Kunde inte spara media till galleriet.", type: 'error' });
+                showToast({ message: `${newMediaForLibrary.length} mediafil(er) sparades i galleriet.`, type: 'success' });
+            } else {
+                await onUpdateDisplayScreens(organization.id, updatedScreens);
             }
+    
+            showToast({ message: "Inlägget sparades.", type: 'success' });
+    
+            setEditingPost(null);
+            setOriginalPost(null);
+            if (isNewPost) setShowStarAnimation(true);
+    
+        } catch (e) {
+            console.error("Failed to save post:", e);
+            showToast({ message: `Kunde inte spara inlägg: ${e instanceof Error ? e.message : "Ett okänt fel inträffade."}`, type: 'error' });
         }
-        
-        const isNew = postToSave.id.startsWith('new-');
-        const finalPost = isNew ? { ...postToSave, id: `post-${Date.now()}` } : postToSave;
-
-        const updatedPosts = isNew
-            ? [...(screen.posts || []), finalPost]
-            : (screen.posts || []).map(p => p.id === finalPost.id ? finalPost : p);
-
-        const updatedScreen = { ...screen, posts: updatedPosts };
-        const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
-        await onUpdateDisplayScreens(organization.id, updatedScreens);
-        setEditingPost(null);
-        setOriginalPost(null);
-        if (isNew) setShowStarAnimation(true);
     };
 
     const handleCreatePostFromTemplate = (template?: PostTemplate) => {

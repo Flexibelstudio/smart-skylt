@@ -727,7 +727,7 @@ export const uploadMediaForGallery = (
 };
 
 export const deleteMediaFromStorage = async (fileUrl: string): Promise<void> => {
-    if (isOffline || !storage) {
+    if (isOffline || !storage || !fileUrl.includes('firebasestorage.googleapis.com')) {
         return offlineWarning('deleteMediaFromStorage');
     }
     try {

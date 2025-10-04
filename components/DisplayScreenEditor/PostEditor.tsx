@@ -1172,7 +1172,8 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, organization, aspe
                                                     <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
                                                         {post.subImageConfig?.animation === 'fade' ? 'Tid per bild (s)' : 'Scrolltid (s)'}
                                                     </label>
-                                                    <StyledInput type="number" value={post.subImageConfig?.intervalSeconds || 5} onChange={e => handleSubImageConfigChange('intervalSeconds', parseInt(e.target.value, 10))} />
+                                                    {/* FIX: Convert number value to string for StyledInput component. */}
+                                                    <StyledInput type="number" value={String(post.subImageConfig?.intervalSeconds || 5)} onChange={e => handleSubImageConfigChange('intervalSeconds', parseInt(e.target.value, 10))} />
                                                 </div>
                                             </div>
                                         </div>
@@ -1236,11 +1237,11 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, organization, aspe
                                     </StyledSelect>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Rubriktypsnitt</label>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Rubriktypsnitt</label>
                                     <FontSelector value={post.headlineFontFamily || organization.headlineFontFamily || 'display'} onChange={font => handleFieldChange('headlineFontFamily', font)} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Brödtexttypsnitt</label>
+                                    <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Brödtexttypsnitt</label>
                                     <FontSelector value={post.bodyFontFamily || organization.bodyFontFamily || 'sans'} onChange={font => handleFieldChange('bodyFontFamily', font)} />
                                 </div>
                             </div>
@@ -1341,7 +1342,8 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, organization, aspe
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
-                                <StyledInput type="number" min="5" value={post.durationSeconds} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10))} />
+                                {/* FIX: Convert number value to string for StyledInput component. */}
+                                <StyledInput type="number" min="5" value={String(post.durationSeconds)} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10))} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

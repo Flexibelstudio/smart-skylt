@@ -8,8 +8,8 @@ import 'firebase/compat/storage';
 export type Env = 'offline' | 'staging' | 'production';
 
 // The configuration is now injected into the window object by config.js
-// @ts-ignore
-const cfg = window.RUNTIME_CONFIG;
+// FIX: Cast window to any to access RUNTIME_CONFIG without TypeScript errors.
+const cfg = (window as any).RUNTIME_CONFIG;
 
 let app: firebase.app.App | null = null;
 let auth: firebase.auth.Auth | null = null;

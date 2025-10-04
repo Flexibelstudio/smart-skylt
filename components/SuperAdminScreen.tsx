@@ -2,7 +2,7 @@ import React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Organization, CustomPage, UserRole, InfoCarousel, InfoMessage, DisplayScreen, DisplayPost, UserData, Tag, SystemSettings, ScreenPairingCode, BrandingOptions, PostTemplate, CampaignIdea, CustomEvent, PhysicalScreen, MediaItem } from '../types';
 import { ToggleSwitch, CompactToggleSwitch, MonitorIcon, PencilIcon, TrashIcon, CodeBracketIcon, MagnifyingGlassIcon, SparklesIcon, ShareIcon, DuplicateIcon, ChevronDownIcon, CheckCircleIcon, VideoCameraIcon, PlayIcon, PauseIcon } from './icons';
-import { getAdminsForOrganization, setAdminRole, inviteUser, getSystemSettings, getPairingCode, pairAndActivateScreen, uploadMediaForGallery } from '../services/firebaseService';
+import { getAdminsForOrganization, setAdminRole, inviteUser, getSystemSettings, getPairingCode, pairAndActivateScreen, uploadMediaForGallery, deleteMediaFromStorage } from '../services/firebaseService';
 import { MarkdownRenderer } from './CustomContentScreen';
 import { useAuth } from '../context/AuthContext';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
@@ -475,14 +475,17 @@ const MediaGalleryManager: React.FC<MediaGalleryManagerProps> = ({ organization,
         }
     };
 
-    const handleDelete = async (mediaId: string) => {
-        // Note: This only removes from Firestore DB, not from Storage.
-        // A real-world app would need a cloud function to delete from Storage.
-        // For this exercise, just removing the reference is sufficient.
-        if (!window.confirm("Är du säker på att du vill ta bort denna media? Filen kommer inte tas bort från lagringen, men den kommer inte längre synas i galleriet.")) return;
+    const handleDelete = async (mediaItem: MediaItem) => {
+        if (!window.confirm("Är du säker på att du vill ta bort denna media?")) return;
 
-        const updatedLibrary = (organization.mediaLibrary || []).filter(item => item.id !== mediaId);
         try {
+            // Step 1: Delete from storage if it's a storage URL
+            if (mediaItem.url.includes('firebasestorage.googleapis.com')) {
+                await deleteMediaFromStorage(mediaItem.url);
+            }
+
+            // Step 2: Remove from Firestore DB
+            const updatedLibrary = (organization.mediaLibrary || []).filter(item => item.id !== mediaItem.id);
             await onUpdateOrganization(organization.id, { mediaLibrary: updatedLibrary });
             showToast({ message: "Media borttagen.", type: 'success' });
         } catch (error) {
@@ -514,7 +517,7 @@ const MediaGalleryManager: React.FC<MediaGalleryManagerProps> = ({ organization,
                             )}
                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
                                 <p className="text-white text-xs font-semibold line-clamp-2">{item.internalTitle}</p>
-                                <DestructiveButton onClick={() => handleDelete(item.id)} className="self-end !p-2">
+                                <DestructiveButton onClick={() => handleDelete(item)} className="self-end !p-2">
                                     <TrashIcon className="h-4 w-4" />
                                 </DestructiveButton>
                             </div>
