@@ -845,7 +845,7 @@ Exempel på ett bra 'visual'-objekt på svenska:
   "lighting": "Mjukt, varmt sidoljus som framhäver texturen i grädden."
 }
 
-Svara ENDAST med ett JSON-objekt inuti ett markdown-kodblock (\`\`\`json ... \`\`\`).`;
+Svara ENDAST med ett JSON-objekt inuti ett markdown-kodblock (\`\`\`json ... \`\`\`). JSON-objektet ska ha en enda nyckel, "suggestions", som innehåller en array av dina tre förslag.`;
 
     const parts: any[] = [{ text: prompt }];
     if (organization?.preferenceProfile?.mediaItems) {
@@ -870,7 +870,13 @@ Svara ENDAST med ett JSON-objekt inuti ett markdown-kodblock (\`\`\`json ... \`\
     }
     
     const result = JSON.parse(jsonString.trim());
-    return result.suggestions;
+    
+    // FIX: The AI might return an array directly, or an object with a 'suggestions' property.
+    // This handles both cases and ensures an array is always returned, preventing a crash.
+    if (Array.isArray(result)) {
+        return result;
+    }
+    return result.suggestions || [];
 });
 
 export const generateVideoFromPrompt = (prompt: string, organizationId: string, onProgress: (status: string) => void, image?: { mimeType: string; data: string }): Promise<string> => handleAIError(async () => {
