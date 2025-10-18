@@ -286,22 +286,13 @@ ${organization.styleProfile.summary}
 Använd de bifogade bilderna som stark visuell inspiration för färg, stil och motiv.
 ` : '';
 
-    const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
-
     const layoutInstruction = layout 
         ? `Användaren har specifikt begärt layouten '${layout}', så du MÅSTE använda den.`
-        : `Välj den layout som passar bäst.
-Eftersom skärmen är i ${isPortrait ? 'STÅENDE (porträtt)' : 'LIGGANDE (landskap)'} format (${aspectRatio}), är följande layouter lämpliga:
-- 'text-only': Text som täcker hela ytan.
-- 'image-fullscreen': Bild som täcker hela ytan, med text ovanpå.
-- 'image-left': ${isPortrait ? 'Bild överst, text underst (vertikal split).' : 'Bild till vänster, text till höger (horisontell split).'}
-- 'image-right': ${isPortrait ? 'Bild underst, text överst (vertikal split).' : 'Bild till höger, text till vänster (horisontell split).'}
-Välj INTE en komposition där en liggande bild placeras i mitten av en stående yta med tomrum över och under, eller vice versa. Designen måste alltid fylla hela ${aspectRatio}-ytan.`;
+        : `Välj den layout som passar bäst av 'text-only', 'image-fullscreen', 'image-left', 'image-right'.`;
 
     const prompt = `Du är en expert kreativ chef och designer för ett företag som heter "${organization.name}".
 Din uppgift är att skapa ett komplett, visuellt tilltalande inlägg för en digital skylt baserat på användarens idé.
 Var kreativ och variera dina designer. Ibland kan du hålla dig till varumärket, och ibland skapa något vilt och annorlunda som sticker ut.
-**Skärmens format är ${isPortrait ? 'STÅENDE' : 'LIGGANDE'} (${aspectRatio}). All design MÅSTE anpassas för detta format.**
 
 **Varumärkesriktlinjer:**
 ${brandingGuidelines}
