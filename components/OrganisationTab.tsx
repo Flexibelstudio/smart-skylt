@@ -101,10 +101,10 @@ const resizeImage = (file: File, maxWidth: number, maxHeight: number, quality: n
             URL.revokeObjectURL(img.src);
             resolve(dataUrl);
         };
-        // FIX: The `error` parameter was causing a confusing TypeScript error. Renaming it to `e` to avoid potential scope/shadowing issues that can confuse the type checker.
-        img.onerror = (e) => {
+        // FIX: The `error` parameter can cause confusing TypeScript errors due to variable shadowing. Renaming it to `err` for clarity and safety.
+        img.onerror = (err) => {
             URL.revokeObjectURL(img.src);
-            console.error("Image could not be loaded for resizing.", e);
+            console.error("Image could not be loaded for resizing.", err);
             reject(new Error('Image could not be loaded for resizing'));
         };
     });

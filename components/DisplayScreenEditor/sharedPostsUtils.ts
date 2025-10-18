@@ -48,7 +48,7 @@ export function syncSharedPosts(
   ];
 
   return (organization.displayScreens || []).map(screen => {
-    const updatedPosts = screen.posts.map(post => {
+    const updatedPosts = (screen.posts || []).map(post => {
       // Case 1: This is a shared copy of the post that was just updated. Sync it.
       if (post.sharedFromPostId === originalPostId) {
         const preservedData = fieldsToPreserve.reduce((acc, key) => {
@@ -101,7 +101,7 @@ export function getPostVisibility(
 
   (organization.displayScreens || []).forEach(screen => {
     if (screen.id === currentScreenId) return; // Already added
-    if (screen.posts.some(p => p.sharedFromPostId === post.id)) {
+    if ((screen.posts || []).some(p => p.sharedFromPostId === post.id)) {
       visibleIn.push({ id: screen.id, name: screen.name });
     }
   });
