@@ -39,23 +39,52 @@ function parseTimeHM(hhmm) {
   return { hour: Number(m[1]), minute: Number(m[2]) };
 }
 
+// Weekday-mappning för "en-US" + weekday:"short"
+const WEEKDAY_MAP = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+
 // Safear Intl.formatToParts för ett visst Date + tidszon.
-// Returnerar ett parts-objekt {year, month, day, hour, minute, weekday} eller null vid fel.
+// Returnerar ett parts-objekt {year, month, day, hour, minute, weekdayNum?, rawWeekday?} eller null vid fel.
 function getPartsInTz(date, timeZone, includeWeekday = false) {
   const fmtOpts = {
     timeZone,
     hour12: false,
     year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   };
-  if (includeWeekday) fmtOpts.weekday = "numeric"; // 1=Mon..7=Sun i vissa implementationer
+  if (includeWeekday) fmtOpts.weekday = "short"; // <- giltigt ("long"|"short"|"narrow")
   try {
-    const partsArr = new Intl.DateTimeFormat("en-US", fmtOpts)
-      .formatToParts(date);
-    return partsArr.reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+    const partsArr = new Intl.DateTimeFormat("en-US", fmtOpts).formatToParts(date);
+    const parts = partsArr.reduce((acc, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+    const out = {
+      year: Number(parts.year),
+      month: Number(parts.month),
+      day: Number(parts.day),
+      hour: Number(parts.hour),
+      minute: Number(parts.minute),
+    };
+    if (includeWeekday) {
+      out.rawWeekday = parts.weekday;
+      out.weekdayNum = WEEKDAY_MAP[parts.weekday] ?? null; // 1..7
+    }
+    if (
+      !isFinite(out.year) ||
+      !isFinite(out.month) ||
+      !isFinite(out.day) ||
+      !isFinite(out.hour) ||
+      !isFinite(out.minute)
+    ) {
+      return null;
+    }
+    if (includeWeekday && out.weekdayNum == null) {
+      return null;
+    }
+    return out;
   } catch {
     return null;
   }
@@ -64,7 +93,7 @@ function getPartsInTz(date, timeZone, includeWeekday = false) {
 // Normaliserar en tidszon-sträng (fallback till Europe/Stockholm om ogiltig)
 function normalizeTimeZone(tz) {
   try {
-    // testformattering för att trigga ev. RangeError
+    // Testa format för att trigga ev. RangeError
     new Intl.DateTimeFormat("en-US", { timeZone: tz || "Europe/Stockholm" });
     return tz || "Europe/Stockholm";
   } catch {
@@ -218,9 +247,8 @@ exports.runAiAutomations = onSchedule(
             continue;
           }
 
-          const nowMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
-          const lastCheckMinutes =
-            Number(lastCheckParts.hour) * 60 + Number(lastCheckParts.minute);
+          const nowMinutes = nowParts.hour * 60 + nowParts.minute;
+          const lastCheckMinutes = lastCheckParts.hour * 60 + lastCheckParts.minute;
           const scheduledMinutes = t.hour * 60 + t.minute;
 
           const dayRolledOver =
@@ -248,8 +276,8 @@ exports.runAiAutomations = onSchedule(
           }
 
           // Frekvenskontroll
-          const weekday = Number(nowParts.weekday); // 1=Mon..7=Sun (för en-US med numeric weekday)
-          const dayOfMonth = Number(nowParts.day);
+          const weekday = nowParts.weekdayNum; // 1..7
+          const dayOfMonth = nowParts.day;
           let frequencyMatched = false;
           switch (automation.frequency) {
             case "daily":
@@ -263,7 +291,6 @@ exports.runAiAutomations = onSchedule(
                 frequencyMatched = true;
               break;
             default:
-              // Om okänd frekvens – hoppa över
               console.log(
                 `[Automation: ${automation.id}] Skipping: Unknown frequency "${automation.frequency}".`
               );
@@ -295,9 +322,9 @@ exports.runAiAutomations = onSchedule(
             }
             // Har vi redan kört idag i TZ?
             const alreadyToday =
-              String(lastRunParts.year) === String(nowParts.year) &&
-              String(lastRunParts.month) === String(nowParts.month) &&
-              String(lastRunParts.day) === String(nowParts.day);
+              lastRunParts.year === nowParts.year &&
+              lastRunParts.month === nowParts.month &&
+              lastRunParts.day === nowParts.day;
             if (alreadyToday) {
               console.log(
                 `[Automation: ${automation.id}] Skipping: Already ran today in ${tz}.`
@@ -491,7 +518,7 @@ The JSON object must contain:
       await Promise.all(promises);
       console.log("[Scheduler] AI Automations check finished.");
     } catch (err) {
-      // Viktigt: svälj felet här så att Cloud Scheduler inte dör med "Invalid time value"
+      // Viktigt: svälj felet här så att Cloud Scheduler inte dör
       console.error("runAiAutomations top-level error:", err);
     }
   }
