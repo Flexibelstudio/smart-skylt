@@ -98,6 +98,29 @@ exports.runAiAutomations = onSchedule({
     const lastCheckTime = new Date(now.getTime() - (15 * 60 * 1000)); // 15 minutes ago
     console.log(`[Scheduler] Running AI Automations check at ${now.toISOString()}`);
 
+    // Helper function to safely convert various date formats to a valid Date object or null.
+    const toValidDate = (value) => {
+        if (!value) return null; // Handles null, undefined, ""
+        // Firestore Timestamp
+        if (typeof value.toDate === "function") {
+            return value.toDate();
+        }
+        // String or Number (ISO string, unix ms, etc.)
+        if (typeof value === "string" || typeof value === "number") {
+            const d = new Date(value);
+            if (!isNaN(d.getTime())) {
+                return d;
+            }
+        }
+        // Already a valid Date object
+        if (value instanceof Date && !isNaN(value.getTime())) {
+            return value;
+        }
+        // Return null for invalid or unsupported types (like invalid Date objects)
+        return null;
+    };
+
+
     const orgsSnapshot = await db.collection("organizations").get();
     if (orgsSnapshot.empty) {
         console.log("[Scheduler] No organizations found.");
@@ -153,8 +176,9 @@ exports.runAiAutomations = onSchedule({
                 continue;
             }
 
-            const lastRun = automation.lastRunAt ? new Date(automation.lastRunAt) : null;
-            if (lastRun && !isNaN(lastRun.getTime())) {
+            const lastRun = toValidDate(automation.lastRunAt); // SAFELY parse the date
+
+            if (lastRun) { // This check is now safe because toValidDate returns null for invalid values
                 const lastRunInTz = new Intl.DateTimeFormat("en-US", {
                     timeZone: timezone,
                     year: "numeric", month: "numeric", day: "numeric",
@@ -164,6 +188,9 @@ exports.runAiAutomations = onSchedule({
                     console.log(`[Automation: ${automation.id}] Skipping: Already ran today in the target timezone.`);
                     continue;
                 }
+            } else if (automation.lastRunAt) {
+              // Log if there was a value but it was invalid, then proceed as if never run.
+              console.log(`[Automation: ${automation.id}] Found invalid lastRunAt value, treating as never run. Value:`, automation.lastRunAt);
             }
 
             let frequencyMatched = false;
