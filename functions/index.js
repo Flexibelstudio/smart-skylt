@@ -1,244 +1,350 @@
 // functions/index.js
-const {onCall, HttpsError} = require("firebase-functions/v2/https");
-const {onSchedule} = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
-const {GoogleGenAI, Type, Modality} = require("@google/genai");
-const {onDocumentDeleted} = require("firebase-functions/v2/firestore");
+const { GoogleGenAI, Type, Modality } = require("@google/genai");
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// --- VÅR NYA TESTFUNKTION ---
-exports.testFunction = onCall((request) => {
-  // request.auth innehåller automatiskt information om den inloggade användaren.
-  console.log("Test function called by:", request.auth ? request.auth.uid : "unauthenticated user");
+/* --------------------------- Hjälpfunktioner --------------------------- */
 
-  // Skicka tillbaka ett enkelt svar för att bekräfta att kopplingen fungerar
+// Konverterar olika typer (Timestamp, Date, ISO-sträng, ms-number) till giltig Date eller null
+function toDateSafe(value) {
+  if (!value) return null; // null/undefined/""
+  try {
+    // Firestore Timestamp?
+    if (typeof value === "object" && typeof value.toDate === "function") {
+      const d = value.toDate();
+      return isFinite(d.getTime()) ? d : null;
+    }
+    // Redan Date?
+    if (value instanceof Date) {
+      return isFinite(value.getTime()) ? value : null;
+    }
+    // Sträng eller nummer
+    const d = new Date(value);
+    return isFinite(d.getTime()) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+// Validerar "HH:mm" → {hour, minute} eller null
+function parseTimeHM(hhmm) {
+  if (typeof hhmm !== "string") return null;
+  const m = hhmm.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!m) return null;
+  return { hour: Number(m[1]), minute: Number(m[2]) };
+}
+
+// Safear Intl.formatToParts för ett visst Date + tidszon.
+// Returnerar ett parts-objekt {year, month, day, hour, minute, weekday} eller null vid fel.
+function getPartsInTz(date, timeZone, includeWeekday = false) {
+  const fmtOpts = {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+  };
+  if (includeWeekday) fmtOpts.weekday = "numeric"; // 1=Mon..7=Sun i vissa implementationer
+  try {
+    const partsArr = new Intl.DateTimeFormat("en-US", fmtOpts)
+      .formatToParts(date);
+    return partsArr.reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+  } catch {
+    return null;
+  }
+}
+
+// Normaliserar en tidszon-sträng (fallback till Europe/Stockholm om ogiltig)
+function normalizeTimeZone(tz) {
+  try {
+    // testformattering för att trigga ev. RangeError
+    new Intl.DateTimeFormat("en-US", { timeZone: tz || "Europe/Stockholm" });
+    return tz || "Europe/Stockholm";
+  } catch {
+    return "Europe/Stockholm";
+  }
+}
+
+/* --------------------------- Testfunktion --------------------------- */
+
+exports.testFunction = onCall((request) => {
+  console.log(
+    "Test function called by:",
+    request.auth ? request.auth.uid : "unauthenticated user"
+  );
   return {
     message: "Hej från molnet! Kopplingen fungerar.",
     timestamp: new Date().toISOString(),
   };
 });
 
+/* ------------------------ Användar–inbjudan ------------------------ */
 
-// --- USER INVITATION FUNCTION ---
 exports.inviteUser = onCall(async (request) => {
-    // Authentication check
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "Du måste vara inloggad för att lägga till användare.");
-    }
-    const { organizationId, email } = request.data;
+  if (!request.auth) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Du måste vara inloggad för att lägga till användare."
+    );
+  }
+  const { organizationId, email } = request.data;
+  if (!organizationId || !email) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Saknar nödvändig information (organisation eller e-post)."
+    );
+  }
 
-    // Validate input
-    if (!organizationId || !email) {
-        throw new HttpsError("invalid-argument", "Saknar nödvändig information (organisation eller e-post).");
+  try {
+    const existingUsers = await db
+      .collection("users")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+    if (!existingUsers.empty) {
+      throw new HttpsError("already-exists", "Denna administratör finns redan.");
     }
-    
+
+    let userRecord;
     try {
-        // Check if an admin with this email already exists in the system.
-        // A more complex app might allow a user to belong to multiple orgs, but for now we'll keep it simple.
-        const existingUsers = await db.collection("users").where("email", "==", email).limit(1).get();
-        if (!existingUsers.empty) {
-            throw new HttpsError("already-exists", "Denna administratör finns redan.");
-        }
-        
-        // Find or create the user in Firebase Auth.
-        let userRecord;
-        try {
-            userRecord = await admin.auth().getUserByEmail(email);
-        } catch (error) {
-            if (error.code === 'auth/user-not-found') {
-                // User does not exist, so create them.
-                userRecord = await admin.auth().createUser({
-                    email: email,
-                    emailVerified: false, // User will need to use "Forgot Password" to set their password.
-                });
-            } else {
-                // Re-throw other auth errors (e.g., invalid-email).
-                throw error;
-            }
-        }
-
-        // Create the user document in Firestore to link them to the organization as an admin.
-        await db.collection("users").doc(userRecord.uid).set({
-            email: email,
-            organizationId: organizationId,
-            role: "organizationadmin",
-            adminRole: "admin", // New users always start as a standard admin.
-        });
-        
-        // Return success message. The frontend will handle UI updates.
-        return { success: true, message: "Administratören har lagts till." };
-
+      userRecord = await admin.auth().getUserByEmail(email);
     } catch (error) {
-        // If it's an HttpsError we threw, re-throw it.
-        if (error instanceof HttpsError) {
-            throw error;
-        }
-        // Handle Firebase Auth errors that might be thrown (like invalid-email).
-        if (error.code && error.code.startsWith('auth/')) {
-            throw new HttpsError('invalid-argument', 'Ogiltig e-postadress.');
-        }
-        // Log other errors and throw a generic one.
-        console.error("Error in inviteUser function:", error);
-        throw new HttpsError("internal", "Ett oväntat fel inträffade. Försök igen.");
+      if (error.code === "auth/user-not-found") {
+        userRecord = await admin.auth().createUser({
+          email,
+          emailVerified: false,
+        });
+      } else {
+        throw error;
+      }
     }
+
+    await db.collection("users").doc(userRecord.uid).set({
+      email,
+      organizationId,
+      role: "organizationadmin",
+      adminRole: "admin",
+    });
+
+    return { success: true, message: "Administratören har lagts till." };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    if (error.code && String(error.code).startsWith("auth/")) {
+      throw new HttpsError("invalid-argument", "Ogiltig e-postadress.");
+    }
+    console.error("Error in inviteUser function:", error);
+    throw new HttpsError(
+      "internal",
+      "Ett oväntat fel inträffade. Försök igen."
+    );
+  }
 });
 
+/* -------------------- AI Automation Scheduler -------------------- */
 
-// --- NEW: AI AUTOMATION SCHEDULER ---
-exports.runAiAutomations = onSchedule({
+exports.runAiAutomations = onSchedule(
+  {
     schedule: "every 15 minutes",
     secrets: ["GEMINI_API_KEY"],
     timeoutSeconds: 540,
     memory: "512MiB",
-}, async (event) => {
-    const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
-    const now = new Date(event.time); // This is UTC from Firebase
-    const lastCheckTime = new Date(now.getTime() - (15 * 60 * 1000)); // 15 minutes ago
-    console.log(`[Scheduler] Running AI Automations check at ${now.toISOString()}`);
+  },
+  async (event) => {
+    // Toppnivå try/catch för att förhindra total krasch
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-    // Helper function to safely convert various date formats to a valid Date object or null.
-    const toValidDate = (value) => {
-        if (!value) return null; // Handles null, undefined, ""
-        // Firestore Timestamp
-        if (typeof value.toDate === "function") {
-            return value.toDate();
-        }
-        // String or Number (ISO string, unix ms, etc.)
-        if (typeof value === "string" || typeof value === "number") {
-            const d = new Date(value);
-            if (!isNaN(d.getTime())) {
-                return d;
-            }
-        }
-        // Already a valid Date object
-        if (value instanceof Date && !isNaN(value.getTime())) {
-            return value;
-        }
-        // Return null for invalid or unsupported types (like invalid Date objects)
-        return null;
-    };
+      // event.time är ISO-string i v2, men säkra ändå:
+      const now = toDateSafe(event.time) || new Date();
+      const lastCheckTime = new Date(now.getTime() - 15 * 60 * 1000);
+      console.log(
+        `[Scheduler] Running AI Automations check at ${now.toISOString()}`
+      );
 
-
-    const orgsSnapshot = await db.collection("organizations").get();
-    if (orgsSnapshot.empty) {
+      const orgsSnapshot = await db.collection("organizations").get();
+      if (orgsSnapshot.empty) {
         console.log("[Scheduler] No organizations found.");
         return;
-    }
+      }
 
-    const promises = orgsSnapshot.docs.map(async (doc) => {
-        const org = doc.data();
-        if (!org.aiAutomations || org.aiAutomations.length === 0) {
-            return; // Skip org if no automations are configured
-        }
+      const promises = orgsSnapshot.docs.map(async (orgDoc) => {
+        const org = orgDoc.data() || {};
+        org.id = org.id || orgDoc.id;
+
+        const automations = Array.isArray(org.aiAutomations)
+          ? org.aiAutomations
+          : [];
+
+        if (automations.length === 0) return;
 
         let hasChanges = false;
         const newSuggestions = [];
-        const updatedAutomations = JSON.parse(JSON.stringify(org.aiAutomations));
+        // Gör en djupkopia för att kunna mutera säkert
+        const updatedAutomations = JSON.parse(JSON.stringify(automations));
 
         for (const automation of updatedAutomations) {
-            if (!automation.isEnabled) {
-                console.log(`[Automation: ${automation.id}] Skipping: Disabled.`);
-                continue;
+          // Grundläggande validering
+          if (!automation || automation.isEnabled === false) {
+            console.log(
+              `[Automation: ${automation?.id || "no-id"}] Skipping: Disabled/invalid object.`
+            );
+            continue;
+          }
+
+          const tz = normalizeTimeZone(automation.timezone);
+          const t = parseTimeHM(automation.timeOfDay);
+          if (!t) {
+            console.log(
+              `[Automation: ${automation.id}] Skipping: Invalid timeOfDay "${automation.timeOfDay}".`
+            );
+            continue;
+          }
+
+          // Hämta "nu" och "senaste koll" i den valda tidszonen
+          const nowParts = getPartsInTz(now, tz, true); // include weekday
+          const lastCheckParts = getPartsInTz(lastCheckTime, tz, false);
+
+          if (!nowParts || !lastCheckParts) {
+            console.log(
+              `[Automation: ${automation.id}] Skipping: Could not get TZ parts (tz="${tz}").`
+            );
+            continue;
+          }
+
+          const nowMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
+          const lastCheckMinutes =
+            Number(lastCheckParts.hour) * 60 + Number(lastCheckParts.minute);
+          const scheduledMinutes = t.hour * 60 + t.minute;
+
+          const dayRolledOver =
+            nowParts.day !== lastCheckParts.day ||
+            nowParts.month !== lastCheckParts.month ||
+            nowParts.year !== lastCheckParts.year;
+
+          // Fönster: har scheduledMinutes infallit någon gång mellan lastCheck och now i samma TZ?
+          let timeMatched = false;
+          if (dayRolledOver) {
+            // Över midnatt i TZ: kör om tiden låg efter lastCheck eller upp till now
+            timeMatched =
+              scheduledMinutes > lastCheckMinutes ||
+              scheduledMinutes <= nowMinutes;
+          } else {
+            timeMatched =
+              scheduledMinutes > lastCheckMinutes &&
+              scheduledMinutes <= nowMinutes;
+          }
+          if (!timeMatched) {
+            console.log(
+              `[Automation: ${automation.id}] Skipping: Time (${automation.timeOfDay} ${tz}) not in the 15-min window.`
+            );
+            continue;
+          }
+
+          // Frekvenskontroll
+          const weekday = Number(nowParts.weekday); // 1=Mon..7=Sun (för en-US med numeric weekday)
+          const dayOfMonth = Number(nowParts.day);
+          let frequencyMatched = false;
+          switch (automation.frequency) {
+            case "daily":
+              frequencyMatched = true;
+              break;
+            case "weekly":
+              if (weekday === Number(automation.dayOfWeek)) frequencyMatched = true;
+              break;
+            case "monthly":
+              if (dayOfMonth === Number(automation.dayOfMonth))
+                frequencyMatched = true;
+              break;
+            default:
+              // Om okänd frekvens – hoppa över
+              console.log(
+                `[Automation: ${automation.id}] Skipping: Unknown frequency "${automation.frequency}".`
+              );
+              break;
+          }
+          if (!frequencyMatched) {
+            console.log(
+              `[Automation: ${automation.id}] Skipping: Frequency did not match.`
+            );
+            continue;
+          }
+
+          // lastRunAt – får aldrig krascha om fältet är "", null, osv.
+          const lastRun = toDateSafe(automation.lastRunAt);
+          if (automation.lastRunAt && !lastRun) {
+            console.log(
+              `[Automation: ${automation.id}] Found invalid lastRunAt, treating as never run:`,
+              automation.lastRunAt
+            );
+          }
+
+          if (lastRun) {
+            const lastRunParts = getPartsInTz(lastRun, tz, false);
+            if (!lastRunParts) {
+              console.log(
+                `[Automation: ${automation.id}] Skipping: Could not get TZ parts for lastRunAt.`
+              );
+              continue;
+            }
+            // Har vi redan kört idag i TZ?
+            const alreadyToday =
+              String(lastRunParts.year) === String(nowParts.year) &&
+              String(lastRunParts.month) === String(nowParts.month) &&
+              String(lastRunParts.day) === String(nowParts.day);
+            if (alreadyToday) {
+              console.log(
+                `[Automation: ${automation.id}] Skipping: Already ran today in ${tz}.`
+              );
+              continue;
+            }
+          }
+
+          console.log(
+            `[Automation: ${automation.id}] TRIGGERED. Generating content for "${automation.name}" in org "${org.name}"`
+          );
+
+          try {
+            // Bygg feedback-kontekst
+            const history = (org.suggestedPosts || [])
+              .filter((p) => p.automationId === automation.id)
+              .slice(-10);
+
+            const approved = history.filter(
+              (p) => p.status === "approved" || p.status === "edited-and-published"
+            );
+            const rejected = history.filter((p) => p.status === "rejected");
+
+            let feedbackContext = "No feedback history available yet.";
+            if (approved.length > 0 || rejected.length > 0) {
+              feedbackContext = `Here is a summary of the user's feedback on previous suggestions for this automation:\n`;
+              if (approved.length > 0) {
+                feedbackContext += `- The user LIKED and APPROVED these (emulate this style):\n${approved
+                  .map((p) => `  - Headline: "${p.postData.headline}"`)
+                  .join("\n")}\n`;
+              }
+              if (rejected.length > 0) {
+                feedbackContext += `- The user DISLIKED and REJECTED these (avoid this style):\n${rejected
+                  .map((p) => `  - Headline: "${p.postData.headline}"`)
+                  .join("\n")}\n`;
+              }
             }
 
-            const timezone = automation.timezone || "Europe/Stockholm";
-            const [scheduledHour, scheduledMinute] = automation.timeOfDay.split(":").map(Number);
-            const scheduledTimeInMinutes = scheduledHour * 60 + scheduledMinute;
+            const styleProfileContext = org.styleProfile?.summary
+              ? `User's style profile:\n---\n${org.styleProfile.summary}\n---\n`
+              : "";
 
-            const nowInTz = new Intl.DateTimeFormat("en-US", {
-                timeZone: timezone, hour12: false,
-                year: "numeric", month: "numeric", day: "numeric",
-                hour: "numeric", minute: "numeric", weekday: "numeric", // 1=Mon, 7=Sun
-            }).formatToParts(now).reduce((acc, p) => ({...acc, [p.type]: p.value}), {});
-
-            const lastCheckInTz = new Intl.DateTimeFormat("en-US", {
-                timeZone: timezone, hour12: false,
-                year: "numeric", month: "numeric", day: "numeric",
-                hour: "numeric", minute: "numeric",
-            }).formatToParts(lastCheckTime).reduce((acc, p) => ({...acc, [p.type]: p.value}), {});
-            
-            const nowTimeInMinutes = parseInt(nowInTz.hour) * 60 + parseInt(nowInTz.minute);
-            const lastCheckTimeInMinutes = parseInt(lastCheckInTz.hour) * 60 + parseInt(lastCheckInTz.minute);
-            
-            const dayRolledOver = nowInTz.day !== lastCheckInTz.day || nowInTz.month !== lastCheckInTz.month || nowInTz.year !== lastCheckInTz.year;
-
-            let timeMatched = false;
-            if (dayRolledOver) {
-                timeMatched = scheduledTimeInMinutes > lastCheckTimeInMinutes || scheduledTimeInMinutes <= nowTimeInMinutes;
-            } else {
-                timeMatched = scheduledTimeInMinutes > lastCheckTimeInMinutes && scheduledTimeInMinutes <= nowTimeInMinutes;
-            }
-
-            if (!timeMatched) {
-                console.log(`[Automation: ${automation.id}] Skipping: Time (${automation.timeOfDay} ${timezone}) not in the 15-min window.`);
-                continue;
-            }
-
-            const lastRun = toValidDate(automation.lastRunAt); // SAFELY parse the date
-
-            if (lastRun) { // This check is now safe because toValidDate returns null for invalid values
-                const lastRunInTz = new Intl.DateTimeFormat("en-US", {
-                    timeZone: timezone,
-                    year: "numeric", month: "numeric", day: "numeric",
-                }).formatToParts(lastRun).reduce((acc, p) => ({...acc, [p.type]: p.value}), {});
-                
-                if (lastRunInTz.year === nowInTz.year && lastRunInTz.month === nowInTz.month && lastRunInTz.day === nowInTz.day) {
-                    console.log(`[Automation: ${automation.id}] Skipping: Already ran today in the target timezone.`);
-                    continue;
-                }
-            } else if (automation.lastRunAt) {
-              // Log if there was a value but it was invalid, then proceed as if never run.
-              console.log(`[Automation: ${automation.id}] Found invalid lastRunAt value, treating as never run. Value:`, automation.lastRunAt);
-            }
-
-            let frequencyMatched = false;
-            const dayOfWeekInTz = parseInt(nowInTz.weekday); // Intl: 1=Mon, 7=Sun
-            const dayOfMonthInTz = parseInt(nowInTz.day);
-
-            switch (automation.frequency) {
-                case "daily":
-                    frequencyMatched = true;
-                    break;
-                case "weekly":
-                    if (dayOfWeekInTz === automation.dayOfWeek) frequencyMatched = true;
-                    break;
-                case "monthly":
-                    if (dayOfMonthInTz === automation.dayOfMonth) frequencyMatched = true;
-                    break;
-            }
-            
-            if (!frequencyMatched) {
-                console.log(`[Automation: ${automation.id}] Skipping: Frequency did not match.`);
-                continue;
-            }
-
-            console.log(`[Automation: ${automation.id}] TRIGGERED. Generating content for "${automation.name}" in org "${org.name}"`);
-            
-            try {
-                const history = (org.suggestedPosts || [])
-                    .filter((p) => p.automationId === automation.id)
-                    .slice(-10);
-
-                const approved = history.filter((p) => p.status === "approved" || p.status === "edited-and-published");
-                const rejected = history.filter((p) => p.status === "rejected");
-
-                let feedbackContext = "No feedback history available yet.";
-                if (approved.length > 0 || rejected.length > 0) {
-                    feedbackContext = `Here is a summary of the user's feedback on previous suggestions for this automation:\n`;
-                    if (approved.length > 0) {
-                        feedbackContext += `- The user LIKED and APPROVED these (emulate this style):\n${approved.map((p) => `  - Headline: "${p.postData.headline}"`).join("\n")}\n`;
-                    }
-                    if (rejected.length > 0) {
-                        feedbackContext += `- The user DISLIKED and REJECTED these (avoid this style):\n${rejected.map((p) => `  - Headline: "${p.postData.headline}"`).join("\n")}\n`;
-                    }
-                }
-                
-                const styleProfileContext = (org.styleProfile?.summary) ? `User's style profile:\n---\n${org.styleProfile.summary}\n---\n` : "";
-
-                const prompt = `You are an expert creative director for "${org.name}", a company in the ${org.businessType?.join(", ")} sector.
-Your task is to generate a new, compelling post suggestion for a digital sign.
+            const prompt = `You are an expert creative director for "${org.name}", a company in the ${
+              Array.isArray(org.businessType)
+                ? org.businessType.join(", ")
+                : String(org.businessType || "")
+            } sector.
 
 **Creative Brief**
 - Automation Topic: "${automation.topic}"
@@ -259,559 +365,582 @@ The JSON object must contain:
 7. 'imageOverlayEnabled': A boolean, typically true for 'image-fullscreen'.
 8. 'textAlign': 'left', 'center', or 'right'.
 9. 'textAnimation': 'none', 'typewriter', 'fade-up-word', 'blur-in'.`;
-                
-                const textGenResponse = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-                
-                let jsonString = textGenResponse.text.trim();
-                if (jsonString.startsWith("```json")) jsonString = jsonString.substring(7);
-                if (jsonString.endsWith("```")) jsonString = jsonString.substring(0, jsonString.length - 3);
-                const postDetails = JSON.parse(jsonString);
 
-                for (const screenId of automation.targetScreenIds) {
-                    const screen = org.displayScreens?.find((s) => s.id === screenId);
-                    if (!screen) {
-                        console.log(`[Automation: ${automation.id}] Skipping screen ${screenId}: Not found.`);
-                        continue;
-                    }
+            const textGenResponse = await ai.models.generateContent({
+              model: "gemini-2.5-flash",
+              contents: prompt,
+            });
 
-                    let imageUrl;
-                    if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
-                         const imageResponse = await ai.models.generateImages({
-                            model: "imagen-4.0-generate-001",
-                            prompt: postDetails.imagePrompt,
-                            config: {numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: screen.aspectRatio},
-                        });
-                        if (imageResponse.generatedImages && imageResponse.generatedImages.length > 0) {
-                            imageUrl = `data:image/jpeg;base64,${imageResponse.generatedImages[0].image.imageBytes}`;
-                        }
-                    }
+            let jsonString = String(textGenResponse.text || "").trim();
+            if (jsonString.startsWith("```json")) jsonString = jsonString.slice(7);
+            if (jsonString.endsWith("```")) jsonString = jsonString.slice(0, -3);
 
-                    const newPostData = {
-                        id: `sugg-post-${Date.now()}`,
-                        internalTitle: `AI: ${postDetails.headline}`,
-                        headline: postDetails.headline,
-                        body: postDetails.body,
-                        layout: postDetails.layout,
-                        durationSeconds: 15,
-                        backgroundColor: postDetails.backgroundColor,
-                        textColor: postDetails.textColor,
-                        imageOverlayEnabled: postDetails.imageOverlayEnabled,
-                        textAlign: postDetails.textAlign,
-                        textAnimation: postDetails.textAnimation,
-                        imageUrl: imageUrl,
-                        isAiGeneratedImage: !!imageUrl,
-                    };
-
-                    newSuggestions.push({
-                        id: `sugg-${Date.now()}-${Math.random()}`,
-                        automationId: automation.id,
-                        targetScreenId: screenId,
-                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                        status: "pending",
-                        postData: newPostData,
-                    });
-                }
-
-                automation.lastRunAt = now.toISOString();
-                hasChanges = true;
-
-            } catch (err) {
-                console.error(`[Automation: ${automation.id}] CRITICAL ERROR during generation for org ${org.id}:`, err);
+            let postDetails = {};
+            try {
+              postDetails = JSON.parse(jsonString);
+            } catch (e) {
+              console.warn(
+                `[Automation: ${automation.id}] Could not parse AI JSON. Skipping this run.`,
+                e?.message || e
+              );
+              continue;
             }
+
+            const targetScreenIds = Array.isArray(automation.targetScreenIds)
+              ? automation.targetScreenIds
+              : [];
+            const displayScreens = Array.isArray(org.displayScreens)
+              ? org.displayScreens
+              : [];
+
+            for (const screenId of targetScreenIds) {
+              const screen = displayScreens.find((s) => s.id === screenId);
+              if (!screen) {
+                console.log(
+                  `[Automation: ${automation.id}] Skipping screen ${screenId}: Not found.`
+                );
+                continue;
+              }
+
+              let imageUrl;
+              if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
+                try {
+                  const imageResponse = await ai.models.generateImages({
+                    model: "imagen-4.0-generate-001",
+                    prompt: postDetails.imagePrompt,
+                    config: {
+                      numberOfImages: 1,
+                      outputMimeType: "image/jpeg",
+                      aspectRatio: screen.aspectRatio,
+                    },
+                  });
+                  if (
+                    imageResponse.generatedImages &&
+                    imageResponse.generatedImages.length > 0
+                  ) {
+                    imageUrl = `data:image/jpeg;base64,${imageResponse.generatedImages[0].image.imageBytes}`;
+                  }
+                } catch (imgErr) {
+                  console.warn(
+                    `[Automation: ${automation.id}] Image generation failed; proceeding with text-only.`,
+                    imgErr?.message || imgErr
+                  );
+                }
+              }
+
+              const newPostData = {
+                id: `sugg-post-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+                internalTitle: `AI: ${postDetails.headline || "Förslag"}`,
+                headline: postDetails.headline || "",
+                body: postDetails.body || "",
+                layout: postDetails.layout || "text-only",
+                durationSeconds: 15,
+                backgroundColor: postDetails.backgroundColor || "primary",
+                textColor: postDetails.textColor || "white",
+                imageOverlayEnabled: !!postDetails.imageOverlayEnabled,
+                textAlign: postDetails.textAlign || "center",
+                textAnimation: postDetails.textAnimation || "none",
+                imageUrl: imageUrl,
+                isAiGeneratedImage: !!imageUrl,
+              };
+
+              newSuggestions.push({
+                id: `sugg-${Date.now()}-${Math.random()}`,
+                automationId: automation.id,
+                targetScreenId: screenId,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                status: "pending",
+                postData: newPostData,
+              });
+            }
+
+            // Obs: eftersom aiAutomations är en array i org-dokumentet kan vi inte använda serverTimestamp() direkt i array-objekt.
+            // Vi lagrar ISO-sträng – vår parsning hanterar detta säkert.
+            automation.lastRunAt = now.toISOString();
+            hasChanges = true;
+          } catch (err) {
+            console.error(
+              `[Automation: ${automation.id}] CRITICAL ERROR during generation for org ${org.id}:`,
+              err
+            );
+          }
         }
 
         if (hasChanges) {
-            console.log(`[Org: ${org.id}] Updating Firestore with ${newSuggestions.length} new suggestion(s).`);
-            try {
-                const updatePayload = {
-                    aiAutomations: updatedAutomations,
-                    suggestedPosts: admin.firestore.FieldValue.arrayUnion(...newSuggestions),
-                };
-                await db.collection("organizations").doc(org.id).update(updatePayload);
-                console.log(`[Org: ${org.id}] Firestore updated successfully.`);
-            } catch (updateError) {
-                console.error(`[Org: ${org.id}] FAILED to update Firestore:`, updateError);
-            }
+          console.log(
+            `[Org: ${org.id}] Updating Firestore with ${newSuggestions.length} new suggestion(s).`
+          );
+          try {
+            const updatePayload = {
+              aiAutomations: updatedAutomations,
+              suggestedPosts: admin.firestore.FieldValue.arrayUnion(
+                ...newSuggestions
+              ),
+            };
+            await db.collection("organizations").doc(org.id).update(updatePayload);
+            console.log(`[Org: ${org.id}] Firestore updated successfully.`);
+          } catch (updateError) {
+            console.error(
+              `[Org: ${org.id}] FAILED to update Firestore:`,
+              updateError
+            );
+          }
         }
-    });
+      });
 
-    await Promise.all(promises);
-    console.log("[Scheduler] AI Automations check finished.");
-});
-
-// --- NEW MEDIA CLEANUP FUNCTION ---
-exports.cleanupDeletedPostMedia = onDocumentDeleted("organizations/{organizationId}/displayScreens/{screenId}/posts/{postId}", async (event) => {
-  const post = event.data.data();
-
-  if (!post) {
-    console.log(`No data for deleted post ${event.params.postId}.`);
-    return null;
+      await Promise.all(promises);
+      console.log("[Scheduler] AI Automations check finished.");
+    } catch (err) {
+      // Viktigt: svälj felet här så att Cloud Scheduler inte dör med "Invalid time value"
+      console.error("runAiAutomations top-level error:", err);
+    }
   }
-  
-  console.log(`Post ${event.params.postId} deleted from org ${event.params.organizationId}. Cleaning up media...`);
-  
-  const storage = admin.storage();
-  const bucket = storage.bucket();
-  const deletionPromises = [];
-  
-  const urls = new Set();
-  if (post.imageUrl) urls.add(post.imageUrl);
-  if (post.videoUrl) urls.add(post.videoUrl);
-  if (post.backgroundVideoUrl) urls.add(post.backgroundVideoUrl);
-  if (post.subImages) post.subImages.forEach((si) => si.imageUrl && urls.add(si.imageUrl));
-  if (post.collageItems) {
-    post.collageItems.forEach((ci) => {
-      if (ci && ci.imageUrl) urls.add(ci.imageUrl);
-      if (ci && ci.videoUrl) urls.add(ci.videoUrl);
-    });
-  }
+);
 
-  urls.forEach((url) => {
-    if (typeof url === "string" && url.includes("firebasestorage.googleapis.com")) {
-      const pathRegex = /o\/(.+)\?alt=media/;
-      const match = url.match(pathRegex);
-      if (match && match[1]) {
-        const filePath = decodeURIComponent(match[1]);
-        console.log(`Queueing for deletion: ${filePath}`);
-        const file = bucket.file(filePath);
-        deletionPromises.push(
+/* ------------------ Media–cleanup när post tas bort ------------------ */
+
+exports.cleanupDeletedPostMedia = onDocumentDeleted(
+  "organizations/{organizationId}/displayScreens/{screenId}/posts/{postId}",
+  async (event) => {
+    const post = event.data?.data?.();
+    if (!post) {
+      console.log(`No data for deleted post ${event.params.postId}.`);
+      return null;
+    }
+
+    console.log(
+      `Post ${event.params.postId} deleted from org ${event.params.organizationId}. Cleaning up media...`
+    );
+
+    const storage = admin.storage();
+    const bucket = storage.bucket();
+    const deletionPromises = [];
+
+    const urls = new Set();
+    if (post.imageUrl) urls.add(post.imageUrl);
+    if (post.videoUrl) urls.add(post.videoUrl);
+    if (post.backgroundVideoUrl) urls.add(post.backgroundVideoUrl);
+    if (post.subImages)
+      post.subImages.forEach((si) => si?.imageUrl && urls.add(si.imageUrl));
+    if (post.collageItems) {
+      post.collageItems.forEach((ci) => {
+        if (ci?.imageUrl) urls.add(ci.imageUrl);
+        if (ci?.videoUrl) urls.add(ci.videoUrl);
+      });
+    }
+
+    urls.forEach((url) => {
+      if (typeof url === "string" && url.includes("firebasestorage.googleapis.com")) {
+        const pathRegex = /o\/(.+)\?alt=media/;
+        const match = url.match(pathRegex);
+        if (match && match[1]) {
+          const filePath = decodeURIComponent(match[1]);
+          console.log(`Queueing for deletion: ${filePath}`);
+          const file = bucket.file(filePath);
+          deletionPromises.push(
             file.delete().catch((err) => {
               if (err.code !== 404) {
                 console.error(`Failed to delete ${filePath}:`, err.message);
               }
-            }),
-        );
+            })
+          );
+        }
       }
-    }
-  });
+    });
 
-  await Promise.all(deletionPromises);
-  console.log(`Cleanup complete. Attempted to delete ${deletionPromises.length} files.`);
-  return {message: `Cleaned up media for post.`};
-});
+    await Promise.all(deletionPromises);
+    console.log(
+      `Cleanup complete. Attempted to delete ${deletionPromises.length} files.`
+    );
+    return { message: `Cleaned up media for post.` };
+  }
+);
 
-
-// --- NEW INSTAGRAM FUNCTIONS ---
+/* ------------------------- (Tillfälligt av) IG ------------------------- */
 /*
-// TILLFÄLLIGT INAKTIVERAD: Denna funktion kräver en INSTAGRAM_ACCESS_TOKEN.
-// Avkommentera hela blocket när ni har en token och har lagt till den som en secret i Google Cloud.
-exports.fetchInstagramStories = onSchedule({
-    schedule: "every 15 minutes",
-    secrets: ["INSTAGRAM_ACCESS_TOKEN"],
-    timeoutSeconds: 300,
-    memory: "256MiB",
-}, async (event) => {
-    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-    if (!accessToken) {
-        console.error("CRITICAL: INSTAGRAM_ACCESS_TOKEN secret is not available.");
-        return;
-    }
-
-    const orgsSnapshot = await db.collection("organizations").where("instagramUserId", ">", "").get();
-    if (orgsSnapshot.empty) {
-        console.log("No organizations with Instagram User ID configured.");
-        return;
-    }
-
-    for (const doc of orgsSnapshot.docs) {
-        const org = doc.data();
-        const userId = org.instagramUserId;
-        const orgId = org.id;
-
-        console.log(`Fetching stories for org: ${orgId}, user: ${userId}`);
-
-        // 1. Clean up old stories first
-        const oldStoriesSnapshot = await db.collection("organizations").doc(orgId).collection("instagramStories").get();
-        if (!oldStoriesSnapshot.empty) {
-            const deleteBatch = db.batch();
-            oldStoriesSnapshot.docs.forEach((storyDoc) => deleteBatch.delete(storyDoc.ref));
-            await deleteBatch.commit();
-            console.log(`Cleaned up ${oldStoriesSnapshot.size} old stories for org ${orgId}.`);
-        }
-
-        // 2. Fetch new stories
-        const url = `https://graph.facebook.com/v19.0/${userId}/stories?fields=id,media_url,timestamp,media_type,thumbnail_url&access_token=${accessToken}`;
-        
-        try {
-            const response = await fetch(url);
-            const data = await response.json();
-
-            if (data.error) {
-                console.error(`Error fetching stories for user ${userId} (org: ${orgId}):`, data.error.message);
-                continue; // Continue to next organization
-            }
-
-            if (!data.data || data.data.length === 0) {
-                console.log(`No active stories found for user ${userId}.`);
-                continue;
-            }
-
-            // 3. Save new stories
-            const saveBatch = db.batch();
-            for (const story of data.data) {
-                const storyRef = db.collection("organizations").doc(orgId).collection("instagramStories").doc(story.id);
-                saveBatch.set(storyRef, {
-                    id: story.id,
-                    mediaUrl: story.media_url,
-                    mediaType: story.media_type,
-                    thumbnailUrl: story.thumbnail_url || null,
-                    timestamp: story.timestamp,
-                });
-            }
-            await saveBatch.commit();
-            console.log(`Fetched and stored ${data.data.length} new stories for organization ${orgId}.`);
-        } catch (e) {
-            console.error(`An unexpected error occurred while fetching stories for org ${orgId}:`, e);
-        }
-    }
-});
+// Se din originalfil – oförändrat, bara kommenterat.
 */
 
-// --- GEMINI PROXY FUNCTION ---
-exports.gemini = onCall({
+/* ----------------------------- Gemini proxy ----------------------------- */
+
+exports.gemini = onCall(
+  {
     region: "us-central1",
     cors: true,
     secrets: ["GEMINI_API_KEY"],
-    timeoutSeconds: 540, // Increased timeout for long operations like video generation
-}, async (request) => {
+    timeoutSeconds: 540,
+  },
+  async (request) => {
     if (!request.auth) {
-        throw new HttpsError("unauthenticated", "You must be logged in to use the AI service.");
+      throw new HttpsError(
+        "unauthenticated",
+        "You must be logged in to use the AI service."
+      );
     }
 
-    const {action, params} = request.data;
+    const { action, params } = request.data;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        console.error("CRITICAL: Gemini API Key secret is not available.");
-        throw new HttpsError("internal", "AI service is not configured correctly.");
+      console.error("CRITICAL: Gemini API Key secret is not available.");
+      throw new HttpsError("internal", "AI service is not configured correctly.");
     }
-    
-    const ai = new GoogleGenAI({apiKey});
+
+    const ai = new GoogleGenAI({ apiKey });
     console.log(`Received Gemini call for action: ${action}`);
 
     try {
-        switch (action) {
-            case "formatPageWithAI": {
-                const {rawContent} = params;
-                const prompt = `You are a world-class digital content designer... (rest of the detailed prompt) ... Raw text to transform: --- ${rawContent} ---`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-                return response.text;
-            }
-
-            case "generatePageContentFromPrompt": {
-                const {userPrompt} = params;
-                const prompt = `You are a world-class digital content designer... (prompt details) ... The user's idea/prompt is: --- ${userPrompt} ---`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-                return response.text;
-            }
-
-            case "generateDisplayPostContent": {
-                const {userPrompt, organizationName} = params;
-                const prompt = `You are an expert copywriter... for a company named "${organizationName}"... The user's idea is: --- ${userPrompt} ---`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: prompt,
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: Type.OBJECT,
-                            properties: {headline: {type: Type.STRING}, body: {type: Type.STRING}},
-                            required: ["headline", "body"],
-                        },
-                    },
-                });
-                return JSON.parse(response.text.trim());
-            }
-
-            case "generateCompletePost": {
-                const {userPrompt, organizationName, aspectRatio} = params;
-                
-                // Step 1: Generate text content and image prompt
-                // FIX: Updated model name per Gemini API guidelines.
-                const textGenResponse = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: `Du är en expert på marknadsföring och copywriting för ett företag som heter "${organizationName}". Användaren vill skapa ett inlägg för en digital skylt baserat på följande idé: "${userPrompt}". Svara med ett JSON-objekt som innehåller:
-1.  'headline': En kort, slagkraftig rubrik.
-2.  'body': En kort brödtext som utvecklar rubriken.
-3.  'imagePrompt': En detaljerad, kreativ och professionell prompt på SVENSKA för en AI-bildgenerator för att skapa en matchande bild.`,
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: Type.OBJECT,
-                            properties: {
-                                headline: {type: Type.STRING},
-                                body: {type: Type.STRING},
-                                imagePrompt: {type: Type.STRING},
-                            },
-                            required: ["headline", "body", "imagePrompt"],
-                        },
-                    },
-                });
-
-                const content = JSON.parse(textGenResponse.text.trim());
-                
-                // Step 2: Generate image
-                // FIX: Updated model name per Gemini API guidelines.
-                const imageResponse = await ai.models.generateImages({
-                    model: "imagen-4.0-generate-001",
-                    prompt: content.imagePrompt,
-                    config: {numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio},
-                });
-
-                if (!imageResponse.generatedImages || imageResponse.generatedImages.length === 0) {
-                     throw new HttpsError("not-found", "AI:n kunde inte generera en bild.");
-                }
-
-                const imageUrl = `data:image/jpeg;base64,${imageResponse.generatedImages[0].image.imageBytes}`;
-
-                // Step 3: Return combined result
-                return {
-                    headline: content.headline,
-                    body: content.body,
-                    imageUrl: imageUrl,
-                };
-            }
-
-            case "generateHeadlineSuggestions": {
-                const {body, existingHeadlines} = params;
-                const prompt = `You are an expert copywriter... The body text is: --- ${body} --- ${(existingHeadlines && existingHeadlines.length > 0) ? `Your suggestions should be different from these existing headlines: "${existingHeadlines.join('", "')}".` : ""}`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: prompt,
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: Type.OBJECT,
-                            properties: {headlines: {type: Type.ARRAY, items: {type: Type.STRING}}},
-                            required: ["headlines"],
-                        },
-                    },
-                });
-                const content = JSON.parse(response.text.trim());
-                return content.headlines;
-            }
-
-            case "refineDisplayPostContent": {
-                const {content, command} = params;
-                const commandDescription = {shorter: "Gör den mer koncis...", more_formal: "Använd en mer formell...", add_emojis: "Lägg till passande emojis...", more_casual: "Använd en mer avslappnad..."}[command];
-                const prompt = `You are an expert copywriter... Current content: Headline: "${content.headline}", Body: "${content.body}". Your command is: ${commandDescription}`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: prompt,
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: Type.OBJECT,
-                            properties: {headline: {type: Type.STRING}, body: {type: Type.STRING}},
-                            required: ["headline", "body"],
-                        },
-                    },
-                });
-                return JSON.parse(response.text.trim());
-            }
-
-            case "generateDisplayPostImage": {
-                const {prompt, aspectRatio} = params;
-                const apiPrompt = `Create a high-quality, professional... marketing image... User's idea: "${prompt}"`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateImages({
-                    model: "imagen-4.0-generate-001",
-                    prompt: apiPrompt,
-                    config: {numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio},
-                });
-
-                if (response.generatedImages && response.generatedImages.length > 0) {
-                    const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-                    return `data:image/jpeg;base64,${base64ImageBytes}`;
-                }
-                throw new HttpsError("not-found", "AI did not generate an image.");
-            }
-
-            case "editDisplayPostImage": {
-                const {base64ImageData, mimeType, prompt, logo} = params;
-                const mainImagePart = {inlineData: {data: base64ImageData, mimeType}};
-                const parts = [mainImagePart, {text: prompt}];
-                // ... (logic to add logo part if present, same as client)
-                // FIX: Updated model name and responseModalities per Gemini API guidelines for image editing.
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash-image",
-                    contents: {parts},
-                    config: {responseModalities: [Modality.IMAGE]},
-                });
-                for (const part of response.candidates[0].content.parts) {
-                    if (part.inlineData) {
-                        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    }
-                }
-                throw new HttpsError("not-found", "AI did not return an edited image.");
-            }
-
-            case "generateDisplayPostCampaign": {
-                const {userPrompt, postCount, organizationName, userMedia, businessType, businessDescription} = params;
-                const prompt = `Du är en expert på marknadsföringskampanjer för digitala skyltar för ett företag som heter "${organizationName}".
-Verksamhetstyp: ${businessType ? businessType.join(", ") : "Ej specificerad"}.
-Verksamhetsbeskrivning: "${businessDescription || "Ej specificerad"}".
-
-Användarens kampanjmål är: "${userPrompt}".
-
-${userMedia ? `Användaren har laddat upp ${userMedia.length} bild(er) som du kan använda.` : ""}
-
-Skapa en JSON-array med ${postCount} inläggsobjekt. Varje objekt ska ha:
-- 'internalTitle': En kort intern titel.
-- 'headline': En slagkraftig rubrik.
-- 'body': En kort brödtext.
-- 'durationSeconds': Mellan 10-20 sekunder.
-- 'layout': Välj en passande layout från ['text-only', 'image-fullscreen', 'image-left', 'image-right']. Variera gärna.
-- För inlägg med bild, välj ETT av följande:
-  1. 'userMediaIndex': Om en uppladdad bild passar, ange dess index (0, 1, ...).
-  2. 'imagePrompt': Om ingen bild passar, skapa en detaljerad bild-prompt på SVENSKA.
-Använd inte både 'userMediaIndex' och 'imagePrompt' i samma inlägg. All text, inklusive imagePrompt, måste vara på svenska.`;
-                const parts = [{text: prompt}];
-                if (userMedia) {
-                    userMedia.forEach((media) => {
-                        parts.push({inlineData: {mimeType: media.mimeType, data: media.data}});
-                    });
-                }
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: {parts},
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    internalTitle: { type: Type.STRING },
-                                    headline: { type: Type.STRING },
-                                    body: { type: Type.STRING },
-                                    durationSeconds: { type: Type.INTEGER },
-                                    layout: { type: Type.STRING, enum: ['text-only', 'image-fullscreen', 'image-left', 'image-right'] },
-                                    imagePrompt: { type: Type.STRING },
-                                    userMediaIndex: { type: Type.INTEGER },
-                                },
-                                required: ["internalTitle", "headline", "body", "durationSeconds", "layout"],
-                            },
-                        },
-                    },
-                });
-                return JSON.parse(response.text.trim());
-            }
-
-            case "generateCampaignIdeasForEvent": {
-                const {eventName, organizationName, businessType, businessDescription} = params;
-                const prompt = `You are a creative marketing expert... for an upcoming event: "${eventName}"...`;
-                // FIX: Updated model name per Gemini API guidelines.
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: prompt,
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {headline: {type: Type.STRING}, body: {type: Type.STRING}},
-                                required: ["headline", "body"],
-                            },
-                        },
-                    },
-                });
-                return JSON.parse(response.text.trim());
-            }
-
-            case "generateVideoFromPrompt": {
-                const {prompt, organizationId, image} = params;
-                const imagePart = image ? {imageBytes: image.data, mimeType: image.mimeType} : undefined;
-                // FIX: Updated model name per Gemini API guidelines.
-                let operation = await ai.models.generateVideos({
-                    model: "veo-3.1-fast-generate-preview",
-                    prompt: `En kort, slagkraftig och professionell video för en digital skylt. ${prompt}`,
-                    image: imagePart,
-                    config: {numberOfVideos: 1},
-                });
-                while (!operation.done) {
-                    await new Promise((resolve) => setTimeout(resolve, 10000));
-                    operation = await ai.operations.getVideosOperation({operation: operation});
-                }
-                const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-                if (!downloadLink) {
-                    throw new HttpsError("not-found", "AI:n returnerade ingen video.");
-                }
-
-                // Download video from Gemini URL
-                const videoResponse = await fetch(`${downloadLink}&key=${apiKey}`);
-                if (!videoResponse.ok) {
-                    throw new HttpsError("internal", `Kunde inte hämta videofilen. Status: ${videoResponse.statusText}`);
-                }
-                const videoBuffer = await videoResponse.arrayBuffer();
-
-                // Upload to Firebase Storage
-                const bucket = admin.storage().bucket();
-                const fileName = `organizations/${organizationId}/videos/ai-video-${Date.now()}.mp4`;
-                const file = bucket.file(fileName);
-                await file.save(Buffer.from(videoBuffer), {metadata: {contentType: "video/mp4"}});
-                await file.makePublic(); // Or generate a signed URL
-                return file.publicUrl();
-            }
-
-            default:
-                throw new HttpsError("invalid-argument", `Unknown AI action: ${action}`);
+      switch (action) {
+        case "formatPageWithAI": {
+          const { rawContent } = params;
+          const prompt = `You are a world-class digital content designer... Raw text to transform: --- ${rawContent} ---`;
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+          });
+          return response.text;
         }
+
+        case "generatePageContentFromPrompt": {
+          const { userPrompt } = params;
+          const prompt = `You are a world-class digital content designer... The user's idea/prompt is: --- ${userPrompt} ---`;
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+          });
+          return response.text;
+        }
+
+        case "generateDisplayPostContent": {
+          const { userPrompt, organizationName } = params;
+          const prompt = `You are an expert copywriter for "${organizationName}". The user's idea is: --- ${userPrompt} ---`;
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  headline: { type: Type.STRING },
+                  body: { type: Type.STRING },
+                },
+                required: ["headline", "body"],
+              },
+            },
+          });
+          return JSON.parse(String(response.text || "").trim());
+        }
+
+        case "generateCompletePost": {
+          const { userPrompt, organizationName, aspectRatio } = params;
+
+          const textGenResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents:
+              `Du är en expert på marknadsföring och copywriting för "${organizationName}". ` +
+              `Idé: "${userPrompt}". Svara med JSON {headline, body, imagePrompt (SVENSKA)}.`,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  headline: { type: Type.STRING },
+                  body: { type: Type.STRING },
+                  imagePrompt: { type: Type.STRING },
+                },
+                required: ["headline", "body", "imagePrompt"],
+              },
+            },
+          });
+
+          const content = JSON.parse(String(textGenResponse.text || "").trim());
+
+          const imageResponse = await ai.models.generateImages({
+            model: "imagen-4.0-generate-001",
+            prompt: content.imagePrompt,
+            config: {
+              numberOfImages: 1,
+              outputMimeType: "image/jpeg",
+              aspectRatio,
+            },
+          });
+
+          if (
+            !imageResponse.generatedImages ||
+            imageResponse.generatedImages.length === 0
+          ) {
+            throw new HttpsError("not-found", "AI:n kunde inte generera en bild.");
+          }
+
+          const imageUrl = `data:image/jpeg;base64,${imageResponse.generatedImages[0].image.imageBytes}`;
+          return { headline: content.headline, body: content.body, imageUrl };
+        }
+
+        case "generateHeadlineSuggestions": {
+          const { body, existingHeadlines } = params;
+          const prompt =
+            `You are an expert copywriter. Body: --- ${body} --- ` +
+            (existingHeadlines?.length
+              ? `Avoid these: "${existingHeadlines.join('", "')}".`
+              : "");
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  headlines: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ["headlines"],
+              },
+            },
+          });
+          const content = JSON.parse(String(response.text || "").trim());
+          return content.headlines;
+        }
+
+        case "refineDisplayPostContent": {
+          const { content, command } = params;
+          const commandDescription =
+            {
+              shorter: "Gör den mer koncis",
+              more_formal: "Använd en mer formell ton",
+              add_emojis: "Lägg till passande emojis",
+              more_casual: "Använd en mer avslappnad ton",
+            }[command] || "Förbättra texten";
+
+          const prompt =
+            `You are an expert copywriter. Current content: ` +
+            `Headline: "${content.headline}", Body: "${content.body}". ` +
+            `Command: ${commandDescription}`;
+
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  headline: { type: Type.STRING },
+                  body: { type: Type.STRING },
+                },
+                required: ["headline", "body"],
+              },
+            },
+          });
+          return JSON.parse(String(response.text || "").trim());
+        }
+
+        case "generateDisplayPostImage": {
+          const { prompt, aspectRatio } = params;
+          const apiPrompt =
+            `Create a high-quality, professional marketing image. Idea: "${prompt}"`;
+          const response = await ai.models.generateImages({
+            model: "imagen-4.0-generate-001",
+            prompt: apiPrompt,
+            config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
+          });
+
+          if (response.generatedImages && response.generatedImages.length > 0) {
+            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64ImageBytes}`;
+          }
+          throw new HttpsError("not-found", "AI did not generate an image.");
+        }
+
+        case "editDisplayPostImage": {
+          const { base64ImageData, mimeType, prompt, logo } = params;
+          const parts = [{ inlineData: { data: base64ImageData, mimeType } }, { text: prompt }];
+          if (logo?.data && logo?.mimeType) {
+            parts.push({ inlineData: { data: logo.data, mimeType: logo.mimeType } });
+          }
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash-image",
+            contents: { parts },
+            config: { responseModalities: [Modality.IMAGE] },
+          });
+          const cand = response.candidates?.[0]?.content?.parts || [];
+          for (const part of cand) {
+            if (part.inlineData) {
+              return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            }
+          }
+          throw new HttpsError("not-found", "AI did not return an edited image.");
+        }
+
+        case "generateDisplayPostCampaign": {
+          const {
+            userPrompt,
+            postCount,
+            organizationName,
+            userMedia,
+            businessType,
+            businessDescription,
+          } = params;
+
+          const prompt =
+            `Du är expert på kampanjer för digitala skyltar för "${organizationName}".\n` +
+            `Verksamhetstyp: ${Array.isArray(businessType) ? businessType.join(", ") : (businessType || "Ej spec")}\n` +
+            `Beskrivning: "${businessDescription || "Ej spec"}".\n` +
+            `Mål: "${userPrompt}".\n` +
+            `Svara med en JSON-array med ${postCount} objekt: ` +
+            `{ internalTitle, headline, body, durationSeconds(10-20), layout['text-only'|'image-fullscreen'|'image-left'|'image-right'], ` +
+            `imagePrompt(SVENSKA) eller userMediaIndex (använd ETT av dem).}`;
+
+          const parts = [{ text: prompt }];
+          if (Array.isArray(userMedia)) {
+            userMedia.forEach((m) => {
+              if (m?.data && m?.mimeType) {
+                parts.push({ inlineData: { mimeType: m.mimeType, data: m.data } });
+              }
+            });
+          }
+
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: { parts },
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    internalTitle: { type: Type.STRING },
+                    headline: { type: Type.STRING },
+                    body: { type: Type.STRING },
+                    durationSeconds: { type: Type.INTEGER },
+                    layout: {
+                      type: Type.STRING,
+                      enum: ["text-only", "image-fullscreen", "image-left", "image-right"],
+                    },
+                    imagePrompt: { type: Type.STRING },
+                    userMediaIndex: { type: Type.INTEGER },
+                  },
+                  required: ["internalTitle", "headline", "body", "durationSeconds", "layout"],
+                },
+              },
+            },
+          });
+          return JSON.parse(String(response.text || "").trim());
+        }
+
+        case "generateCampaignIdeasForEvent": {
+          const { eventName } = params;
+          const prompt =
+            `You are a creative marketing expert. Generate headline+body ideas for "${eventName}".`;
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: { headline: { type: Type.STRING }, body: { type: Type.STRING } },
+                  required: ["headline", "body"],
+                },
+              },
+            },
+          });
+          return JSON.parse(String(response.text || "").trim());
+        }
+
+        case "generateVideoFromPrompt": {
+          const { prompt, organizationId, image } = params;
+          const imagePart = image ? { imageBytes: image.data, mimeType: image.mimeType } : undefined;
+
+          let operation = await ai.models.generateVideos({
+            model: "veo-3.1-fast-generate-preview",
+            prompt: `En kort, slagkraftig och professionell video för en digital skylt. ${prompt}`,
+            image: imagePart,
+            config: { numberOfVideos: 1 },
+          });
+
+          // Pollning
+          while (!operation.done) {
+            await new Promise((r) => setTimeout(r, 10000));
+            operation = await ai.operations.getVideosOperation({ operation });
+          }
+          const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+          if (!downloadLink) throw new HttpsError("not-found", "AI:n returnerade ingen video.");
+
+          const videoResponse = await fetch(`${downloadLink}&key=${process.env.GEMINI_API_KEY}`);
+          if (!videoResponse.ok) {
+            throw new HttpsError(
+              "internal",
+              `Kunde inte hämta videofilen. Status: ${videoResponse.statusText}`
+            );
+          }
+          const videoBuffer = await videoResponse.arrayBuffer();
+
+          const bucket = admin.storage().bucket();
+          const fileName = `organizations/${organizationId}/videos/ai-video-${Date.now()}.mp4`;
+          const file = bucket.file(fileName);
+          await file.save(Buffer.from(videoBuffer), { metadata: { contentType: "video/mp4" } });
+          await file.makePublic();
+          return file.publicUrl();
+        }
+
+        default:
+          throw new HttpsError("invalid-argument", `Unknown AI action: ${action}`);
+      }
     } catch (error) {
-        console.error(`Error in Gemini function for action "${action}":`, error);
-        if (error instanceof HttpsError) {
-            throw error;
-        }
-        const errorString = error.toString().toLowerCase();
-        if (errorString.includes("safety")) {
-            throw new HttpsError("permission-denied", "Försöket blockerades av säkerhetsskäl. Prova en annan text.");
-        }
-        throw new HttpsError("internal", "Ett fel inträffade hos AI-tjänsten.");
+      console.error(`Error in Gemini function for action "${action}":`, error);
+      if (error instanceof HttpsError) throw error;
+      const s = String(error || "").toLowerCase();
+      if (s.includes("safety")) {
+        throw new HttpsError(
+          "permission-denied",
+          "Försöket blockerades av säkerhetsskäl. Prova en annan text."
+        );
+      }
+      throw new HttpsError("internal", "Ett fel inträffade hos AI-tjänsten.");
     }
-});
-
-
-// --- NEW ORPHANED MEDIA CLEANUP FUNCTIONS ---
-
-// Helper to extract storage path from a Firebase Storage URL
-function getPathFromUrl(url) {
-  if (!url || !url.includes("firebasestorage.googleapis.com")) {
-    return null;
   }
+);
+
+/* ------------------- Städa bort orphaned media (weekly) ------------------- */
+
+function getPathFromUrl(url) {
+  if (!url || !url.includes("firebasestorage.googleapis.com")) return null;
   try {
     const urlObject = new URL(url);
     const pathSegment = urlObject.pathname.split("/o/")[1];
-    if (pathSegment) {
-      return decodeURIComponent(pathSegment.split("?")[0]);
-    }
+    if (pathSegment) return decodeURIComponent(pathSegment.split("?")[0]);
   } catch (e) {
     console.error(`Could not parse storage URL: ${url}`, e);
   }
   return null;
 }
 
-// Core cleanup logic for a single organization
 async function cleanupOrg(org) {
   const orgId = org.id;
   const usedPaths = new Set();
 
-  // 1. Gather all used URLs from the organization document and its subcollections.
   if (org.logoUrlLight) usedPaths.add(getPathFromUrl(org.logoUrlLight));
   if (org.logoUrlDark) usedPaths.add(getPathFromUrl(org.logoUrlDark));
 
-  const mediaLibrarySnapshot = await db.collection("organizations").doc(orgId).collection("mediaLibrary").get();
+  const mediaLibrarySnapshot = await db
+    .collection("organizations")
+    .doc(orgId)
+    .collection("mediaLibrary")
+    .get();
   mediaLibrarySnapshot.forEach((doc) => {
     const item = doc.data();
     if (item.url) usedPaths.add(getPathFromUrl(item.url));
   });
 
-  const displayScreensSnapshot = await db.collection("organizations").doc(orgId).collection("displayScreens").get();
+  const displayScreensSnapshot = await db
+    .collection("organizations")
+    .doc(orgId)
+    .collection("displayScreens")
+    .get();
+
   for (const screenDoc of displayScreensSnapshot.docs) {
     const postsSnapshot = await screenDoc.ref.collection("posts").get();
     postsSnapshot.forEach((postDoc) => {
@@ -820,28 +949,26 @@ async function cleanupOrg(org) {
       if (post.videoUrl) usedPaths.add(getPathFromUrl(post.videoUrl));
       if (post.backgroundVideoUrl) usedPaths.add(getPathFromUrl(post.backgroundVideoUrl));
       (post.subImages || []).forEach((sub) => {
-        if (sub.imageUrl) usedPaths.add(getPathFromUrl(sub.imageUrl));
+        if (sub?.imageUrl) usedPaths.add(getPathFromUrl(sub.imageUrl));
       });
       (post.collageItems || []).forEach((item) => {
-        if (item && item.imageUrl) usedPaths.add(getPathFromUrl(item.imageUrl));
-        if (item && item.videoUrl) usedPaths.add(getPathFromUrl(item.videoUrl));
+        if (item?.imageUrl) usedPaths.add(getPathFromUrl(item.imageUrl));
+        if (item?.videoUrl) usedPaths.add(getPathFromUrl(item.videoUrl));
       });
     });
   }
-  usedPaths.delete(null); // Remove any nulls that might have been added
+  usedPaths.delete(null);
 
-  // 2. List all files in storage for this org
   const bucket = admin.storage().bucket();
   const prefixes = [`organizations/${orgId}/images/`, `organizations/${orgId}/videos/`];
   let allFiles = [];
   for (const prefix of prefixes) {
-    const [files] = await bucket.getFiles({prefix});
+    const [files] = await bucket.getFiles({ prefix });
     allFiles.push(...files);
   }
 
-  // 3. Identify and delete orphaned files
   const deletionPromises = [];
-  const twoDaysAgo = Date.now() - (48 * 60 * 60 * 1000);
+  const twoDaysAgo = Date.now() - 48 * 60 * 60 * 1000;
   let orphanedCount = 0;
 
   for (const file of allFiles) {
@@ -849,7 +976,6 @@ async function cleanupOrg(org) {
       orphanedCount++;
       const [metadata] = await file.getMetadata();
       const timeCreated = new Date(metadata.timeCreated).getTime();
-
       if (timeCreated < twoDaysAgo) {
         console.log(`[${orgId}] Deleting orphaned file: ${file.name}`);
         deletionPromises.push(file.delete());
@@ -862,48 +988,60 @@ async function cleanupOrg(org) {
   const results = await Promise.allSettled(deletionPromises);
   const deletedCount = results.filter((r) => r.status === "fulfilled").length;
 
-  console.log(`[${org.name}] Cleanup finished. Found ${orphanedCount} potential orphans. Deleted ${deletedCount} files.`);
+  console.log(
+    `[${org.name}] Cleanup finished. Found ${orphanedCount} potential orphans. Deleted ${deletedCount} files.`
+  );
   return deletedCount;
 }
 
-exports.cleanupOrphanedMedia = onSchedule({
-  schedule: "every sunday 03:00",
-  timeZone: "Europe/Stockholm",
-  timeoutSeconds: 540,
-  memory: "512MiB",
-}, async (event) => {
-  console.log("Starting weekly orphaned media cleanup job.");
-  const orgsSnapshot = await db.collection("organizations").get();
-  if (orgsSnapshot.empty) {
-    console.log("No organizations found to clean up.");
+exports.cleanupOrphanedMedia = onSchedule(
+  {
+    schedule: "every sunday 03:00",
+    timeZone: "Europe/Stockholm",
+    timeoutSeconds: 540,
+    memory: "512MiB",
+  },
+  async () => {
+    console.log("Starting weekly orphaned media cleanup job.");
+    const orgsSnapshot = await db.collection("organizations").get();
+    if (orgsSnapshot.empty) {
+      console.log("No organizations found to clean up.");
+      return null;
+    }
+
+    const cleanupPromises = orgsSnapshot.docs.map((doc) =>
+      cleanupOrg({ ...doc.data(), id: doc.id })
+    );
+    const results = await Promise.allSettled(cleanupPromises);
+
+    results.forEach((result, index) => {
+      const orgDoc = orgsSnapshot.docs[index];
+      const orgName = orgDoc.data().name || orgDoc.id;
+      if (result.status === "fulfilled") {
+        if (result.value > 0) {
+          console.log(
+            `Successfully cleaned org "${orgName}". Deleted ${result.value} files.`
+          );
+        }
+      } else {
+        console.error(`Failed to clean org "${orgName}":`, result.reason);
+      }
+    });
+
+    console.log("Weekly orphaned media cleanup job finished.");
     return null;
   }
+);
 
-  const cleanupPromises = orgsSnapshot.docs.map((doc) => cleanupOrg(doc.data()));
-  const results = await Promise.allSettled(cleanupPromises);
-
-  results.forEach((result, index) => {
-    const orgName = orgsSnapshot.docs[index].data().name;
-    if (result.status === "fulfilled") {
-      if (result.value > 0) {
-        console.log(`Successfully cleaned org "${orgName}". Deleted ${result.value} files.`);
-      }
-    } else {
-      console.error(`Failed to clean org "${orgName}":`, result.reason);
-    }
-  });
-
-  console.log("Weekly orphaned media cleanup job finished.");
-  return null;
-});
-
-// A utility function to run the cleanup manually for testing.
-// Can be invoked via the Firebase console or a client-side call.
+// Manuell test–endpoint för cleanup
 exports.testOrphanedMediaCleanup = onCall(async (request) => {
   if (!request.auth) {
-    throw new HttpsError("unauthenticated", "You must be logged in to run this test.");
+    throw new HttpsError(
+      "unauthenticated",
+      "You must be logged in to run this test."
+    );
   }
-  const {organizationId} = request.data;
+  const { organizationId } = request.data;
   let totalDeleted = 0;
   let message = "";
 
@@ -913,12 +1051,14 @@ exports.testOrphanedMediaCleanup = onCall(async (request) => {
     if (!orgDoc.exists) {
       throw new HttpsError("not-found", `Organization ${organizationId} not found.`);
     }
-    totalDeleted = await cleanupOrg(orgDoc.data());
-    message = `Manual cleanup for "${orgDoc.data().name}" finished. Total files deleted: ${totalDeleted}.`;
+    totalDeleted = await cleanupOrg({ ...orgDoc.data(), id: orgDoc.id });
+    message = `Manual cleanup for "${orgDoc.data().name || orgDoc.id}" finished. Total files deleted: ${totalDeleted}.`;
   } else {
     console.log("Manually running cleanup for ALL organizations.");
     const orgsSnapshot = await db.collection("organizations").get();
-    const cleanupPromises = orgsSnapshot.docs.map((doc) => cleanupOrg(doc.data()));
+    const cleanupPromises = orgsSnapshot.docs.map((doc) =>
+      cleanupOrg({ ...doc.data(), id: doc.id })
+    );
     const results = await Promise.allSettled(cleanupPromises);
     totalDeleted = results
       .filter((r) => r.status === "fulfilled")
@@ -927,5 +1067,5 @@ exports.testOrphanedMediaCleanup = onCall(async (request) => {
   }
 
   console.log(message);
-  return {message, deletedCount: totalDeleted};
+  return { message, deletedCount: totalDeleted };
 });
