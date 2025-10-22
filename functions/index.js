@@ -95,6 +95,7 @@ exports.runAiAutomations = onSchedule({
 }, async (event) => {
     const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
     const now = new Date(event.time); // This is UTC from Firebase
+    const lastCheckTime = new Date(now.getTime() - (15 * 60 * 1000)); // 15 minutes ago
     console.log(`[Scheduler] Running AI Automations check at ${now.toISOString()}`);
 
     const orgsSnapshot = await db.collection("organizations").get();
@@ -108,121 +109,108 @@ exports.runAiAutomations = onSchedule({
         if (!org.aiAutomations || org.aiAutomations.length === 0) {
             return; // Skip org if no automations are configured
         }
-        console.log(`[Org: ${org.id}] Found ${org.aiAutomations.length} automation(s).`);
 
         let hasChanges = false;
         const newSuggestions = [];
-        // Deep copy to safely mutate
         const updatedAutomations = JSON.parse(JSON.stringify(org.aiAutomations));
 
         for (const automation of updatedAutomations) {
-            console.log(`[Automation: ${automation.id}] Checking automation: "${automation.name}"`);
-
             if (!automation.isEnabled) {
-                console.log(`[Automation: ${automation.id}] Skipping: Automation is disabled.`);
+                console.log(`[Automation: ${automation.id}] Skipping: Disabled.`);
                 continue;
             }
 
             const timezone = automation.timezone || "Europe/Stockholm";
-            const lastRun = automation.lastRunAt ? new Date(automation.lastRunAt) : null;
-            let shouldRun = false;
-            let reason = "";
+            const [scheduledHour, scheduledMinute] = automation.timeOfDay.split(":").map(Number);
+            const scheduledTimeInMinutes = scheduledHour * 60 + scheduledMinute;
 
-            try {
-                // Get "today" in the target timezone at midnight UTC
-                const parts = new Intl.DateTimeFormat("en-CA", {
-                    timeZone: timezone,
-                    year: "numeric", month: "2-digit", day: "2-digit",
-                }).formatToParts(now).reduce((acc, part) => {
-                    acc[part.type] = part.value; return acc;
-                }, {});
-                const todayInTimezoneAtMidnight = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00.000Z`);
+            const nowInTz = new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone, hour12: false,
+                year: "numeric", month: "numeric", day: "numeric",
+                hour: "numeric", minute: "numeric", weekday: "numeric", // 1=Mon, 7=Sun
+            }).formatToParts(now).reduce((acc, p) => ({...acc, [p.type]: p.value}), {});
 
-                // Get scheduled time for today in UTC
-                const [hour, minute] = automation.timeOfDay.split(":").map(Number);
-                const scheduledTimeToday = new Date(todayInTimezoneAtMidnight.getTime());
-                scheduledTimeToday.setUTCHours(hour, minute);
+            const lastCheckInTz = new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone, hour12: false,
+                year: "numeric", month: "numeric", day: "numeric",
+                hour: "numeric", minute: "numeric",
+            }).formatToParts(lastCheckTime).reduce((acc, p) => ({...acc, [p.type]: p.value}), {});
+            
+            const nowTimeInMinutes = parseInt(nowInTz.hour) * 60 + parseInt(nowInTz.minute);
+            const lastCheckTimeInMinutes = parseInt(lastCheckInTz.hour) * 60 + parseInt(lastCheckInTz.minute);
+            
+            const dayRolledOver = nowInTz.day !== lastCheckInTz.day || nowInTz.month !== lastCheckInTz.month || nowInTz.year !== lastCheckInTz.year;
 
-                if (now.getTime() >= scheduledTimeToday.getTime()) {
-                    if (!lastRun || lastRun.getTime() < scheduledTimeToday.getTime()) {
-                        const localDayOfWeek = todayInTimezoneAtMidnight.getUTCDay(); // 0=Sun
-                        const firebaseDayOfWeek = localDayOfWeek === 0 ? 7 : localDayOfWeek; // 1=Mon
-                        const localDayOfMonth = todayInTimezoneAtMidnight.getUTCDate();
-
-                        switch (automation.frequency) {
-                            case "daily":
-                                shouldRun = true;
-                                reason = "Daily schedule matched.";
-                                break;
-                            case "weekly":
-                                if (firebaseDayOfWeek === automation.dayOfWeek) {
-                                    shouldRun = true;
-                                    reason = "Weekly schedule matched.";
-                                } else {
-                                    reason = `Weekly schedule day (${automation.dayOfWeek}) did not match today's day (${firebaseDayOfWeek}).`;
-                                }
-                                break;
-                            case "monthly":
-                                if (localDayOfMonth === automation.dayOfMonth) {
-                                    shouldRun = true;
-                                    reason = "Monthly schedule matched.";
-                                } else {
-                                    reason = `Monthly schedule day (${automation.dayOfMonth}) did not match today's day (${localDayOfMonth}).`;
-                                }
-                                break;
-                        }
-                    } else {
-                        reason = `Skipping: Already ran since today's scheduled time of ${automation.timeOfDay} ${timezone}. Last run: ${lastRun.toISOString()}`;
-                    }
-                } else {
-                    reason = `Skipping: Today's scheduled time of ${automation.timeOfDay} ${timezone} has not passed yet.`;
-                }
-            } catch (e) {
-                console.error(`[Automation: ${automation.id}] Error processing time:`, e);
-                reason = "Error during time processing.";
-                shouldRun = false;
+            let timeMatched = false;
+            if (dayRolledOver) {
+                timeMatched = scheduledTimeInMinutes > lastCheckTimeInMinutes || scheduledTimeInMinutes <= nowTimeInMinutes;
+            } else {
+                timeMatched = scheduledTimeInMinutes > lastCheckTimeInMinutes && scheduledTimeInMinutes <= nowTimeInMinutes;
             }
 
-            console.log(`[Automation: ${automation.id}] Should run: ${shouldRun}. ${reason}`);
+            if (!timeMatched) {
+                console.log(`[Automation: ${automation.id}] Skipping: Time (${automation.timeOfDay} ${timezone}) not in the 15-min window.`);
+                continue;
+            }
 
-            if (shouldRun) {
-                console.log(`[Automation: ${automation.id}] TRIGGERED. Generating content for "${automation.name}" in org "${org.name}"`);
-                try {
-                    const history = (org.suggestedPosts || [])
-                        .filter((p) => p.automationId === automation.id)
-                        .slice(-10);
+            const lastRun = automation.lastRunAt ? new Date(automation.lastRunAt) : null;
+            if (lastRun && !isNaN(lastRun.getTime())) {
+                const lastRunInTz = new Intl.DateTimeFormat("en-US", {
+                    timeZone: timezone,
+                    year: "numeric", month: "numeric", day: "numeric",
+                }).formatToParts(lastRun).reduce((acc, p) => ({...acc, [p.type]: p.value}), {});
+                
+                if (lastRunInTz.year === nowInTz.year && lastRunInTz.month === nowInTz.month && lastRunInTz.day === nowInTz.day) {
+                    console.log(`[Automation: ${automation.id}] Skipping: Already ran today in the target timezone.`);
+                    continue;
+                }
+            }
 
-                    const approved = history.filter((p) => p.status === "approved" || p.status === "edited-and-published");
-                    const rejected = history.filter((p) => p.status === "rejected");
+            let frequencyMatched = false;
+            const dayOfWeekInTz = parseInt(nowInTz.weekday); // Intl: 1=Mon, 7=Sun
+            const dayOfMonthInTz = parseInt(nowInTz.day);
 
-                    let feedbackContext = "No feedback history available yet.";
-                    if (approved.length > 0 || rejected.length > 0) {
-                        feedbackContext = `Here is a summary of the user's feedback on previous suggestions for this automation:\n`;
-                        if (approved.length > 0) {
-                            feedbackContext += `- The user LIKED and APPROVED these (emulate this style):\n${approved.map((p) => `  - Headline: "${p.postData.headline}"`).join("\n")}\n`;
-                        }
-                        if (rejected.length > 0) {
-                            feedbackContext += `- The user DISLIKED and REJECTED these (avoid this style):\n${rejected.map((p) => `  - Headline: "${p.postData.headline}"`).join("\n")}\n`;
-                        }
+            switch (automation.frequency) {
+                case "daily":
+                    frequencyMatched = true;
+                    break;
+                case "weekly":
+                    if (dayOfWeekInTz === automation.dayOfWeek) frequencyMatched = true;
+                    break;
+                case "monthly":
+                    if (dayOfMonthInTz === automation.dayOfMonth) frequencyMatched = true;
+                    break;
+            }
+            
+            if (!frequencyMatched) {
+                console.log(`[Automation: ${automation.id}] Skipping: Frequency did not match.`);
+                continue;
+            }
 
-                        const insightPrompt = `Based on this user feedback history, write one short, friendly sentence in Swedish explaining what you've learned.
-Start with "Jag har märkt att..." or a similar phrase. Be insightful but brief.
-For example: "Jag har märkt att du föredrar korta, energiska rubriker." or "Jag ser att du avvisat förslag med mörka bilder, så jag kommer fokusera på ljusare motiv framöver."
+            console.log(`[Automation: ${automation.id}] TRIGGERED. Generating content for "${automation.name}" in org "${org.name}"`);
+            
+            try {
+                const history = (org.suggestedPosts || [])
+                    .filter((p) => p.automationId === automation.id)
+                    .slice(-10);
 
-Feedback History:
-${feedbackContext}`;
-                        try {
-                            const insightResponse = await ai.models.generateContent({model: "gemini-2.5-flash", contents: insightPrompt});
-                            automation.latestInsight = insightResponse.text.trim();
-                            console.log(`[Automation: ${automation.id}] Generated insight: ${automation.latestInsight}`);
-                        } catch (insightErr) {
-                            console.error(`[Automation: ${automation.id}] Could not generate insight:`, insightErr);
-                        }
+                const approved = history.filter((p) => p.status === "approved" || p.status === "edited-and-published");
+                const rejected = history.filter((p) => p.status === "rejected");
+
+                let feedbackContext = "No feedback history available yet.";
+                if (approved.length > 0 || rejected.length > 0) {
+                    feedbackContext = `Here is a summary of the user's feedback on previous suggestions for this automation:\n`;
+                    if (approved.length > 0) {
+                        feedbackContext += `- The user LIKED and APPROVED these (emulate this style):\n${approved.map((p) => `  - Headline: "${p.postData.headline}"`).join("\n")}\n`;
                     }
+                    if (rejected.length > 0) {
+                        feedbackContext += `- The user DISLIKED and REJECTED these (avoid this style):\n${rejected.map((p) => `  - Headline: "${p.postData.headline}"`).join("\n")}\n`;
+                    }
+                }
+                
+                const styleProfileContext = (org.styleProfile?.summary) ? `User's style profile:\n---\n${org.styleProfile.summary}\n---\n` : "";
 
-                    const styleProfileContext = (org.styleProfile?.summary) ? `User's style profile:\n---\n${org.styleProfile.summary}\n---\n` : "";
-
-                    const prompt = `You are an expert creative director for "${org.name}", a company in the ${org.businessType?.join(", ")} sector.
+                const prompt = `You are an expert creative director for "${org.name}", a company in the ${org.businessType?.join(", ")} sector.
 Your task is to generate a new, compelling post suggestion for a digital sign.
 
 **Creative Brief**
@@ -244,82 +232,69 @@ The JSON object must contain:
 7. 'imageOverlayEnabled': A boolean, typically true for 'image-fullscreen'.
 8. 'textAlign': 'left', 'center', or 'right'.
 9. 'textAnimation': 'none', 'typewriter', 'fade-up-word', 'blur-in'.`;
-                    
-                    console.log(`[Automation: ${automation.id}] Generating text and image prompt...`);
-                    const textGenResponse = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-                    
-                    let jsonString = textGenResponse.text.trim();
-                    if (jsonString.startsWith("```json")) jsonString = jsonString.substring(7);
-                    if (jsonString.endsWith("```")) jsonString = jsonString.substring(0, jsonString.length - 3);
+                
+                const textGenResponse = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
+                
+                let jsonString = textGenResponse.text.trim();
+                if (jsonString.startsWith("```json")) jsonString = jsonString.substring(7);
+                if (jsonString.endsWith("```")) jsonString = jsonString.substring(0, jsonString.length - 3);
+                const postDetails = JSON.parse(jsonString);
 
-                    const postDetails = JSON.parse(jsonString);
-                    
-                    console.log(`[Automation: ${automation.id}] AI Result:`, postDetails);
-
-                    console.log(`[Automation: ${automation.id}] Generated text content. Image prompt: "${postDetails.imagePrompt}"`);
-
-                    for (const screenId of automation.targetScreenIds) {
-                        const screen = org.displayScreens?.find((s) => s.id === screenId);
-                        if (!screen) {
-                            console.log(`[Automation: ${automation.id}] Skipping screen ${screenId}: Not found.`);
-                            continue;
-                        }
-
-                        let imageUrl;
-                        if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
-                             console.log(`[Automation: ${automation.id}] Generating image for screen ${screenId}...`);
-                             const imageResponse = await ai.models.generateImages({
-                                model: "imagen-4.0-generate-001",
-                                prompt: postDetails.imagePrompt,
-                                config: {numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: screen.aspectRatio},
-                            });
-                            if (imageResponse.generatedImages && imageResponse.generatedImages.length > 0) {
-                                imageUrl = `data:image/jpeg;base64,${imageResponse.generatedImages[0].image.imageBytes}`;
-                                console.log(`[Automation: ${automation.id}] Image generated successfully.`);
-                            } else {
-                                console.warn(`[Automation: ${automation.id}] Image generation failed to return an image.`);
-                            }
-                        }
-
-                        const newPostData = {
-                            id: `sugg-post-${Date.now()}`,
-                            internalTitle: `AI: ${postDetails.headline}`,
-                            headline: postDetails.headline,
-                            body: postDetails.body,
-                            layout: postDetails.layout,
-                            durationSeconds: 15,
-                            backgroundColor: postDetails.backgroundColor,
-                            textColor: postDetails.textColor,
-                            imageOverlayEnabled: postDetails.imageOverlayEnabled,
-                            textAlign: postDetails.textAlign,
-                            textAnimation: postDetails.textAnimation,
-                            imageUrl: imageUrl,
-                            isAiGeneratedImage: !!imageUrl,
-                        };
-
-                        newSuggestions.push({
-                            id: `sugg-${Date.now()}-${Math.random()}`,
-                            automationId: automation.id,
-                            targetScreenId: screenId,
-                            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                            status: "pending",
-                            postData: newPostData,
-                        });
-                        console.log(`[Automation: ${automation.id}] Created suggestion for screen ${screenId}.`);
+                for (const screenId of automation.targetScreenIds) {
+                    const screen = org.displayScreens?.find((s) => s.id === screenId);
+                    if (!screen) {
+                        console.log(`[Automation: ${automation.id}] Skipping screen ${screenId}: Not found.`);
+                        continue;
                     }
 
-                    automation.lastRunAt = now.toISOString();
-                    hasChanges = true;
-                    console.log(`[Automation: ${automation.id}] Processed successfully. Will update lastRunAt.`);
+                    let imageUrl;
+                    if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
+                         const imageResponse = await ai.models.generateImages({
+                            model: "imagen-4.0-generate-001",
+                            prompt: postDetails.imagePrompt,
+                            config: {numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: screen.aspectRatio},
+                        });
+                        if (imageResponse.generatedImages && imageResponse.generatedImages.length > 0) {
+                            imageUrl = `data:image/jpeg;base64,${imageResponse.generatedImages[0].image.imageBytes}`;
+                        }
+                    }
 
-                } catch (err) {
-                    console.error(`[Automation: ${automation.id}] CRITICAL ERROR during generation for org ${org.id}:`, err);
+                    const newPostData = {
+                        id: `sugg-post-${Date.now()}`,
+                        internalTitle: `AI: ${postDetails.headline}`,
+                        headline: postDetails.headline,
+                        body: postDetails.body,
+                        layout: postDetails.layout,
+                        durationSeconds: 15,
+                        backgroundColor: postDetails.backgroundColor,
+                        textColor: postDetails.textColor,
+                        imageOverlayEnabled: postDetails.imageOverlayEnabled,
+                        textAlign: postDetails.textAlign,
+                        textAnimation: postDetails.textAnimation,
+                        imageUrl: imageUrl,
+                        isAiGeneratedImage: !!imageUrl,
+                    };
+
+                    newSuggestions.push({
+                        id: `sugg-${Date.now()}-${Math.random()}`,
+                        automationId: automation.id,
+                        targetScreenId: screenId,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        status: "pending",
+                        postData: newPostData,
+                    });
                 }
+
+                automation.lastRunAt = now.toISOString();
+                hasChanges = true;
+
+            } catch (err) {
+                console.error(`[Automation: ${automation.id}] CRITICAL ERROR during generation for org ${org.id}:`, err);
             }
         }
 
         if (hasChanges) {
-            console.log(`[Org: ${org.id}] Attempting to update Firestore with ${newSuggestions.length} new suggestion(s).`);
+            console.log(`[Org: ${org.id}] Updating Firestore with ${newSuggestions.length} new suggestion(s).`);
             try {
                 const updatePayload = {
                     aiAutomations: updatedAutomations,
