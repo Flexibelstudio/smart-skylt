@@ -37,7 +37,11 @@ export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = (
 
   const handleSave = () => {
     if (current.name.trim() && current.topic.trim() && current.targetScreenIds.length > 0) {
-      onSave({ id: automation?.id || `auto-${Date.now()}`, ...current });
+      onSave({
+        id: automation?.id || `auto-${Date.now()}`,
+        ...current,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
     }
   };
 

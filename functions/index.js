@@ -94,16 +94,7 @@ exports.runAiAutomations = onSchedule({
     memory: "512MiB",
 }, async (event) => {
     const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
-    const now = new Date(event.time);
-    // Use UTC for all date comparisons to avoid timezone issues
-    const nowUTC = {
-        year: now.getUTCFullYear(),
-        month: now.getUTCMonth(),
-        date: now.getUTCDate(),
-        day: now.getUTCDay(), // 0=Sun, 1=Mon...
-        hours: now.getUTCHours(),
-        minutes: now.getUTCMinutes(),
-    };
+    const now = new Date(event.time); // This is UTC from Firebase
     console.log(`[Scheduler] Running AI Automations check at ${now.toISOString()}`);
 
     const orgsSnapshot = await db.collection("organizations").get();
@@ -121,6 +112,7 @@ exports.runAiAutomations = onSchedule({
 
         let hasChanges = false;
         const newSuggestions = [];
+        // Deep copy to safely mutate
         const updatedAutomations = JSON.parse(JSON.stringify(org.aiAutomations));
 
         for (const automation of updatedAutomations) {
@@ -131,62 +123,66 @@ exports.runAiAutomations = onSchedule({
                 continue;
             }
 
+            const timezone = automation.timezone || "Europe/Stockholm";
             const lastRun = automation.lastRunAt ? new Date(automation.lastRunAt) : null;
-            const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
-
-            if (lastRun && lastRun > fifteenMinutesAgo) {
-                 console.log(`[Automation: ${automation.id}] Skipping: Already ran recently at ${lastRun.toISOString()}`);
-                 continue;
-            }
-
-            const [hour, minute] = automation.timeOfDay.split(":").map(Number);
-            
             let shouldRun = false;
             let reason = "";
 
-            const isTimeMatch = nowUTC.hours === hour && nowUTC.minutes >= minute && nowUTC.minutes < minute + 15;
+            try {
+                // Get "today" in the target timezone at midnight UTC
+                const parts = new Intl.DateTimeFormat("en-CA", {
+                    timeZone: timezone,
+                    year: "numeric", month: "2-digit", day: "2-digit",
+                }).formatToParts(now).reduce((acc, part) => {
+                    acc[part.type] = part.value; return acc;
+                }, {});
+                const todayInTimezoneAtMidnight = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00.000Z`);
 
-            switch (automation.frequency) {
-                case "daily":
-                    if (isTimeMatch) {
-                        if (!lastRun || new Date(lastRun.getUTCFullYear(), lastRun.getUTCMonth(), lastRun.getUTCDate()).getTime() < new Date(nowUTC.year, nowUTC.month, nowUTC.date).getTime()) {
-                            shouldRun = true;
-                            reason = "Daily schedule matched.";
-                        } else {
-                            reason = "Skipping: Already ran today.";
+                // Get scheduled time for today in UTC
+                const [hour, minute] = automation.timeOfDay.split(":").map(Number);
+                const scheduledTimeToday = new Date(todayInTimezoneAtMidnight.getTime());
+                scheduledTimeToday.setUTCHours(hour, minute);
+
+                if (now.getTime() >= scheduledTimeToday.getTime()) {
+                    if (!lastRun || lastRun.getTime() < scheduledTimeToday.getTime()) {
+                        const localDayOfWeek = todayInTimezoneAtMidnight.getUTCDay(); // 0=Sun
+                        const firebaseDayOfWeek = localDayOfWeek === 0 ? 7 : localDayOfWeek; // 1=Mon
+                        const localDayOfMonth = todayInTimezoneAtMidnight.getUTCDate();
+
+                        switch (automation.frequency) {
+                            case "daily":
+                                shouldRun = true;
+                                reason = "Daily schedule matched.";
+                                break;
+                            case "weekly":
+                                if (firebaseDayOfWeek === automation.dayOfWeek) {
+                                    shouldRun = true;
+                                    reason = "Weekly schedule matched.";
+                                } else {
+                                    reason = `Weekly schedule day (${automation.dayOfWeek}) did not match today's day (${firebaseDayOfWeek}).`;
+                                }
+                                break;
+                            case "monthly":
+                                if (localDayOfMonth === automation.dayOfMonth) {
+                                    shouldRun = true;
+                                    reason = "Monthly schedule matched.";
+                                } else {
+                                    reason = `Monthly schedule day (${automation.dayOfMonth}) did not match today's day (${localDayOfMonth}).`;
+                                }
+                                break;
                         }
                     } else {
-                        reason = `Skipping: Current time UTC ${nowUTC.hours}:${nowUTC.minutes} does not match schedule ${hour}:${minute}.`;
+                        reason = `Skipping: Already ran since today's scheduled time of ${automation.timeOfDay} ${timezone}. Last run: ${lastRun.toISOString()}`;
                     }
-                    break;
-                case "weekly":
-                    const jsDayOfWeek = nowUTC.day;
-                    const firebaseDayOfWeek = jsDayOfWeek === 0 ? 7 : jsDayOfWeek; // Convert Sun=0 to Sun=7
-                    if (firebaseDayOfWeek === automation.dayOfWeek && isTimeMatch) {
-                        if (!lastRun || (now.getTime() - lastRun.getTime()) > (6 * 24 * 60 * 60 * 1000)) {
-                             shouldRun = true;
-                             reason = "Weekly schedule matched.";
-                        } else {
-                            reason = "Skipping: Already ran this week.";
-                        }
-                    } else {
-                         reason = `Skipping: Current day/time does not match schedule.`;
-                    }
-                    break;
-                case "monthly":
-                    if (nowUTC.date === automation.dayOfMonth && isTimeMatch) {
-                         if (!lastRun || lastRun.getUTCMonth() !== nowUTC.month || lastRun.getUTCFullYear() !== nowUTC.year) {
-                             shouldRun = true;
-                             reason = "Monthly schedule matched.";
-                         } else {
-                            reason = "Skipping: Already ran this month.";
-                         }
-                    } else {
-                        reason = `Skipping: Current date/time does not match schedule.`;
-                    }
-                    break;
+                } else {
+                    reason = `Skipping: Today's scheduled time of ${automation.timeOfDay} ${timezone} has not passed yet.`;
+                }
+            } catch (e) {
+                console.error(`[Automation: ${automation.id}] Error processing time:`, e);
+                reason = "Error during time processing.";
+                shouldRun = false;
             }
-            
+
             console.log(`[Automation: ${automation.id}] Should run: ${shouldRun}. ${reason}`);
 
             if (shouldRun) {

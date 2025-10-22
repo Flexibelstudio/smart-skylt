@@ -285,6 +285,7 @@ export interface AiAutomation {
   dayOfWeek?: 1 | 2 | 3 | 4 | 5 | 6 | 7; // 1=Monday, 7=Sunday (for weekly)
   dayOfMonth?: number; // 1-31 (for monthly)
   timeOfDay: string; // "HH:MM", e.g., "09:00"
+  timezone?: string; // e.g. "Europe/Stockholm"
   targetScreenIds: string[]; // Which screens to generate posts for
   requiresApproval: boolean; // For Step 1, this is always true. For Step 2, it can be false.
   lastRunAt?: string; // ISO string to track when it last generated suggestions
