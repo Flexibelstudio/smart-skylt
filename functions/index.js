@@ -321,100 +321,93 @@ exports.runAiAutomations = onSchedule(
             continue;
           }
 
-          const tz = normalizeTimeZone(automation.timezone);
-          const parsed = parseTimeHM(automation.timeOfDay);
-          if (!parsed) {
-            console.log(`[Automation: ${automation.id}] Skipping: Invalid timeOfDay "${automation.timeOfDay}".`);
-            continue;
-          }
+          // --- DEBUG helper ---
+function dbg(aid, msg, extra) {
+  try { console.log(`[Automation:${aid}] ${msg}`, extra ? JSON.stringify(extra) : ""); }
+  catch { console.log(`[Automation:${aid}] ${msg}`); }
+}
 
-          const nowParts = getPartsInTz(now, tz);
-          const lastCheckParts = getPartsInTz(lastCheck, tz);
-          if (!nowParts || !lastCheckParts) {
-            console.log(`[Automation: ${automation.id}] Skipping: Could not get TZ parts (tz="${tz}").`);
-            continue;
-          }
+const tz = normalizeTimeZone(automation.timezone);
+const parsed = parseTimeHM(automation.timeOfDay);
+if (!parsed) {
+  dbg(automation.id, `Skipping: Invalid timeOfDay`, { timeOfDay: automation.timeOfDay });
+  continue;
+}
 
-          const nowMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
-          const lastCheckMinutes = Number(lastCheckParts.hour) * 60 + Number(lastCheckParts.minute);
-          const scheduledMinutes = parsed.hour * 60 + parsed.minute;
+const nowParts = getPartsInTz(now, tz);
+const lastCheckParts = getPartsInTz(lastCheck, tz);
+if (!nowParts || !lastCheckParts) {
+  dbg(automation.id, `Skipping: could not resolve TZ parts`, { tz });
+  continue;
+}
 
-          const dayRolledOver =
-            nowParts.day !== lastCheckParts.day ||
-            nowParts.month !== lastCheckParts.month ||
-            nowParts.year !== lastCheckParts.year;
+const nowMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
+const lastCheckMinutes = Number(lastCheckParts.hour) * 60 + Number(lastCheckParts.minute);
+const scheduledMinutes = parsed.hour * 60 + parsed.minute;
 
-          let timeMatched = false;
-          if (dayRolledOver) {
-            timeMatched = scheduledMinutes > lastCheckMinutes || scheduledMinutes <= nowMinutes;
-          } else {
-            timeMatched = scheduledMinutes > lastCheckMinutes && scheduledMinutes <= nowMinutes;
-          }
-          if (!timeMatched) {
-            console.log(
-              `[Automation: ${automation.id}] Skipping: Time (${automation.timeOfDay} ${tz}) not in the 15-min window.`
-            );
-            continue;
-          }
+const dayRolledOver =
+  nowParts.day !== lastCheckParts.day ||
+  nowParts.month !== lastCheckParts.month ||
+  nowParts.year !== lastCheckParts.year;
 
-          // Frekvenskontroll
-          const weekday = getWeekdayInTzNumber(now, tz); // 1..7
-          const dayOfMonth = Number(nowParts.day);
-          if (!weekday) {
-            console.log(`[Automation: ${automation.id}] Skipping: Could not resolve weekday in "${tz}".`);
-            continue;
-          }
+// --- Tidfönster + DEBUG
+let timeMatched = false;
+if (dayRolledOver) {
+  timeMatched = scheduledMinutes > lastCheckMinutes || scheduledMinutes <= nowMinutes;
+} else {
+  timeMatched = scheduledMinutes > lastCheckMinutes && scheduledMinutes <= nowMinutes;
+}
+dbg(automation.id, `Window check`, {
+  tz, timeOfDay: automation.timeOfDay, dayRolledOver,
+  windowFrom: `${lastCheckParts.hour}:${lastCheckParts.minute}`,
+  windowTo: `${nowParts.hour}:${nowParts.minute}`,
+  scheduledMinutes, lastCheckMinutes, nowMinutes, timeMatched
+});
+if (!timeMatched) {
+  dbg(automation.id, `Skipping: outside window`);
+  continue;
+}
 
-          let frequencyMatched = false;
-          switch (automation.frequency) {
-            case "daily":
-              frequencyMatched = true;
-              break;
-            case "weekly":
-              frequencyMatched = weekday === Number(automation.dayOfWeek);
-              break;
-            case "monthly":
-              frequencyMatched = dayOfMonth === Number(automation.dayOfMonth);
-              break;
-            default:
-              console.log(`[Automation: ${automation.id}] Skipping: Unknown frequency "${automation.frequency}".`);
-          }
-          if (!frequencyMatched) {
-            console.log(`[Automation: ${automation.id}] Skipping: Frequency did not match.`);
-            continue;
-          }
+// --- Frekvens + DEBUG
+const weekday = getWeekdayInTzNumber(now, tz); // 1..7
+const dayOfMonth = Number(nowParts.day);
+let frequencyMatched = false;
+switch (automation.frequency) {
+  case "daily": frequencyMatched = true; break;
+  case "weekly": frequencyMatched = weekday === Number(automation.dayOfWeek); break;
+  case "monthly": frequencyMatched = dayOfMonth === Number(automation.dayOfMonth); break;
+  default: dbg(automation.id, `Unknown frequency`, { frequency: automation.frequency });
+}
+dbg(automation.id, `Frequency check`, {
+  frequency: automation.frequency, weekday, dayOfWeek: automation.dayOfWeek,
+  dayOfMonth, targetDayOfMonth: automation.dayOfMonth, frequencyMatched
+});
+if (!frequencyMatched) {
+  dbg(automation.id, `Skipping: frequency did not match`);
+  continue;
+}
 
-          // lastRunAt – tolerera ogiltiga värden
-          const lastRun = toDateSafe(automation.lastRunAt);
-          if (automation.lastRunAt && !lastRun) {
-            console.log(
-              `[Automation: ${automation.id}] Found invalid lastRunAt, treating as never run:`,
-              automation.lastRunAt
-            );
-          }
-          if (lastRun) {
-            // <<< DEBUG: visa vad backend faktiskt läser och jämför i rätt tidszon
-            console.log(`[Automation: ${automation.id}] DEBUG lastRunAt raw:`, automation.lastRunAt);
-            const lastRunParts = getPartsInTz(lastRun, tz);
-            console.log(
-              `[Automation: ${automation.id}] DEBUG compare`,
-              JSON.stringify({ tz, nowParts, lastRunParts })
-            );
-            // >>> END DEBUG
+// --- lastRunAt + DEBUG (blockerar bara om den redan kört idag)
+const lastRun = toDateSafe(automation.lastRunAt);
+dbg(automation.id, `LastRunAt`, { raw: automation.lastRunAt || null, parsed: lastRun ? lastRun.toISOString() : null });
+if (lastRun) {
+  const lastRunParts = getPartsInTz(lastRun, tz);
+  if (!lastRunParts) {
+    dbg(automation.id, `Skipping: could not resolve lastRunAt parts`);
+    continue;
+  }
+  const alreadyToday =
+    String(lastRunParts.year) === String(nowParts.year) &&
+    String(lastRunParts.month) === String(nowParts.month) &&
+    String(lastRunParts.day) === String(nowParts.day);
+  if (alreadyToday) {
+    dbg(automation.id, `Skipping: already ran today in tz`, { tz });
+    continue;
+  }
+}
 
-            if (!lastRunParts) {
-              console.log(`[Automation: ${automation.id}] Skipping: Could not get TZ parts for lastRunAt.`);
-              continue;
-            }
-            const alreadyToday =
-              String(lastRunParts.year) === String(nowParts.year) &&
-              String(lastRunParts.month) === String(nowParts.month) &&
-              String(lastRunParts.day) === String(nowParts.day);
-            if (alreadyToday) {
-              console.log(`[Automation: ${automation.id}] Skipping: Already ran today in ${tz}.`);
-              continue;
-            }
-          }
+// Extra debug om hur många skärmar som finns i minnet
+dbg(automation.id, `DisplayScreens loaded`, { count: displayScreens.length });
 
           console.log(
             `[Automation: ${automation.id}] TRIGGERED. Generating content for "${automation.name}" in org "${orgName}"`
@@ -497,6 +490,18 @@ The JSON object must contain:
             const targetScreenIds = Array.isArray(automation.targetScreenIds)
               ? automation.targetScreenIds
               : [];
+
+// Fallback: om inga mål valts → alla aktiva skärmar
+if (!targetScreenIds.length) {
+  targetScreenIds = displayScreens
+    .filter(s => s && (s.active !== false))
+    .map(s => String(s.id));
+}
+
+// Unika + debug
+targetScreenIds = Array.from(new Set(targetScreenIds));
+console.log(`[Automation:${automation.id}] Targets`, targetScreenIds);
+console.log(`[Automation:${automation.id}] DisplayScreens in memory: ${displayScreens.length}`);
 
             for (const screenId of targetScreenIds) {
               const screen = displayScreens.find((s) => s.id === screenId);
