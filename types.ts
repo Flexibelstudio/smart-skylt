@@ -1,3 +1,6 @@
+// FIX: Removed self-referential import statement.
+// import { Organization, UserData, CustomPage, SystemSettings, ScreenPairingCode, CustomEvent, PostTemplate, PhysicalScreen, MediaItem, AiAutomation, SuggestedPost } from '../types';
+
 // FIX: Added 'staff' and removed 'coach' to support all user roles in the application.
 // FIX: Add 'staff' to support all user roles in the application.
 export type UserRole = 'organizationadmin' | 'systemowner' | 'member' | 'staff';

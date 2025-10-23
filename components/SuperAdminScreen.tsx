@@ -1192,12 +1192,15 @@ const MediaPreviewModal: React.FC<{
     );
 };
 
-const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, onUpdateOrganization }) => {
+const AiAutomationContent: React.FC<SuperAdminScreenProps> = (props) => {
+    const { organization, onUpdateOrganization, onEditDisplayScreen } = props;
+    const { displayScreens } = useLocation();
     const { showToast } = useToast();
     const [automationToEdit, setAutomationToEdit] = useState<AiAutomation | null>(null);
     const [isEditorOpen, setIsEditorOpen] = useState(false);
 
     const automations = organization.aiAutomations || [];
+    const suggestedPosts = (organization.suggestedPosts || []).filter(p => p.status === 'pending');
 
     const handleSave = async (automation: AiAutomation) => {
         const isNew = !automations.some(a => a.id === automation.id);
@@ -1227,8 +1230,35 @@ const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, on
         }
     };
     
+    const handleRejectSuggestion = async (suggestionId: string) => {
+        const updatedSuggestions = (organization.suggestedPosts || []).map(s => 
+            s.id === suggestionId ? { ...s, status: 'rejected' as const } : s
+        );
+        try {
+            await onUpdateOrganization(organization.id, { suggestedPosts: updatedSuggestions });
+            showToast({ message: "Förslaget har förkastats.", type: 'info' });
+        } catch(e) {
+            showToast({ message: "Kunde inte förkasta förslaget.", type: 'error' });
+        }
+    };
+
+    const handleApproveSuggestion = (suggestion: SuggestedPost) => {
+        const targetScreen = displayScreens.find(s => s.id === suggestion.targetScreenId);
+        if (!targetScreen) {
+            showToast({ message: "Målkanalen för detta förslag kunde inte hittas.", type: 'error' });
+            return;
+        }
+        
+        const postToEdit: DisplayPost = {
+            ...suggestion.postData,
+            suggestionOriginId: suggestion.id, // Pass the suggestion ID to the editor
+        };
+        
+        onEditDisplayScreen(targetScreen, postToEdit);
+    };
+    
     return (
-        <>
+        <div className="space-y-8">
             <Card
                 title="AI Automationer"
                 subTitle="Skapa automatiska inlägg baserat på ett schema och ett kreativt ämne."
@@ -1241,12 +1271,12 @@ const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, on
                 {automations.length > 0 ? (
                     <div className="space-y-3">
                         {automations.map(auto => (
-                            <div key={auto.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4 border border-slate-200 dark:border-slate-700">
+                            <div key={auto.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border border-slate-200 dark:border-slate-700">
                                 <div className="flex-grow">
                                     <p className="font-semibold text-lg text-slate-900 dark:text-white">{auto.name}</p>
                                     <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2" title={auto.topic}>{auto.topic}</p>
                                 </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
                                     <CompactToggleSwitch
                                         checked={auto.isEnabled}
                                         onChange={async (checked) => {
@@ -1269,6 +1299,48 @@ const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, on
                 )}
             </Card>
             
+            <Card
+                title="Förslag som väntar på godkännande"
+                subTitle="Här samlas inlägg som AI:n har skapat. Granska och godkänn dem för publicering."
+            >
+                {suggestedPosts.length > 0 ? (
+                    <div className="space-y-3">
+                        {suggestedPosts.map(suggestion => {
+                            const automation = automations.find(a => a.id === suggestion.automationId);
+                            const screen = displayScreens.find(s => s.id === suggestion.targetScreenId);
+                            return (
+                                <div key={suggestion.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-4 border border-slate-200 dark:border-slate-700">
+                                    <div className="flex-shrink-0 w-24 h-14 bg-black rounded-md overflow-hidden">
+                                        <DisplayPostRenderer 
+                                            post={suggestion.postData} 
+                                            mode="preview" 
+                                            organization={organization} 
+                                            aspectRatio={screen?.aspectRatio || '16:9'}
+                                        />
+                                    </div>
+                                    <div className="flex-grow">
+                                        <p className="font-semibold text-slate-900 dark:text-white">{suggestion.postData.headline}</p>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                                            Från "{automation?.name || 'Okänd'}" för kanalen "{screen?.name || 'Okänd'}"
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2 flex-shrink-0">
+                                        <DestructiveButton onClick={() => handleRejectSuggestion(suggestion.id)}>Förkasta</DestructiveButton>
+                                        <PrimaryButton onClick={() => handleApproveSuggestion(suggestion)}>Granska & Godkänn</PrimaryButton>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <EmptyState
+                        icon={<SparklesIcon className="h-12 w-12 text-slate-400" />}
+                        title="Inga förslag just nu"
+                        message="När en automation körs kommer nya inläggsförslag att visas här för din granskning."
+                    />
+                )}
+            </Card>
+            
             <AiAutomationEditorModal
                 isOpen={isEditorOpen}
                 onClose={() => setIsEditorOpen(false)}
@@ -1276,7 +1348,7 @@ const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, on
                 automation={automationToEdit}
                 organization={organization}
             />
-        </>
+        </div>
     );
 };
 
