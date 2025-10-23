@@ -4,10 +4,13 @@ import {
   getOrganizations,
   listenToOrganizationChanges,
   getOrganizationById,
-  listenToDisplayScreenEmbedded,
   listenToPairingCodeByDeviceId,
   listenToScreenSession, // NYTT
   isOffline,
+  listenToDisplayScreens,
+  addDisplayScreen as fbAddDisplayScreen,
+  updateDisplayScreen as fbUpdateDisplayScreen,
+  deleteDisplayScreen as fbDeleteDisplayScreen,
 } from '../services/firebaseService';
 import { useAuth } from './AuthContext';
 import type firebase from 'firebase/compat/app';
@@ -19,10 +22,16 @@ interface LocationContextType {
   allOrganizations: Organization[];
   selectOrganization: (organization: Organization | null) => void;
   setAllOrganizations: React.Dispatch<React.SetStateAction<Organization[]>>;
+  
+  displayScreens: DisplayScreen[];
   selectedDisplayScreen: DisplayScreen | null;
   selectDisplayScreen: (screen: DisplayScreen) => void;
-  // FIX: Added selectDisplayScreenById to the context type.
   selectDisplayScreenById: (screenId: string) => void;
+  
+  addDisplayScreen: (newScreen: Omit<DisplayScreen, 'id'>) => Promise<void>;
+  updateDisplayScreen: (screenId: string, data: Partial<DisplayScreen>) => Promise<void>;
+  deleteDisplayScreen: (screenId: string) => Promise<void>;
+
   updateSelectedOrganization: (data: Partial<Organization>) => void;
   clearSelection: () => void;
   locationLoading: boolean;
@@ -54,6 +63,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { currentUser, isScreenMode, authLoading } = useAuth();
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([]);
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
+  const [displayScreens, setDisplayScreens] = useState<DisplayScreen[]>([]);
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
   const [locationLoading, setLocationLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
@@ -125,21 +135,11 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             }
             setSelectedOrganization(orgToUse);
 
-            if (currentUser) {
-              const key = getLocalStorageDisplayScreenKey(currentUser.uid);
-              const stored = localStorage.getItem(key);
-              if (stored) {
-                const parsed = JSON.parse(stored);
-                const matching = orgToUse.displayScreens?.find(s => s.id === parsed.id) || null;
-                if (matching) setSelectedDisplayScreen(matching);
-                else localStorage.removeItem(key);
-              }
-            }
+            // Screen selection is now handled by listeners
           }
         } else {
           // For admin/owner, DON'T pre-select an organization here.
           // The AuthenticatedApp component will handle this logic based on userData.
-          // We just ensure the display screen is cleared.
           setSelectedDisplayScreen(null);
         }
       } catch (e) {
@@ -151,11 +151,14 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     load();
   }, [authLoading, currentUser, isScreenMode, hardReset]);
 
-  // Org realtid
+  // Org & Screen realtid listeners
   useEffect(() => {
-    if (authLoading || !selectedOrganization?.id) return;
+    if (authLoading || !selectedOrganization?.id) {
+        setDisplayScreens([]);
+        return;
+    };
 
-    const unsub = listenToOrganizationChanges(selectedOrganization.id, (snapshot: firebase.firestore.DocumentSnapshot) => {
+    const unsubOrg = listenToOrganizationChanges(selectedOrganization.id, (snapshot: firebase.firestore.DocumentSnapshot) => {
       const updated = snapshot.data() as Organization;
       const hasPendingWrites = snapshot.metadata.hasPendingWrites;
 
@@ -174,26 +177,22 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setAllOrganizations(prev => prev.map(o => (o.id === updated.id ? updated : o)));
     });
 
-    return () => unsub();
-  }, [selectedOrganization?.id, authLoading]);
-
-  // Skärm realtid
-  useEffect(() => {
-    if (!selectedOrganization?.id || !selectedDisplayScreen?.id) return;
-    const orgId = selectedOrganization.id;
-    const screenId = selectedDisplayScreen.id;
-
-    const unsub = listenToDisplayScreenEmbedded(orgId, screenId, (screen) => {
-      if (!screen) {
-        console.log(`[Screen] Skärmen ${screenId} togs bort. Reset.`);
-        clearSelection();
-        return;
-      }
-      setSelectedDisplayScreen(screen);
+    const unsubScreens = listenToDisplayScreens(selectedOrganization.id, (screens) => {
+        setDisplayScreens(screens);
+        // If a screen is selected, make sure its data is kept up-to-date
+        setSelectedDisplayScreen(prevScreen => {
+            if (!prevScreen) return null;
+            const updatedScreen = screens.find(s => s.id === prevScreen.id);
+            return updatedScreen || null; // If deleted, it will become null
+        });
     });
 
-    return () => unsub();
-  }, [selectedOrganization?.id, selectedDisplayScreen?.id, clearSelection]);
+    return () => {
+        unsubOrg();
+        unsubScreens();
+    };
+  }, [selectedOrganization?.id, authLoading]);
+
 
   // PairingCode via deviceId (fallback/bekräftelse)
   useEffect(() => {
@@ -203,14 +202,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const unsub = listenToPairingCodeByDeviceId(deviceId, (codeDoc) => {
       if (!codeDoc || codeDoc.status !== 'paired' || !codeDoc.organizationId || !codeDoc.assignedDisplayScreenId) {
-        // This might fire briefly during unpairing. The org listener should catch it first.
-        // If it fires later, it's a good safety net.
-        // We rely on the screenSession listener as the primary kill switch now.
         return;
       }
-      // Pekar pairing till annan skärm/org?
-      const { organizationId, assignedDisplayScreenId } = codeDoc;
       
+      const { organizationId, assignedDisplayScreenId } = codeDoc;
       const currentSelectedOrg = selectedOrganizationRef.current;
       const currentAllOrgs = allOrganizationsRef.current;
 
@@ -221,18 +216,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             setSelectedOrganization(target);
           }
       }
-      
-      const orgForScreenLookup = allOrganizationsRef.current.find(o => o.id === organizationId);
-
-      if (orgForScreenLookup) {
-        const scr = orgForScreenLookup.displayScreens?.find(s => s.id === assignedDisplayScreenId);
-        if (scr) {
-          setSelectedDisplayScreen(scr);
-          if (isScreenMode && currentUser) {
-            localStorage.setItem(getLocalStorageDisplayScreenKey(currentUser.uid), JSON.stringify(scr));
-          }
-        }
-      }
+      // The screen will be selected by the main displayScreens listener once the org is set.
     });
 
     return () => unsub();
@@ -309,16 +293,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [currentUser, isScreenMode]);
 
-  // FIX: Implemented selectDisplayScreenById to handle screen selection in embed mode.
   const selectDisplayScreenById = useCallback((screenId: string) => {
-    const org = selectedOrganizationRef.current;
-    if (org) {
-        const screen = org.displayScreens?.find(s => s.id === screenId);
-        if (screen) {
-            setSelectedDisplayScreen(screen);
-        }
+    const screen = displayScreens.find(s => s.id === screenId);
+    if (screen) {
+        setSelectedDisplayScreen(screen);
     }
-  }, []);
+  }, [displayScreens]);
   
   const updateSelectedOrganization = useCallback((data: Partial<Organization>) => {
     if (selectedOrganization) {
@@ -328,14 +308,63 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [selectedOrganization]);
 
+  // --- NEW CRUD functions for Display Screens with optimistic updates ---
+    const addDisplayScreen = useCallback(async (newScreenData: Omit<DisplayScreen, 'id'>) => {
+        if (!selectedOrganization) throw new Error("No organization selected.");
+        const newScreen = { ...newScreenData, id: `screen-${Date.now()}` };
+        
+        setDisplayScreens(prev => [...prev, newScreen]); // Optimistic update
+        try {
+            await fbAddDisplayScreen(selectedOrganization.id, newScreen);
+        } catch (e) {
+            console.error("Failed to add screen, rolling back", e);
+            setDisplayScreens(prev => prev.filter(s => s.id !== newScreen.id));
+            throw e;
+        }
+    }, [selectedOrganization]);
+
+    const updateDisplayScreen = useCallback(async (screenId: string, data: Partial<DisplayScreen>) => {
+        if (!selectedOrganization) throw new Error("No organization selected.");
+        
+        const originalScreens = displayScreens;
+        const updatedScreens = originalScreens.map(s => s.id === screenId ? { ...s, ...data } : s);
+        setDisplayScreens(updatedScreens); // Optimistic update
+        
+        try {
+            await fbUpdateDisplayScreen(selectedOrganization.id, screenId, data);
+        } catch(e) {
+            console.error("Failed to update screen, rolling back", e);
+            setDisplayScreens(originalScreens);
+            throw e;
+        }
+    }, [selectedOrganization, displayScreens]);
+
+    const deleteDisplayScreen = useCallback(async (screenId: string) => {
+        if (!selectedOrganization) throw new Error("No organization selected.");
+        
+        const originalScreens = displayScreens;
+        setDisplayScreens(prev => prev.filter(s => s.id !== screenId)); // Optimistic update
+        try {
+            await fbDeleteDisplayScreen(selectedOrganization.id, screenId);
+        } catch (e) {
+            console.error("Failed to delete screen, rolling back", e);
+            setDisplayScreens(originalScreens);
+            throw e;
+        }
+    }, [selectedOrganization, displayScreens]);
+
   const value = useMemo(() => ({
     selectedOrganization,
     allOrganizations,
     selectOrganization,
     setAllOrganizations,
+    displayScreens,
     selectedDisplayScreen,
     selectDisplayScreen,
     selectDisplayScreenById,
+    addDisplayScreen,
+    updateDisplayScreen,
+    deleteDisplayScreen,
     updateSelectedOrganization,
     clearSelection,
     locationLoading,
@@ -344,9 +373,13 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     selectedOrganization,
     allOrganizations,
     selectOrganization,
+    displayScreens,
     selectedDisplayScreen,
     selectDisplayScreen,
     selectDisplayScreenById,
+    addDisplayScreen,
+    updateDisplayScreen,
+    deleteDisplayScreen,
     updateSelectedOrganization,
     clearSelection,
     locationLoading,

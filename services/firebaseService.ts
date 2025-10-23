@@ -244,7 +244,11 @@ export const getUserData = async (uid: string): Promise<UserData | null> => {
 export const getOrganizations = async (): Promise<Organization[]> => {
   if (isOffline || !db) return Promise.resolve([...MOCK_ORGANIZATIONS]);
   const qs = await db.collection('organizations').get();
-  return qs.docs.map((d) => d.data() as Organization);
+  return qs.docs.map((d) => {
+    const data = d.data() as Organization;
+    delete data.displayScreens; // This field is deprecated
+    return data;
+  });
 };
 
 export const getOrganizationById = async (organizationId: string): Promise<Organization | null> => {
@@ -254,7 +258,10 @@ export const getOrganizationById = async (organizationId: string): Promise<Organ
   }
   const ref = db.collection('organizations').doc(organizationId);
   const snap = await ref.get();
-  return snap.exists ? (snap.data() as Organization) : null;
+  if (!snap.exists) return null;
+  const data = snap.data() as Organization;
+  delete data.displayScreens; // This field is deprecated
+  return data;
 };
 
 export const listenToOrganizationChanges = (
@@ -281,35 +288,9 @@ const getUpdatedOrg = async (organizationId: string): Promise<Organization> => {
   }
   const snap = await db.collection('organizations').doc(organizationId).get();
   if (!snap.exists) throw new Error('Organisationen försvann.');
-  return snap.data() as Organization;
-};
-
-// Lyssna på en specifik displayScreen som ligger inbäddad i organizations-dokumentet
-export const listenToDisplayScreenEmbedded = (
-  organizationId: string,
-  displayScreenId: string,
-  onUpdate: (screen: DisplayScreen | null) => void
-): (() => void) => {
-  if (isOffline || !db) {
-    const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
-    const screen = org?.displayScreens?.find((s) => s.id === displayScreenId) || null;
-    setTimeout(() => onUpdate(screen ? { ...screen } : null), 0);
-    return () => {};
-  }
-
-  const orgRef = db.collection('organizations').doc(organizationId);
-  return orgRef.onSnapshot(
-    (snap) => {
-      if (!snap.exists) return onUpdate(null);
-      const data = snap.data() as Organization;
-      const screen = (data.displayScreens || []).find((s) => s.id === displayScreenId) || null;
-      onUpdate(screen ? { ...screen } : null);
-    },
-    (err) => {
-      console.error(`Error listening to embedded screen ${organizationId}/${displayScreenId}:`, err);
-      onUpdate(null);
-    }
-  );
+  const data = snap.data() as Organization;
+  delete data.displayScreens;
+  return data;
 };
 
 export const createOrganization = async (orgData: Pick<Organization, 'name' | 'email'>): Promise<Organization> => {
@@ -419,17 +400,6 @@ export const updateOrganizationInfoCarousel = async (organizationId: string, inf
   return getUpdatedOrg(organizationId);
 };
 
-export const updateOrganizationDisplayScreens = async (organizationId: string, displayScreens: DisplayScreen[]) => {
-  if (isOffline || !db) {
-    await offlineWarning('updateOrganizationDisplayScreens');
-    const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
-    if (org) org.displayScreens = displayScreens;
-    return getUpdatedOrg(organizationId);
-  }
-  await db.collection('organizations').doc(organizationId).update({ displayScreens: removeUndefinedValues(displayScreens) });
-  return getUpdatedOrg(organizationId);
-};
-
 export const updateOrganizationTags = async (organizationId: string, tags: Tag[]) => {
   if (isOffline || !db) {
     await offlineWarning('updateOrganizationTags');
@@ -451,6 +421,71 @@ export const updateOrganizationPostTemplates = async (organizationId: string, po
   await db.collection('organizations').doc(organizationId).update({ postTemplates: removeUndefinedValues(postTemplates) });
   return getUpdatedOrg(organizationId);
 };
+
+// ---------------------------------------------------------------------------
+// Display Screens (Subcollection)
+// ---------------------------------------------------------------------------
+
+export const listenToDisplayScreens = (
+  organizationId: string,
+  onUpdate: (screens: DisplayScreen[]) => void
+): (() => void) => {
+  if (isOffline || !db) {
+    const org = MOCK_ORGANIZATIONS.find(o => o.id === organizationId);
+    setTimeout(() => onUpdate(org?.displayScreens || []), 0);
+    return () => {};
+  }
+  const ref = db.collection('organizations').doc(organizationId).collection('displayScreens');
+  return ref.onSnapshot(
+    (snap) => {
+      const screens = snap.docs.map(d => d.data() as DisplayScreen);
+      onUpdate(screens);
+    },
+    (err) => {
+      console.error(`Error listening to displayScreens for org ${organizationId}:`, err);
+      onUpdate([]);
+    }
+  );
+};
+
+export const addDisplayScreen = async (organizationId: string, screenData: DisplayScreen): Promise<void> => {
+    if (isOffline || !db) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === organizationId);
+        if (org) {
+            if (!org.displayScreens) org.displayScreens = [];
+            org.displayScreens.push(screenData);
+        }
+        return offlineWarning('addDisplayScreen');
+    }
+    const ref = db.collection('organizations').doc(organizationId).collection('displayScreens').doc(screenData.id);
+    await ref.set(removeUndefinedValues(screenData));
+};
+
+export const updateDisplayScreen = async (organizationId: string, screenId: string, data: Partial<DisplayScreen>): Promise<void> => {
+    if (isOffline || !db) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === organizationId);
+        const screen = org?.displayScreens?.find(s => s.id === screenId);
+        if (screen) {
+            Object.assign(screen, data);
+        }
+        return offlineWarning('updateDisplayScreen');
+    }
+    const ref = db.collection('organizations').doc(organizationId).collection('displayScreens').doc(screenId);
+    await ref.update(removeUndefinedValues(data));
+};
+
+export const deleteDisplayScreen = async (organizationId: string, screenId: string): Promise<void> => {
+    if (isOffline || !db) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === organizationId);
+        if (org) {
+            org.displayScreens = (org.displayScreens || []).filter(s => s.id !== screenId);
+        }
+        return offlineWarning('deleteDisplayScreen');
+    }
+    const ref = db.collection('organizations').doc(organizationId).collection('displayScreens').doc(screenId);
+    await ref.delete();
+};
+
 
 // ---------------------------------------------------------------------------
 // System Settings

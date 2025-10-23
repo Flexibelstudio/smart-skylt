@@ -37,11 +37,11 @@ interface DisplayScreenEditorScreenProps {
 }
 
 export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps> = ({ screen: initialScreen, initialPostToEdit, onUpdateOrganization, userRole }) => {
-    const { selectedOrganization: organization } = useLocation();
+    const { selectedOrganization: organization, displayScreens, updateDisplayScreen } = useLocation();
     const { showToast } = useToast();
 
     // The screen object needs to be derived from the potentially updated organization object from context
-    const screen = useMemo(() => organization?.displayScreens?.find(s => s.id === initialScreen.id) || initialScreen, [organization, initialScreen]);
+    const screen = useMemo(() => displayScreens.find(s => s.id === initialScreen.id) || initialScreen, [displayScreens, initialScreen]);
 
     const [editingPost, setEditingPost] = useState<DisplayPost | null>(initialPostToEdit || null);
     const [originalPost, setOriginalPost] = useState<DisplayPost | null>(initialPostToEdit ? JSON.parse(JSON.stringify(initialPostToEdit)) : null);
@@ -74,16 +74,14 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
 
     const handleUpdatePosts = (updatedPosts: DisplayPost[]) => {
         if (!organization) return;
-        const updatedScreen = { ...screen, posts: updatedPosts };
-        const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
         
-        const allPostsForProfile = updatedScreens.flatMap(s => s.posts || []);
+        updateDisplayScreen(screen.id, { posts: updatedPosts });
+
+        const allOrgScreens = displayScreens.map(s => s.id === screen.id ? { ...screen, posts: updatedPosts } : s);
+        const allPostsForProfile = allOrgScreens.flatMap(s => s.posts || []);
         const newPlanningProfile = calculatePlanningProfile(allPostsForProfile);
 
-        onUpdateOrganization(organization.id, {
-            displayScreens: updatedScreens,
-            planningProfile: newPlanningProfile,
-        });
+        onUpdateOrganization(organization.id, { planningProfile: newPlanningProfile });
     };
 
     const handleSavePost = async () => {
@@ -194,16 +192,22 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 ? [...(screen.posts || []), finalPost]
                 : (screen.posts || []).map(p => p.id === finalPost.id ? finalPost : p);
             
-            let updatedScreen = { ...screen, posts: updatedPosts };
-            let updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
-
+            await updateDisplayScreen(screen.id, { posts: updatedPosts });
+            
+            // Sync logic needs all screens, so we create a temporary org object
             const isOriginalPost = !finalPost.sharedFromPostId;
             if (isOriginalPost) {
-                const tempOrgForSync = { ...organization, displayScreens: updatedScreens };
-                updatedScreens = syncSharedPosts(finalPost, tempOrgForSync);
+                const tempOrgForSync = { ...organization, displayScreens };
+                const syncedScreens = syncSharedPosts(finalPost, tempOrgForSync);
+                // This is a bit tricky, we need to batch update all affected screens
+                for (const syncedScreen of syncedScreens) {
+                    if(JSON.stringify(syncedScreen) !== JSON.stringify(displayScreens.find(s => s.id === syncedScreen.id))) {
+                        await updateDisplayScreen(syncedScreen.id, { posts: syncedScreen.posts });
+                    }
+                }
             }
             
-            const allPostsForProfile = updatedScreens.flatMap(s => s.posts || []);
+            const allPostsForProfile = displayScreens.flatMap(s => s.id === screen.id ? updatedPosts : s.posts || []);
             const newPlanningProfile = calculatePlanningProfile(allPostsForProfile);
     
             const hasLibraryUpdates = newMediaForLibrary.length > 0;
@@ -240,16 +244,15 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 );
             }
 
-            // --- Consolidated Update ---
-            const updatePayload: Partial<Organization> = {
-                displayScreens: updatedScreens,
+            // --- Consolidated Update for Org-level data ---
+            const orgUpdatePayload: Partial<Organization> = {
                 mediaLibrary: updatedLibrary,
                 styleProfile: updatedProfile,
                 planningProfile: newPlanningProfile,
                 ...(updatedSuggestedPosts && { suggestedPosts: updatedSuggestedPosts }),
             };
 
-            await onUpdateOrganization(organization.id, updatePayload);
+            await onUpdateOrganization(organization.id, orgUpdatePayload);
     
             showToast({ message: "Inlägget sparades.", type: 'success' });
             if (hasLibraryUpdates) {
@@ -305,16 +308,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     const handleDeletePost = (postId: string) => {
         if (window.confirm("Är du säker på att du vill ta bort detta inlägg?") && organization) {
             const updatedPosts = (screen.posts || []).filter(p => p.id !== postId);
-            const updatedScreen = { ...screen, posts: updatedPosts };
-            const updatedScreens = (organization.displayScreens || []).map(s => s.id === updatedScreen.id ? updatedScreen : s);
-            
-            const allPostsForProfile = updatedScreens.flatMap(s => s.posts || []);
-            const newPlanningProfile = calculatePlanningProfile(allPostsForProfile);
-            
-            onUpdateOrganization(organization.id, {
-                displayScreens: updatedScreens,
-                planningProfile: newPlanningProfile,
-            });
+            handleUpdatePosts(updatedPosts);
         }
     };
     
@@ -429,10 +423,16 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 postToShare,
                 targetScreenIds,
                 screen.id,
-                organization
+                { ...organization, displayScreens }
             );
-            
-            await onUpdateOrganization(organization.id, { displayScreens: updatedScreens });
+
+            // Batch update all changed screens
+            for (const updatedScreen of updatedScreens) {
+                const originalScreen = displayScreens.find(s => s.id === updatedScreen.id);
+                if (JSON.stringify(originalScreen) !== JSON.stringify(updatedScreen)) {
+                    await updateDisplayScreen(updatedScreen.id, { posts: updatedScreen.posts });
+                }
+            }
     
             showToast({
                 message: `Inlägget har delats till ${targetScreenIds.length} ${targetScreenIds.length > 1 ? 'kanaler' : 'kanal'}.`,
@@ -509,8 +509,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                         ) : (
                             <ControlPanel
                                 screen={screen} 
-                                organization={organization} 
-                                onUpdateDisplayScreens={async (orgId, screens) => onUpdateOrganization(orgId, { displayScreens: screens })}
+                                organization={organization}
                                 onEditPost={(post) => {
                                     setOriginalPost(JSON.parse(JSON.stringify(post)));
                                     setEditingPost(post);
@@ -550,7 +549,9 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 followUpSuggestion={followUpSuggestion}
                 onFollowUp={handleFollowUpClick}
                 organization={organization}
-                onUpdateDisplayScreens={async (orgId, screens) => onUpdateOrganization(orgId, { displayScreens: screens })}
+                onUpdateDisplayScreens={async (orgId, screens) => {
+                    // This is now handled by updateDisplayScreen via context
+                }}
                 onEditGeneratedPost={(post) => {
                     setOriginalPost(JSON.parse(JSON.stringify(post)));
                     setEditingPost(post);
@@ -578,7 +579,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 isOpen={!!postToShare}
                 onClose={() => setPostToShare(null)}
                 onShare={handleConfirmShare}
-                organization={organization}
+                organization={{...organization, displayScreens}}
                 currentScreenId={screen.id}
                 postToShare={postToShare}
                 isSharing={isSaving}

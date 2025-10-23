@@ -2,7 +2,7 @@ import React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Organization, CustomPage, UserRole, InfoCarousel, InfoMessage, DisplayScreen, DisplayPost, UserData, Tag, SystemSettings, ScreenPairingCode, BrandingOptions, PostTemplate, CampaignIdea, CustomEvent, PhysicalScreen, MediaItem, AiAutomation, SuggestedPost } from '../types';
 import { ToggleSwitch, CompactToggleSwitch, MonitorIcon, PencilIcon, TrashIcon, CodeBracketIcon, MagnifyingGlassIcon, SparklesIcon, ShareIcon, DuplicateIcon, ChevronDownIcon, CheckCircleIcon, VideoCameraIcon, PlayIcon, PauseIcon, LightBulbIcon, Cog6ToothIcon } from './icons';
-import { getAdminsForOrganization, setAdminRole, inviteUser, getSystemSettings, getPairingCode, pairAndActivateScreen, uploadMediaForGallery, deleteMediaFromStorage, unpairPhysicalScreen, isOffline, callTestFunction } from '../services/firebaseService';
+import { getAdminsForOrganization, setAdminRole, inviteUser, getSystemSettings, getPairingCode, pairAndActivateScreen, uploadMediaForGallery, deleteMediaFromStorage, unpairPhysicalScreen, isOffline, callTestFunction, updateDisplayScreen } from '../services/firebaseService';
 import { MarkdownRenderer } from './CustomContentScreen';
 import { useAuth } from '../context/AuthContext';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
@@ -21,6 +21,7 @@ import { InputDialog } from './DisplayScreenEditor/Modals';
 import { ProactiveRhythmBanner, ProactiveSeasonalBanner } from './ProactiveRhythmBanner';
 import { AIGuideModal } from './AIGuideModal';
 import { AiAutomationEditorModal } from './AiAutomationEditorModal';
+import { useLocation } from '../context/StudioContext';
 
 
 interface SuperAdminScreenProps {
@@ -195,6 +196,7 @@ interface CampaignIdeaGeneratorForOrgProps {
 }
 
 const CampaignIdeaGeneratorForOrg: React.FC<CampaignIdeaGeneratorForOrgProps> = ({ isOpen, onClose, event, organization, onUpdateOrganization, onEditDisplayScreen, planningContext }) => {
+    const { displayScreens } = useLocation();
     const [isLoading, setIsLoading] = useState(false);
     const [ideas, setIdeas] = useState<CampaignIdea[] | null>(null);
     const [followUpSuggestion, setFollowUpSuggestion] = useState<{ question: string; eventName: string; } | null>(null);
@@ -210,10 +212,10 @@ const CampaignIdeaGeneratorForOrg: React.FC<CampaignIdeaGeneratorForOrgProps> = 
     const [isConfirmCloseOpen, setIsConfirmCloseOpen] = useState(false);
 
     useEffect(() => {
-        if (organization.displayScreens && organization.displayScreens.length > 0) {
-            setSelectedScreenId(organization.displayScreens[0].id);
+        if (displayScreens && displayScreens.length > 0) {
+            setSelectedScreenId(displayScreens[0].id);
         }
-    }, [organization.displayScreens]);
+    }, [displayScreens]);
 
     const fetchEventIdeas = useCallback(async (eventForIdeas: { name: string, date: Date }) => {
         setModalTitle(`✨ AI-inläggsidéer för "${eventForIdeas.name}"`);
@@ -302,7 +304,7 @@ const CampaignIdeaGeneratorForOrg: React.FC<CampaignIdeaGeneratorForOrgProps> = 
         setGenerationStatus('Skapar inläggsutkast...');
         setError(null);
         try {
-            const screen = organization.displayScreens?.find(s => s.id === selectedScreenId);
+            const screen = displayScreens.find(s => s.id === selectedScreenId);
             if (!screen) throw new Error("Valt skyltfönster kunde inte hittas.");
     
             const newPost: DisplayPost = {
@@ -384,9 +386,9 @@ const CampaignIdeaGeneratorForOrg: React.FC<CampaignIdeaGeneratorForOrgProps> = 
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Lägg till i kanal</label>
-                                {organization.displayScreens && organization.displayScreens.length > 0 ? (
+                                {displayScreens && displayScreens.length > 0 ? (
                                     <StyledSelect value={selectedScreenId} onChange={e => setSelectedScreenId(e.target.value)}>
-                                        {organization.displayScreens.map(screen => <option key={screen.id} value={screen.id}>{screen.name}</option>)}
+                                        {displayScreens.map(screen => <option key={screen.id} value={screen.id}>{screen.name}</option>)}
                                     </StyledSelect>
                                 ) : (
                                     <p className="text-sm text-yellow-400 bg-yellow-900/50 p-3 rounded-lg">Du måste skapa ett skyltfönster (en kanal) först.</p>
@@ -443,7 +445,7 @@ const CampaignIdeaGeneratorForOrg: React.FC<CampaignIdeaGeneratorForOrgProps> = 
                         {step === 'configure' && (
                             <PrimaryButton 
                                 onClick={handleGenerateCampaign} 
-                                disabled={!selectedScreenId || (organization.displayScreens?.length || 0) === 0}
+                                disabled={!selectedScreenId || (displayScreens?.length || 0) === 0}
                             >
                                 Skapa Utkast
                             </PrimaryButton>
@@ -659,6 +661,7 @@ const ShareMediaToChannelModal: React.FC<{
 };
 
 const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, onUpdateOrganization }) => {
+    const { displayScreens } = useLocation();
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -698,7 +701,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
 
     const mediaUsageMap = useMemo(() => {
         const usage = new Map<string, string[]>();
-        if (!organization.mediaLibrary || !organization.displayScreens) {
+        if (!organization.mediaLibrary || !displayScreens) {
             return usage;
         }
 
@@ -706,7 +709,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
             usage.set(media.id, []);
         }
 
-        for (const screen of organization.displayScreens) {
+        for (const screen of displayScreens) {
             for (const post of (screen.posts || [])) {
                 const urlsInPost = new Set<string | undefined>();
                 urlsInPost.add(post.imageUrl);
@@ -735,7 +738,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
             }
         }
         return usage;
-    }, [organization.mediaLibrary, organization.displayScreens]);
+    }, [organization.mediaLibrary, displayScreens]);
     
     const processedMedia = useMemo(() => {
         const library = organization.mediaLibrary || [];
@@ -866,30 +869,27 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
     };
     
     const handleBatchShareConfirm = async (targetScreenIds: string[]) => {
+        const { updateDisplayScreen } = useLocation();
         const selectedItems = (organization.mediaLibrary || []).filter(item => selectedMediaIds.has(item.id));
-        let updatedScreens = [...(organization.displayScreens || [])];
-
-        targetScreenIds.forEach(screenId => {
-            const screenIndex = updatedScreens.findIndex(s => s.id === screenId);
-            if (screenIndex === -1) return;
-
-            const newPosts: DisplayPost[] = selectedItems.map(item => ({
-                id: `post-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                internalTitle: `Delat från galleri: ${item.internalTitle}`,
-                layout: item.type === 'image' ? 'image-fullscreen' : 'video-fullscreen',
-                imageUrl: item.type === 'image' ? item.url : undefined,
-                videoUrl: item.type === 'video' ? item.url : undefined,
-                durationSeconds: 15,
-                startDate: new Date().toISOString(),
-            }));
-            
-            const targetScreen = updatedScreens[screenIndex];
-            targetScreen.posts = [...(targetScreen.posts || []), ...newPosts];
-            updatedScreens[screenIndex] = targetScreen;
-        });
 
         try {
-            await onUpdateOrganization(organization.id, { displayScreens: updatedScreens });
+            for (const screenId of targetScreenIds) {
+                const screen = displayScreens.find(s => s.id === screenId);
+                if (!screen) continue;
+
+                const newPosts: DisplayPost[] = selectedItems.map(item => ({
+                    id: `post-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    internalTitle: `Delat från galleri: ${item.internalTitle}`,
+                    layout: item.type === 'image' ? 'image-fullscreen' : 'video-fullscreen',
+                    imageUrl: item.type === 'image' ? item.url : undefined,
+                    videoUrl: item.type === 'video' ? item.url : undefined,
+                    durationSeconds: 15,
+                    startDate: new Date().toISOString(),
+                }));
+                
+                const updatedPosts = [...(screen.posts || []), ...newPosts];
+                await updateDisplayScreen(screenId, { posts: updatedPosts });
+            }
             showToast({ message: `Delade ${selectedItems.length} filer till ${targetScreenIds.length} kanal(er).`, type: 'success' });
         } catch (e) {
             showToast({ message: "Kunde inte dela filerna.", type: 'error' });
@@ -1109,7 +1109,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
                 isOpen={batchShareModal}
                 onClose={() => setBatchShareModal(false)}
                 onShare={handleBatchShareConfirm}
-                screens={organization.displayScreens || []}
+                screens={displayScreens}
                 isSharing={isUploading}
             />
         </Card>
@@ -1192,6 +1192,7 @@ const MediaPreviewModal: React.FC<{
 
 export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
     const { organization, theme, onUpdateOrganization, onEditDisplayScreen } = props;
+    const { displayScreens } = useLocation();
     const [activeTab, setActiveTab] = useState<AdminTab>('skyltfonster');
     
     const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
@@ -1311,7 +1312,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
             </div>
 
             <div className="space-y-8">
-                {activeTab === 'skyltfonster' && <SkyltfonsterContent {...props} systemSettings={systemSettings} onOpenPairingModal={() => setIsPairingModalOpen(true)} onPreviewScreen={setScreenToPreview} onShareScreen={setScreenToShare} />}
+                {activeTab === 'skyltfonster' && <SkyltfonsterContent {...props} displayScreens={displayScreens} systemSettings={systemSettings} onOpenPairingModal={() => setIsPairingModalOpen(true)} onPreviewScreen={setScreenToPreview} onShareScreen={setScreenToShare} />}
                 {activeTab === 'organisation' && <OrganisationTab {...props} />}
                 {activeTab === 'galleri' && <MediaGalleryManager {...props} />}
                 {activeTab === 'automation' && <AiAutomationContent {...props} />}
@@ -1324,8 +1325,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                 organization={organization}
                 systemSettings={systemSettings}
                 onPairSuccess={(newScreen) => {
-                    const updatedScreens = [...(organization.physicalScreens || []), newScreen];
-                    onUpdateOrganization(organization.id, { physicalScreens: updatedScreens });
+                    // This is now handled by the context listener, but we might keep it for optimistic updates
                 }}
             />
             {screenToPreview && (
@@ -1437,30 +1437,41 @@ const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
 interface ScreenManagerProps {
     screens: DisplayScreen[];
     isSaving: boolean;
-    onUpdateScreens: (updatedScreens: DisplayScreen[]) => void;
     onEditDisplayScreen: (screen: DisplayScreen) => void;
     onPreview: (screen: DisplayScreen) => void;
     onShare: (screen: DisplayScreen) => void;
     onCreateScreenTemplate: () => void;
 }
 
-const ScreenManager: React.FC<ScreenManagerProps> = ({ screens, isSaving, onUpdateScreens, onEditDisplayScreen, onPreview, onShare, onCreateScreenTemplate }) => {
+const ScreenManager: React.FC<ScreenManagerProps> = ({ screens, isSaving, onEditDisplayScreen, onPreview, onShare, onCreateScreenTemplate }) => {
+    const { updateDisplayScreen, deleteDisplayScreen } = useLocation();
+    const { showToast } = useToast();
     const [renamingScreenId, setRenamingScreenId] = useState<string | null>(null);
     const [newName, setNewName] = useState('');
     const [screenToDelete, setScreenToDelete] = useState<DisplayScreen | null>(null);
 
-    const confirmDeleteScreen = () => {
+    const confirmDeleteScreen = async () => {
         if (!screenToDelete) return;
-        const updatedScreens = screens.filter(s => s.id !== screenToDelete.id);
-        onUpdateScreens(updatedScreens);
-        setScreenToDelete(null);
+        try {
+            await deleteDisplayScreen(screenToDelete.id);
+            showToast({message: 'Kanalen togs bort.', type: 'success'});
+        } catch (e) {
+            showToast({message: 'Kunde inte ta bort kanalen.', type: 'error'});
+        } finally {
+            setScreenToDelete(null);
+        }
     };
 
-    const handleSaveName = (screenId: string) => {
+    const handleSaveName = async (screenId: string) => {
         if (newName.trim() === '') return;
-        const updatedScreens = screens.map(s => s.id === screenId ? { ...s, name: newName.trim() } : s);
-        onUpdateScreens(updatedScreens);
-        setRenamingScreenId(null);
+        try {
+            await updateDisplayScreen(screenId, { name: newName.trim() });
+            showToast({message: 'Namnet uppdaterades.', type: 'success'});
+        } catch (e) {
+            showToast({message: 'Kunde inte uppdatera namnet.', type: 'error'});
+        } finally {
+            setRenamingScreenId(null);
+        }
     };
 
     return (
@@ -1531,6 +1542,7 @@ const ScreenManager: React.FC<ScreenManagerProps> = ({ screens, isSaving, onUpda
 
 
 interface SkyltfonsterContentProps extends SuperAdminScreenProps {
+    displayScreens: DisplayScreen[];
     systemSettings: SystemSettings | null;
     onOpenPairingModal: () => void;
     onPreviewScreen: (screen: DisplayScreen) => void;
@@ -1582,7 +1594,8 @@ const WorkflowGuide: React.FC<{ onDismiss: () => void; }> = ({ onDismiss }) => {
 
 
 const SkyltfonsterContent: React.FC<SkyltfonsterContentProps> = (props) => {
-    const { organization, onUpdateOrganization, onEditDisplayScreen, onOpenPairingModal, onPreviewScreen, onShareScreen, systemSettings } = props;
+    const { organization, displayScreens, onUpdateOrganization, onEditDisplayScreen, onOpenPairingModal, onPreviewScreen, onShareScreen, systemSettings } = props;
+    const { addDisplayScreen } = useLocation();
     const [isSaving, setIsSaving] = useState(false);
     const { showToast } = useToast();
     const [ideaModalEvent, setIdeaModalEvent] = useState<{ name: string; date: Date } | null>(null);
@@ -1617,27 +1630,23 @@ const SkyltfonsterContent: React.FC<SkyltfonsterContentProps> = (props) => {
         }
     };
     
-    const handleUpdateScreens = async (updatedScreens: DisplayScreen[]) => {
+    const handleCreateScreenTemplate = async () => {
         setIsSaving(true);
         try {
-            await onUpdateOrganization(organization.id, { displayScreens: updatedScreens });
+            const newScreen: Omit<DisplayScreen, 'id'> = {
+                name: 'Ny Kanal',
+                isEnabled: true,
+                posts: [],
+                aspectRatio: '16:9',
+            };
+            await addDisplayScreen(newScreen);
+            showToast({ message: "Ny kanal skapad.", type: 'success' });
         } catch(e) {
              console.error(e);
              showToast({ message: `Ett fel uppstod: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
         } finally {
             setIsSaving(false);
         }
-    };
-
-    const handleCreateScreenTemplate = () => {
-        const newScreen: DisplayScreen = {
-            id: `screen-${Date.now()}`,
-            name: 'Ny Kanal',
-            isEnabled: true,
-            posts: [],
-            aspectRatio: '16:9',
-        };
-        handleUpdateScreens([...(organization.displayScreens || []), newScreen]);
     };
 
     return (
@@ -1671,15 +1680,14 @@ const SkyltfonsterContent: React.FC<SkyltfonsterContentProps> = (props) => {
                     subTitle="Skapa och hantera kanaler som sedan kan visas på dina skyltfönster." 
                     saving={isSaving}
                     actions={
-                        <SecondaryButton onClick={handleCreateScreenTemplate}>
+                        <SecondaryButton onClick={handleCreateScreenTemplate} disabled={isSaving}>
                             Skapa ny kanal
                         </SecondaryButton>
                     }
                 >
                     <ScreenManager
-                        screens={organization.displayScreens || []}
+                        screens={displayScreens}
                         isSaving={isSaving}
-                        onUpdateScreens={handleUpdateScreens}
                         onEditDisplayScreen={onEditDisplayScreen}
                         onPreview={onPreviewScreen}
                         onShare={onShareScreen}
@@ -1700,7 +1708,7 @@ const SkyltfonsterContent: React.FC<SkyltfonsterContentProps> = (props) => {
                     >
                         <PhysicalScreenManager 
                             organization={organization}
-                            allDisplayScreens={organization.displayScreens || []}
+                            allDisplayScreens={displayScreens}
                             onUpdateOrganization={onUpdateOrganization}
                         />
                     </Card>
@@ -1733,262 +1741,6 @@ const SkyltfonsterContent: React.FC<SkyltfonsterContentProps> = (props) => {
                 onEditDisplayScreen={onEditDisplayScreen}
                 planningContext={seasonalContext}
             />
-        </div>
-    );
-};
-
-
-// --- NEW Component for AI Automation ---
-const AiAutomationContent: React.FC<SuperAdminScreenProps> = (props) => {
-    const { organization, onUpdateOrganization, onEditDisplayScreen } = props;
-    const [editingAutomation, setEditingAutomation] = useState<AiAutomation | null>(null);
-    const [isEditorOpen, setIsEditorOpen] = useState(false);
-    const { showToast } = useToast();
-    const [automationToDelete, setAutomationToDelete] = useState<AiAutomation | null>(null);
-
-    const handleSaveAutomation = async (automation: AiAutomation) => {
-        const automations = organization.aiAutomations || [];
-        const isNew = !automations.some(a => a.id === automation.id);
-        const updatedAutomations = isNew
-            ? [...automations, automation]
-            : automations.map(a => a.id === automation.id ? automation : a);
-        
-        try {
-            await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
-            showToast({ message: `Automation "${automation.name}" har sparats.`, type: 'success' });
-            setIsEditorOpen(false);
-        } catch (e) {
-            showToast({ message: "Kunde inte spara automationen.", type: 'error' });
-        }
-    };
-
-    const handleNewAutomation = () => {
-        setEditingAutomation(null);
-        setIsEditorOpen(true);
-    };
-
-    const handleEditAutomation = (automation: AiAutomation) => {
-        setEditingAutomation(automation);
-        setIsEditorOpen(true);
-    };
-    
-    const handleDeleteAutomation = (automation: AiAutomation) => {
-        setAutomationToDelete(automation);
-    };
-    
-    const confirmDeleteAutomation = async () => {
-        if (!automationToDelete) return;
-        const automations = (organization.aiAutomations || []).filter(a => a.id !== automationToDelete.id);
-        try {
-            await onUpdateOrganization(organization.id, { aiAutomations: automations });
-            showToast({ message: "Automationen har tagits bort.", type: 'success' });
-        } catch (e) {
-            showToast({ message: "Kunde inte ta bort automationen.", type: 'error' });
-        } finally {
-            setAutomationToDelete(null);
-        }
-    };
-    
-    const handleToggleAutomation = async (automationId: string, isEnabled: boolean) => {
-        const automations = organization.aiAutomations || [];
-        const automationName = automations.find(a => a.id === automationId)?.name || '';
-        const updatedAutomations = automations.map(a =>
-            a.id === automationId ? { ...a, isEnabled } : a
-        );
-        try {
-            await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
-            showToast({
-                message: `Automationen "${automationName}" har ${isEnabled ? 'aktiverats' : 'pausats'}.`,
-                type: 'success'
-            });
-        } catch (e) {
-            showToast({ message: "Kunde inte uppdatera automationen.", type: 'error' });
-        }
-    };
-
-    const formatSchedule = (automation: AiAutomation): string => {
-        const days = ['Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag', 'Söndag'];
-        const time = automation.timeOfDay;
-
-        switch (automation.frequency) {
-            case 'daily':
-                return `Dagligen kl. ${time}`;
-            case 'weekly':
-                const day = days[(automation.dayOfWeek || 1) - 1];
-                return `Varje ${day.toLowerCase()} kl. ${time}`;
-            case 'monthly':
-                const dayOfMonth = automation.dayOfMonth || 1;
-                const suffix = (d: number) => {
-                    const lastDigit = d % 10;
-                    const lastTwoDigits = d % 100;
-                    if (lastTwoDigits === 11 || lastTwoDigits === 12) return ':e';
-                    if (lastDigit === 1 || lastDigit === 2) return ':a';
-                    return ':e';
-                };
-                return `Den ${dayOfMonth}${suffix(dayOfMonth)} varje månad kl. ${time}`;
-            default:
-                return 'Okänt schema';
-        }
-    };
-
-
-    const handleSuggestionAction = async (suggestion: SuggestedPost, action: 'approve' | 'reject' | 'edit') => {
-        const { suggestedPosts = [], displayScreens = [] } = organization;
-
-        if (action === 'edit') {
-            const screen = displayScreens.find(s => s.id === suggestion.targetScreenId);
-            if (screen) {
-                onEditDisplayScreen(screen, { ...suggestion.postData, suggestionOriginId: suggestion.id });
-            }
-            return;
-        }
-
-        if (action === 'reject') {
-            const updatedSuggestions = suggestedPosts.map(s => s.id === suggestion.id ? { ...s, status: 'rejected' as const } : s);
-            await onUpdateOrganization(organization.id, { suggestedPosts: updatedSuggestions });
-            showToast({ message: "Förslaget har avvisats.", type: 'info' });
-            return;
-        }
-
-        if (action === 'approve') {
-            const screenIndex = displayScreens.findIndex(s => s.id === suggestion.targetScreenId);
-            if (screenIndex === -1) {
-                showToast({ message: "Målkanalen kunde inte hittas.", type: 'error' });
-                return;
-            }
-
-            const updatedScreens = [...displayScreens];
-            const targetScreen = { ...updatedScreens[screenIndex] };
-            const approvedPost: DisplayPost = {
-                ...suggestion.postData,
-                id: `post-${Date.now()}`,
-                startDate: new Date().toISOString(),
-            };
-            targetScreen.posts = [...(targetScreen.posts || []), approvedPost];
-            updatedScreens[screenIndex] = targetScreen;
-
-            const updatedSuggestions = suggestedPosts.map(s => 
-                s.id === suggestion.id ? { ...s, status: 'approved' as const, finalPostId: approvedPost.id } : s
-            );
-            
-            await onUpdateOrganization(organization.id, {
-                displayScreens: updatedScreens,
-                suggestedPosts: updatedSuggestions,
-            });
-            showToast({ message: `"${approvedPost.internalTitle}" har publicerats på "${targetScreen.name}".`, type: 'success' });
-        }
-    };
-
-    const pendingSuggestions = (organization.suggestedPosts || []).filter(s => s.status === 'pending');
-
-    return (
-        <div className="space-y-8">
-            <Card
-                title="AI-Automations"
-                subTitle="Låt AI:n automatiskt skapa inläggsförslag baserat på dina scheman."
-                actions={<PrimaryButton onClick={handleNewAutomation}><Cog6ToothIcon className="h-5 w-5"/> Skapa ny automation</PrimaryButton>}
-            >
-                {(!organization.aiAutomations || organization.aiAutomations.length === 0) ? (
-                    <EmptyState
-                        icon={<Cog6ToothIcon className="h-12 w-12 text-slate-400" />}
-                        title="Inga automationer skapade"
-                        message="Skapa din första automation för att låta AI:n generera innehåll åt dig på ett schema."
-                    />
-                ) : (
-                    <div className="space-y-3">
-                        {(organization.aiAutomations).map(automation => {
-                            const targetScreens = (organization.displayScreens || [])
-                                .filter(s => automation.targetScreenIds.includes(s.id))
-                                .map(s => s.name)
-                                .join(', ');
-                            
-                            return (
-                                <div key={automation.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border border-slate-200 dark:border-slate-700">
-                                    <div className="flex-grow w-full">
-                                        <div className="flex items-center gap-3">
-                                            <CompactToggleSwitch
-                                                checked={automation.isEnabled}
-                                                onChange={checked => handleToggleAutomation(automation.id, checked)}
-                                            />
-                                            <p className="font-semibold text-lg text-slate-900 dark:text-white">{automation.name}</p>
-                                        </div>
-                                        <div className="pl-16 mt-2 space-y-1">
-                                            <p className="text-sm text-slate-500 dark:text-slate-400">
-                                                <span className="font-semibold">Schema:</span> {formatSchedule(automation)}
-                                            </p>
-                                            <p className="text-sm text-slate-500 dark:text-slate-400">
-                                                <span className="font-semibold">Kanaler:</span> {targetScreens || 'Inga'}
-                                            </p>
-                                        </div>
-                                        {automation.latestInsight && (
-                                            <div className="pl-16 mt-3 flex items-start gap-2 text-sm text-purple-800 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 p-3 rounded-md border border-purple-200 dark:border-purple-800">
-                                                <LightBulbIcon className="h-5 w-5 flex-shrink-0 text-purple-500 dark:text-purple-400 mt-0.5" />
-                                                <p className="italic">{automation.latestInsight}</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="flex gap-2 self-end sm:self-center flex-shrink-0">
-                                        <SecondaryButton onClick={() => handleEditAutomation(automation)}>Redigera</SecondaryButton>
-                                        <DestructiveButton onClick={() => handleDeleteAutomation(automation)}>Ta bort</DestructiveButton>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </Card>
-
-            <Card
-                title="Förslag som väntar på godkännande"
-                subTitle="Här samlas inlägg som AI:n har skapat. Granska och godkänn dem för publicering."
-            >
-                {pendingSuggestions.length === 0 ? (
-                    <EmptyState
-                        icon={<SparklesIcon className="h-12 w-12 text-slate-400" />}
-                        title="Inga förslag just nu"
-                        message="När en automation körs kommer nya inläggsförslag att visas här för din granskning."
-                    />
-                ) : (
-                    <div className="space-y-4">
-                        {pendingSuggestions.map(suggestion => (
-                            <div key={suggestion.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-4 border border-slate-200 dark:border-slate-700">
-                                 <div className="flex-shrink-0 w-32 h-20 bg-black rounded-md overflow-hidden">
-                                    <DisplayPostRenderer post={suggestion.postData} mode="preview" organization={organization} />
-                                </div>
-                                <div className="flex-grow">
-                                    <p className="font-bold text-slate-900 dark:text-white">{suggestion.postData.internalTitle}</p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">För kanal: <span className="font-semibold">{organization.displayScreens?.find(s => s.id === suggestion.targetScreenId)?.name || 'Okänd'}</span></p>
-                                    <p className="text-xs text-slate-400 dark:text-slate-500">Skapad: {new Date(suggestion.createdAt).toLocaleString('sv-SE')}</p>
-                                </div>
-                                <div className="flex flex-col sm:flex-row gap-2">
-                                    <PrimaryButton onClick={() => handleSuggestionAction(suggestion, 'approve')} className="bg-green-600 hover:bg-green-500">Godkänn</PrimaryButton>
-                                    <SecondaryButton onClick={() => handleSuggestionAction(suggestion, 'edit')}>Redigera</SecondaryButton>
-                                    <DestructiveButton onClick={() => handleSuggestionAction(suggestion, 'reject')}>Neka</DestructiveButton>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </Card>
-
-            {isEditorOpen && (
-                <AiAutomationEditorModal
-                    isOpen={isEditorOpen}
-                    onClose={() => setIsEditorOpen(false)}
-                    onSave={handleSaveAutomation}
-                    automation={editingAutomation}
-                    organization={organization}
-                />
-            )}
-            
-            <ConfirmDialog
-                isOpen={!!automationToDelete}
-                onClose={() => setAutomationToDelete(null)}
-                onConfirm={confirmDeleteAutomation}
-                title={`Ta bort "${automationToDelete?.name}"?`}
-            >
-                Är du säker? Detta kan inte ångras.
-            </ConfirmDialog>
         </div>
     );
 };
@@ -2253,6 +2005,7 @@ const PairingModal: React.FC<{
     systemSettings: SystemSettings | null;
     onPairSuccess: (newScreen: PhysicalScreen) => void;
 }> = ({ isOpen, onClose, organization, systemSettings, onPairSuccess }) => {
+    const { displayScreens } = useLocation();
     const { currentUser } = useAuth();
     const { showToast } = useToast();
     const [step, setStep] = useState<'code' | 'assign' | 'success'>('code');
@@ -2359,7 +2112,7 @@ const PairingModal: React.FC<{
                 { name: physicalScreenName.trim(), displayScreenId }
             );
             
-            onPairSuccess(newScreen);
+            onUpdateOrganization(organization.id, { physicalScreens: [...(organization.physicalScreens || []), newScreen]});
             
             showToast({ message: `Skärmen "${newScreen.name}" ansluten!`, type: 'success' });
 
@@ -2413,7 +2166,7 @@ const PairingModal: React.FC<{
                                 <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Välj kanal</label>
                                 <StyledSelect value={displayScreenId} onChange={e => setDisplayScreenId(e.target.value)}>
                                     <option value="">Välj en kanal...</option>
-                                    {(organization.displayScreens || []).map(screen => <option key={screen.id} value={screen.id}>{screen.name}</option>)}
+                                    {(displayScreens || []).map(screen => <option key={screen.id} value={screen.id}>{screen.name}</option>)}
                                 </StyledSelect>
                             </div>
                             <div className="!mt-6 p-4 bg-slate-100 dark:bg-slate-900/50 rounded-lg">

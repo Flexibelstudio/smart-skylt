@@ -99,8 +99,6 @@ const AppRouter: React.FC = () => {
 };
 
 const EmbedWrapper: React.FC<{ organizationId: string; screenId: string }> = ({ organizationId, screenId }) => {
-    // FIX: selectOrganization now expects an Organization object, not just an ID. This needs to be fetched first.
-    // However, the context needs to be updated to handle selection by ID.
     const { selectOrganization, selectDisplayScreenById, selectedDisplayScreen, allOrganizations } = useLocation();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -108,21 +106,16 @@ const EmbedWrapper: React.FC<{ organizationId: string; screenId: string }> = ({ 
     useEffect(() => {
         const fetchAndSetData = async () => {
             try {
-                // selectOrganization now only fetches the base org doc, which is fast.
-                // The context will then fetch the subcollections.
-                // FIX: Find the organization object to pass to selectOrganization.
-                // This assumes allOrganizations are loaded, which might not be true. A better fix is in the context.
                 const orgToSelect = allOrganizations.find(o => o.id === organizationId);
                 if (orgToSelect) {
                   await selectOrganization(orgToSelect);
                 } else {
-                  // This case should be handled by a more robust data loading sequence,
-                  // but for now we'll assume the context can handle an ID if needed, or we'll need a new context method.
-                  // The real fix is adding selectDisplayScreenById to the context.
+                  // The context will handle fetching the org data if not present.
+                  // For now, we rely on allOrganizations being pre-loaded.
                 }
 
-                // We need a way to select a screen by ID without having the full object first.
-                // The context will handle loading the screen data.
+                // selectDisplayScreenById will now work because selectOrganization
+                // triggers the loading of the screens for that org in the context.
                 selectDisplayScreenById(screenId);
             } catch (err) {
                 console.error("Embed fetch error:", err);
@@ -134,7 +127,7 @@ const EmbedWrapper: React.FC<{ organizationId: string; screenId: string }> = ({ 
         fetchAndSetData();
     // selectOrganization and selectDisplayScreenById are stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [organizationId, screenId, allOrganizations]); // Added allOrganizations
+    }, [organizationId, screenId, allOrganizations]);
 
     if (loading) {
         return <div className="bg-black text-white min-h-screen flex items-center justify-center">Laddar...</div>;
@@ -181,7 +174,6 @@ const AuthenticatedApp: React.FC = () => {
     // Priority 1: If user is an org admin, ensure their org is selected.
     if (userData?.role === 'organizationadmin' && userData.organizationId) {
       if (selectedOrganization?.id !== userData.organizationId) {
-        // FIX: selectOrganization expects an Organization object, not an ID. Find it first.
         const orgToSelect = allOrganizations.find(o => o.id === userData.organizationId);
         if (orgToSelect) {
             selectOrganization(orgToSelect);
@@ -192,7 +184,6 @@ const AuthenticatedApp: React.FC = () => {
     
     // Priority 2: For any other user (e.g., systemowner), if no org is selected yet, select the first one.
     else if (!selectedOrganization) {
-      // FIX: selectOrganization expects an Organization object, not an ID.
       selectOrganization(allOrganizations[0]);
     }
   }, [authLoading, locationLoading, allOrganizations, userData, selectedOrganization, selectOrganization]);
@@ -215,7 +206,7 @@ const MainContent: React.FC = () => {
   const { 
     selectOrganization, allOrganizations, setAllOrganizations,
     clearSelection, selectedDisplayScreen, syncStatus,
-    updateSelectedOrganization,
+    updateSelectedOrganization, displayScreens,
   } = useLocation();
   const { role, userData, signOut } = useAuth();
   const { showToast } = useToast();
@@ -507,7 +498,6 @@ const MainContent: React.FC = () => {
               return <SystemOwnerScreen 
                         allOrganizations={allOrganizations}
                         onSelectOrganization={(org) => {
-                            // FIX: selectOrganization expects the full organization object.
                             selectOrganization(org);
                             navigateTo(Page.SuperAdmin);
                         }}
@@ -518,8 +508,9 @@ const MainContent: React.FC = () => {
 
           case Page.SuperAdmin:
               if (!selectedOrganization || !userData) return <div>Välj en organisation.</div>;
+              // Pass displayScreens from context instead of organization object
               return <SuperAdminScreen
-                  organization={selectedOrganization}
+                  organization={{...selectedOrganization, displayScreens}}
                   adminRole={userData.adminRole || 'admin'}
                   userRole={role}
                   theme={theme}
@@ -542,9 +533,6 @@ const MainContent: React.FC = () => {
               return <CustomPageEditorScreen
                   pageToEdit={customPageToEdit}
                   onSave={async (p) => {
-                      // This will now be a subcollection update, handled inside the component or via a service call.
-                      // For now, let's assume it's handled via a new service function.
-                      // await saveCustomPage(selectedOrganization!.id, p);
                       setCustomPageToEdit(null);
                       handleBack();
                   }}
@@ -557,8 +545,11 @@ const MainContent: React.FC = () => {
           
           case Page.DisplayScreenEditor:
               if (!screenToEdit || !selectedOrganization) return <div>Ingen skärm vald för redigering.</div>
+              // Pass the screen object from state which is kept up-to-date by the context
+              const currentScreenData = displayScreens.find(s => s.id === screenToEdit.id);
+              if (!currentScreenData) return <div>Kanalen kunde inte hittas. Gå tillbaka och försök igen.</div>
               return <DisplayScreenEditorScreen 
-                screen={screenToEdit} 
+                screen={currentScreenData} 
                 initialPostToEdit={postToEdit}
                 onUpdateOrganization={optimisticUpdateOrganization}
                 userRole={role}
@@ -569,7 +560,7 @@ const MainContent: React.FC = () => {
               if (role === 'organizationadmin') {
                   if (!selectedOrganization || !userData) return <div>Välj en organisation.</div>;
                   return <SuperAdminScreen 
-                      organization={selectedOrganization}
+                      organization={{...selectedOrganization, displayScreens}}
                       adminRole={userData?.adminRole || 'admin'}
                       userRole={role}
                       theme={theme}
