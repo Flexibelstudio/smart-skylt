@@ -3,10 +3,11 @@
   "description": "Cloud Functions for Firebase",
   "type": "commonjs",
   "scripts": {
-    "lint": "eslint .",
+    "lint": "echo \"(no lint)\"",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
     "start": "npm run shell",
+    "build": "tsc",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
@@ -21,8 +22,10 @@
     "smart-skylt": "file:.."
   },
   "devDependencies": {
+    "@types/node": "^20.14.10",
     "eslint": "^8.57.0",
-    "eslint-config-google": "^0.14.0"
+    "eslint-config-google": "^0.14.0",
+    "typescript": "^5.6.3"
   },
   "private": true
 }

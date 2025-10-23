@@ -147,6 +147,29 @@ export const callTestFunction = async (): Promise<any> => {
   }
 };
 
+export const runOrgCollectionsMigration = async (payload: {
+  dryRun?: boolean;
+  orgId?: string;
+  migrateChannels?: boolean;
+}): Promise<any> => {
+  if (isOffline || !functions) {
+    await offlineWarning('runOrgCollectionsMigration');
+    return {
+      dryRun: payload.dryRun,
+      message: "Detta är ett offline-svar från migreringen.",
+    };
+  }
+
+  try {
+    const migrateFunction = functions.httpsCallable('migrateOrgCollections');
+    const result = await migrateFunction(payload);
+    return result.data;
+  } catch (error) {
+    console.error("Fel vid anrop av Cloud Function 'migrateOrgCollections':", error);
+    throw error;
+  }
+};
+
 
 // ---------------------------------------------------------------------------
 // Auth

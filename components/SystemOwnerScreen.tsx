@@ -6,6 +6,7 @@ import { PrimaryButton, SecondaryButton, DestructiveButton } from './Buttons';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from '../context/ToastContext';
 import { parseToDate } from '../utils/dateUtils';
+import SystemOwnerMigrationControls from './SystemOwnerMigrationControls';
 
 // --- ROBUST DATE PARSING UTILITY ---
 // This utility handles multiple date formats that can come from Firestore.
@@ -685,6 +686,10 @@ export const SystemOwnerScreen: React.FC<SystemOwnerScreenProps> = ({ allOrganiz
                         )}
                     </div>
                 </div>
+            </div>
+
+            <div className="mt-8">
+              <SystemOwnerMigrationControls />
             </div>
 
             <ConfirmDialog

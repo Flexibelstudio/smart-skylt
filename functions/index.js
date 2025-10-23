@@ -8,6 +8,106 @@ const { GoogleGenAI, Type, Modality } = require("@google/genai");
 admin.initializeApp();
 const db = admin.firestore();
 
+// --- Engångs-migrering: organizations.displayScreens[] -> subcollection ---
+// Anropa via callable: migrateOrgCollections({ dryRun?: boolean, orgId?: string, migrateChannels?: boolean })
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+exports.migrateOrgCollections = onCall(async (request) => {
+  // Enkla skydd – anpassa till din auth-modell
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Login required.");
+  }
+  // Exempel: kräver custom claim admin === true (ta bort om du inte använder detta)
+  if (!(request.auth.token && request.auth.token.admin === true)) {
+    // kommentera bort raden nedan om du inte använder admin-claim
+    // throw new HttpsError("permission-denied", "Admin only.");
+  }
+
+  const { orgId: onlyOrgId, migrateChannels = false, dryRun = false } = request.data || {};
+
+  // Hämta orgs att migrera
+  let orgDocs = [];
+  if (onlyOrgId) {
+    const doc = await db.collection("organizations").doc(onlyOrgId).get();
+    if (!doc.exists) throw new HttpsError("not-found", `Organization ${onlyOrgId} not found.`);
+    orgDocs = [doc];
+  } else {
+    const snap = await db.collection("organizations").get();
+    orgDocs = snap.docs;
+  }
+
+  const results = [];
+
+  for (const orgDoc of orgDocs) {
+    const orgId = orgDoc.id;
+    const org = orgDoc.data() || {};
+    const screensArr = Array.isArray(org.displayScreens) ? org.displayScreens.filter(s => s && s.id) : [];
+    const channelsArr = Array.isArray(org.channels) ? org.channels.filter(c => c && c.id) : [];
+
+    let screensMigrated = 0;
+    let channelsMigrated = 0;
+
+    // ---- Skärmar -> subcollection displayScreens ----
+    if (screensArr.length) {
+      const groups = chunk(screensArr, 450); // under batch-limit 500
+      for (const group of groups) {
+        const batch = db.batch();
+        for (const s of group) {
+          const ref = db
+            .collection("organizations")
+            .doc(orgId)
+            .collection("displayScreens")
+            .doc(String(s.id));
+          batch.set(ref, s, { merge: true });
+        }
+        if (!dryRun) await batch.commit();
+        screensMigrated += group.length;
+      }
+    }
+
+    // ---- (Valfritt) Kanaler -> subcollection channels ----
+    if (migrateChannels && channelsArr.length) {
+      const groups = chunk(channelsArr, 450);
+      for (const group of groups) {
+        const batch = db.batch();
+        for (const c of group) {
+          const ref = db
+            .collection("organizations")
+            .doc(orgId)
+            .collection("channels")
+            .doc(String(c.id));
+          batch.set(ref, c, { merge: true });
+        }
+        if (!dryRun) await batch.commit();
+        channelsMigrated += group.length;
+      }
+    }
+
+    results.push({
+      orgId,
+      screensMigrated,
+      ...(migrateChannels ? { channelsMigrated } : {}),
+    });
+
+    console.log(
+      `[migrateOrgCollections] ${orgId}: screens=${screensMigrated}` +
+        (migrateChannels ? `, channels=${channelsMigrated}` : "")
+    );
+  }
+
+  return {
+    dryRun,
+    organizations: results,
+    message: dryRun ? "Dry-run klart. Inga writes gjordes." : "Migrering klar.",
+  };
+});
+
+
 /* ------------------------------------------------------------------ */
 /*                            Hjälpfunktioner                          */
 /* ------------------------------------------------------------------ */
@@ -174,9 +274,42 @@ exports.runAiAutomations = onSchedule(
         const automations = Array.isArray(org.aiAutomations) ? org.aiAutomations : [];
         if (automations.length === 0) return;
 
-        // Skärmar från subcollection
-        const screensSnap = await db.collection("organizations").doc(orgId).collection("displayScreens").get();
-        const displayScreens = screensSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // --------------------------------------------------------------
+        // HÄMTA SKÄRMAR (stöder både subcollection och array-fält)
+        // --------------------------------------------------------------
+        let displayScreens = [];
+
+        // 1) Försök subcollection: organizations/{orgId}/displayScreens
+        try {
+          const screensSnap = await db
+            .collection("organizations")
+            .doc(orgId)
+            .collection("displayScreens")
+            .get();
+
+          displayScreens = screensSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        } catch (e) {
+          console.warn(`[Org: ${orgId}] Could not read subcollection displayScreens:`, e);
+        }
+
+        // 2) Fallback till array-fält på org-dokumentet (nuvarande struktur)
+        if (Array.isArray(org.displayScreens)) {
+          const fromArray = org.displayScreens
+            .filter((s) => s && s.id)
+            .map((s) => ({ ...s }));
+
+          // slå ihop utan dubbletter (prioritera subcollection om båda finns)
+          const byId = new Map(displayScreens.map((s) => [s.id, s]));
+          for (const s of fromArray) {
+            if (!byId.has(s.id)) byId.set(s.id, s);
+          }
+          displayScreens = Array.from(byId.values());
+        }
+
+        if (displayScreens.length === 0) {
+          console.log(`[Org: ${orgId}] No display screens found (subcollection or array).`);
+        }
+        // --------------------------------------------------------------
 
         let hasChanges = false;
         const newSuggestions = [];
@@ -260,7 +393,15 @@ exports.runAiAutomations = onSchedule(
             );
           }
           if (lastRun) {
+            // <<< DEBUG: visa vad backend faktiskt läser och jämför i rätt tidszon
+            console.log(`[Automation: ${automation.id}] DEBUG lastRunAt raw:`, automation.lastRunAt);
             const lastRunParts = getPartsInTz(lastRun, tz);
+            console.log(
+              `[Automation: ${automation.id}] DEBUG compare`,
+              JSON.stringify({ tz, nowParts, lastRunParts })
+            );
+            // >>> END DEBUG
+
             if (!lastRunParts) {
               console.log(`[Automation: ${automation.id}] Skipping: Could not get TZ parts for lastRunAt.`);
               continue;
@@ -687,7 +828,12 @@ exports.gemini = onCall(
             contents: { parts },
             config: { responseModalities: [Modality.IMAGE] },
           });
-          const cand = (response.candidates && response.candidates[0] && response.candidates[0].content && response.candidates[0].content.parts) || [];
+          const cand =
+            (response.candidates &&
+              response.candidates[0] &&
+              response.candidates[0].content &&
+              response.candidates[0].content.parts) ||
+            [];
           for (const part of cand) {
             if (part.inlineData) {
               return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
