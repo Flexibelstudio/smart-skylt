@@ -244,11 +244,7 @@ export const getUserData = async (uid: string): Promise<UserData | null> => {
 export const getOrganizations = async (): Promise<Organization[]> => {
   if (isOffline || !db) return Promise.resolve([...MOCK_ORGANIZATIONS]);
   const qs = await db.collection('organizations').get();
-  return qs.docs.map((d) => {
-    const data = d.data() as Organization;
-    delete data.displayScreens; // This field is deprecated
-    return data;
-  });
+  return qs.docs.map((d) => d.data() as Organization);
 };
 
 export const getOrganizationById = async (organizationId: string): Promise<Organization | null> => {
@@ -259,9 +255,7 @@ export const getOrganizationById = async (organizationId: string): Promise<Organ
   const ref = db.collection('organizations').doc(organizationId);
   const snap = await ref.get();
   if (!snap.exists) return null;
-  const data = snap.data() as Organization;
-  delete data.displayScreens; // This field is deprecated
-  return data;
+  return snap.data() as Organization;
 };
 
 export const listenToOrganizationChanges = (
@@ -288,9 +282,7 @@ const getUpdatedOrg = async (organizationId: string): Promise<Organization> => {
   }
   const snap = await db.collection('organizations').doc(organizationId).get();
   if (!snap.exists) throw new Error('Organisationen försvann.');
-  const data = snap.data() as Organization;
-  delete data.displayScreens;
-  return data;
+  return snap.data() as Organization;
 };
 
 export const createOrganization = async (orgData: Pick<Organization, 'name' | 'email'>): Promise<Organization> => {

@@ -661,7 +661,7 @@ const ShareMediaToChannelModal: React.FC<{
 };
 
 const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, onUpdateOrganization }) => {
-    const { displayScreens } = useLocation();
+    const { displayScreens, updateDisplayScreen } = useLocation();
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -671,6 +671,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
     const [selectedMediaIds, setSelectedMediaIds] = useState<Set<string>>(new Set());
     const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
     const [batchShareModal, setBatchShareModal] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
 
     const [filter, setFilter] = useState<'all' | 'image' | 'video' | 'unused'>(() => {
         try {
@@ -869,7 +870,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
     };
     
     const handleBatchShareConfirm = async (targetScreenIds: string[]) => {
-        const { updateDisplayScreen } = useLocation();
+        setIsSharing(true);
         const selectedItems = (organization.mediaLibrary || []).filter(item => selectedMediaIds.has(item.id));
 
         try {
@@ -896,6 +897,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
         } finally {
             handleClearSelection();
             setBatchShareModal(false);
+            setIsSharing(false);
         }
     };
 
@@ -1110,7 +1112,7 @@ const MediaGalleryManager: React.FC<SuperAdminScreenProps> = ({ organization, on
                 onClose={() => setBatchShareModal(false)}
                 onShare={handleBatchShareConfirm}
                 screens={displayScreens}
-                isSharing={isUploading}
+                isSharing={isSharing}
             />
         </Card>
     );
@@ -1187,6 +1189,94 @@ const MediaPreviewModal: React.FC<{
                 </div>
             </div>
         </div>
+    );
+};
+
+const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, onUpdateOrganization }) => {
+    const { showToast } = useToast();
+    const [automationToEdit, setAutomationToEdit] = useState<AiAutomation | null>(null);
+    const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+    const automations = organization.aiAutomations || [];
+
+    const handleSave = async (automation: AiAutomation) => {
+        const isNew = !automations.some(a => a.id === automation.id);
+        const updatedAutomations = isNew
+            ? [...automations, automation]
+            : automations.map(a => a.id === automation.id ? automation : a);
+        
+        try {
+            await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
+            showToast({ message: `Automation '${automation.name}' sparad.`, type: 'success' });
+            setIsEditorOpen(false);
+            setAutomationToEdit(null);
+        } catch (e) {
+            showToast({ message: "Kunde inte spara automationen.", type: 'error' });
+        }
+    };
+
+    const handleDelete = async (automationId: string) => {
+        if (window.confirm("Är du säker på att du vill ta bort denna automation?")) {
+            const updatedAutomations = automations.filter(a => a.id !== automationId);
+            try {
+                await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
+                showToast({ message: "Automation borttagen.", type: 'success' });
+            } catch (e) {
+                showToast({ message: "Kunde inte ta bort automationen.", type: 'error' });
+            }
+        }
+    };
+    
+    return (
+        <>
+            <Card
+                title="AI Automationer"
+                subTitle="Skapa automatiska inlägg baserat på ett schema och ett kreativt ämne."
+                actions={
+                    <PrimaryButton onClick={() => { setAutomationToEdit(null); setIsEditorOpen(true); }}>
+                        Skapa ny automation
+                    </PrimaryButton>
+                }
+            >
+                {automations.length > 0 ? (
+                    <div className="space-y-3">
+                        {automations.map(auto => (
+                            <div key={auto.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4 border border-slate-200 dark:border-slate-700">
+                                <div className="flex-grow">
+                                    <p className="font-semibold text-lg text-slate-900 dark:text-white">{auto.name}</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2" title={auto.topic}>{auto.topic}</p>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    <CompactToggleSwitch
+                                        checked={auto.isEnabled}
+                                        onChange={async (checked) => {
+                                            await handleSave({ ...auto, isEnabled: checked });
+                                        }}
+                                    />
+                                    <button onClick={() => { setAutomationToEdit(auto); setIsEditorOpen(true); }} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-primary" title="Redigera"><PencilIcon className="h-5 w-5"/></button>
+                                    <button onClick={() => handleDelete(auto.id)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-red-500" title="Ta bort"><TrashIcon className="h-5 w-5"/></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <EmptyState
+                        icon={<SparklesIcon className="h-12 w-12 text-slate-400" />}
+                        title="Inga automationer skapade"
+                        message="Skapa din första automation för att låta AI:n generera inläggsförslag automatiskt."
+                        action={{text: "Skapa första automationen", onClick: () => { setAutomationToEdit(null); setIsEditorOpen(true); }}}
+                    />
+                )}
+            </Card>
+            
+            <AiAutomationEditorModal
+                isOpen={isEditorOpen}
+                onClose={() => setIsEditorOpen(false)}
+                onSave={handleSave}
+                automation={automationToEdit}
+                organization={organization}
+            />
+        </>
     );
 };
 

@@ -63,7 +63,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { currentUser, isScreenMode, authLoading } = useAuth();
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([]);
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
-  const [displayScreens, setDisplayScreens] = useState<DisplayScreen[]>([]);
+  const [screensFromSubcollection, setScreensFromSubcollection] = useState<DisplayScreen[]>([]);
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
   const [locationLoading, setLocationLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
@@ -74,6 +74,19 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const selectedOrganizationRef = useRef(selectedOrganization);
   useEffect(() => { selectedOrganizationRef.current = selectedOrganization; }, [selectedOrganization]);
+
+  // Merge screens from old array and new subcollection
+  const displayScreens = useMemo(() => {
+    const fromArray = selectedOrganization?.displayScreens || [];
+    const byId = new Map<string, DisplayScreen>();
+    
+    // Add screens from the old array first
+    fromArray.forEach(s => { if (s?.id) byId.set(s.id, s); });
+    // Then, overwrite/add screens from the new subcollection. This gives subcollection priority.
+    screensFromSubcollection.forEach(s => { if (s?.id) byId.set(s.id, s); });
+
+    return Array.from(byId.values());
+  }, [selectedOrganization, screensFromSubcollection]);
 
 
   const hardReset = useCallback(() => {
@@ -154,7 +167,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Org & Screen realtid listeners
   useEffect(() => {
     if (authLoading || !selectedOrganization?.id) {
-        setDisplayScreens([]);
+        setScreensFromSubcollection([]);
         return;
     };
 
@@ -178,7 +191,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     const unsubScreens = listenToDisplayScreens(selectedOrganization.id, (screens) => {
-        setDisplayScreens(screens);
+        setScreensFromSubcollection(screens);
         // If a screen is selected, make sure its data is kept up-to-date
         setSelectedDisplayScreen(prevScreen => {
             if (!prevScreen) return null;
@@ -313,12 +326,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!selectedOrganization) throw new Error("No organization selected.");
         const newScreen = { ...newScreenData, id: `screen-${Date.now()}` };
         
-        setDisplayScreens(prev => [...prev, newScreen]); // Optimistic update
+        setScreensFromSubcollection(prev => [...prev, newScreen]); // Optimistic update
         try {
             await fbAddDisplayScreen(selectedOrganization.id, newScreen);
         } catch (e) {
             console.error("Failed to add screen, rolling back", e);
-            setDisplayScreens(prev => prev.filter(s => s.id !== newScreen.id));
+            setScreensFromSubcollection(prev => prev.filter(s => s.id !== newScreen.id));
             throw e;
         }
     }, [selectedOrganization]);
@@ -326,32 +339,32 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const updateDisplayScreen = useCallback(async (screenId: string, data: Partial<DisplayScreen>) => {
         if (!selectedOrganization) throw new Error("No organization selected.");
         
-        const originalScreens = displayScreens;
+        const originalScreens = screensFromSubcollection;
         const updatedScreens = originalScreens.map(s => s.id === screenId ? { ...s, ...data } : s);
-        setDisplayScreens(updatedScreens); // Optimistic update
+        setScreensFromSubcollection(updatedScreens); // Optimistic update
         
         try {
             await fbUpdateDisplayScreen(selectedOrganization.id, screenId, data);
         } catch(e) {
             console.error("Failed to update screen, rolling back", e);
-            setDisplayScreens(originalScreens);
+            setScreensFromSubcollection(originalScreens);
             throw e;
         }
-    }, [selectedOrganization, displayScreens]);
+    }, [selectedOrganization, screensFromSubcollection]);
 
     const deleteDisplayScreen = useCallback(async (screenId: string) => {
         if (!selectedOrganization) throw new Error("No organization selected.");
         
-        const originalScreens = displayScreens;
-        setDisplayScreens(prev => prev.filter(s => s.id !== screenId)); // Optimistic update
+        const originalScreens = screensFromSubcollection;
+        setScreensFromSubcollection(prev => prev.filter(s => s.id !== screenId)); // Optimistic update
         try {
             await fbDeleteDisplayScreen(selectedOrganization.id, screenId);
         } catch (e) {
             console.error("Failed to delete screen, rolling back", e);
-            setDisplayScreens(originalScreens);
+            setScreensFromSubcollection(originalScreens);
             throw e;
         }
-    }, [selectedOrganization, displayScreens]);
+    }, [selectedOrganization, screensFromSubcollection]);
 
   const value = useMemo(() => ({
     selectedOrganization,
