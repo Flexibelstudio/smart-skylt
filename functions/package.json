@@ -1,20 +1,22 @@
 {
   "name": "functions",
   "description": "Cloud Functions for Firebase",
-  "type": "commonjs",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
   "scripts": {
     "lint": "echo \"(no lint)\"",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
     "start": "npm run shell",
-    "build": "tsc",
+    "build": "echo \"(no build step - JS only)\"",
+    "predeploy": "npm run build",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
-  "engines": {
-    "node": "20"
-  },
-  "main": "index.js",
   "dependencies": {
     "@google/genai": "^0.14.0",
     "firebase-admin": "^13.4.0",
@@ -22,10 +24,7 @@
     "smart-skylt": "file:.."
   },
   "devDependencies": {
-    "@types/node": "^20.14.10",
     "eslint": "^8.57.0",
-    "eslint-config-google": "^0.14.0",
-    "typescript": "^5.6.3"
-  },
-  "private": true
+    "eslint-config-google": "^0.14.0"
+  }
 }
