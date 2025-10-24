@@ -234,7 +234,7 @@ ${userPrompt}
 
 export const generateDisplayPostContent = (userPrompt: string, organizationName: string): Promise<{ headline: string, body: string }> => handleAIError(async () => {
     const ai = ensureAiInitialized();
-    const prompt = `Du är en expert-copywriter för ett företag som heter "${organizationName}". Skapa en kort, slagkraftig rubrik (headline) och en kort brödtext (body) på SVENSKA, baserat på användarens idé: "${userPrompt}"`;
+    const prompt = `Du är en expert-copywriter för digitala skyltar för ett företag som heter "${organizationName}". All text måste vara extremt koncis och lättläst på några få sekunder. Skapa en rubrik (headline) och en brödtext (body) på SVENSKA, baserat på användarens idé: "${userPrompt}"`;
     // FIX: Updated model name per Gemini API guidelines.
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -243,7 +243,16 @@ export const generateDisplayPostContent = (userPrompt: string, organizationName:
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
-                properties: { headline: { type: Type.STRING }, body: { type: Type.STRING } },
+                properties: { 
+                    headline: { 
+                        type: Type.STRING,
+                        description: 'En mycket kort rubrik för en digital skylt, max 5-7 ord.'
+                    }, 
+                    body: { 
+                        type: Type.STRING,
+                        description: 'En kort brödtext, max 1-2 korta meningar.'
+                    } 
+                },
                 required: ["headline", "body"],
             },
         },
@@ -295,7 +304,7 @@ Använd de bifogade bilderna som stark visuell inspiration för färg, stil och 
         : `Välj den layout som passar bäst av 'text-only', 'image-fullscreen', 'image-left', 'image-right'.`;
 
     const prompt = `Du är en expert kreativ chef och designer för ett företag som heter "${organization.name}".
-Din uppgift är att skapa ett komplett, visuellt tilltalande inlägg för en digital skylt baserat på användarens idé.
+Din uppgift är att skapa ett komplett, visuellt tilltalande inlägg för en digital skylt baserat på användarens idé. All text måste vara koncis och lättläst på några sekunder.
 Var kreativ och variera dina designer. Ibland kan du hålla dig till varumärket, och ibland skapa något vilt och annorlunda som sticker ut.
 
 **Varumärkesriktlinjer:**
@@ -316,8 +325,8 @@ ${imageStylePreferences}
 **Din uppgift:**
 Svara ENDAST med ett JSON-objekt inuti ett markdown-kodblock (\`\`\`json ... \`\`\`).
 JSON-objektet måste innehålla:
-1.  'headline': En kort, slagkraftig rubrik på SVENSKA.
-2.  'body': En kort brödtext på SVENSKA.
+1.  'headline': En mycket kort, slagkraftig rubrik på SVENSKA (max 5-7 ord).
+2.  'body': En kort brödtext på SVENSKA (max 1-2 korta meningar).
 3.  'imagePrompt': En detaljerad, kreativ och professionell prompt på SVENSKA för en AI-bildgenerator. Den ska vara både inspirerande för en människa och detaljerad nog för bild-AI:n. Inkludera användarens bildstils-preferenser om de anges. Om layouten är 'text-only', kan detta vara en tom sträng.
 4.  'layout': ${layoutInstruction}
 5.  'backgroundColor': Ett färgsökord ('primary', 'secondary', 'accent', 'black', 'white') eller en hex-kod.
@@ -401,7 +410,7 @@ ${organization.styleProfile.summary}
 - Layout: ${originalPost.layout}
 `;
 
-    const prompt = `Du är en expert kreativ chef och designer för ett företag som heter "${organization.name}".
+    const prompt = `Du är en expert kreativ chef och designer för ett företag som heter "${organization.name}". All text måste vara koncis och lättläst på några sekunder.
 Din uppgift är att skapa ett uppföljande inlägg i en pågående kampanj. Här är det föregående inlägget:
 ---
 ${originalPostSummary}
@@ -417,8 +426,8 @@ ${styleProfileContext}
 
 **Din uppgift:**
 Svara med ett JSON-objekt som definierar det nya inlägget. JSON-objektet måste innehålla:
-1.  'headline': En kort, slagkraftig rubrik på SVENSKA.
-2.  'body': En kort brödtext på SVENSKA.
+1.  'headline': En mycket kort, slagkraftig rubrik på SVENSKA (max 5-7 ord).
+2.  'body': En kort brödtext på SVENSKA (max 1-2 korta meningar).
 3.  'imagePrompt': En detaljerad, kreativ och professionell prompt på SVENSKA för en AI-bildgenerator. Den ska vara både inspirerande för en människa och detaljerad nog för bild-AI:n. Om layouten är 'text-only', kan detta vara en tom sträng.
 4.  'layout': Välj en av 'text-only', 'image-fullscreen', 'image-left', 'image-right'.
 5.  'backgroundColor': Ett färgsökord ('primary', 'secondary', 'accent', 'black', 'white') eller en hex-kod.
@@ -436,8 +445,8 @@ Svara med ett JSON-objekt som definierar det nya inlägget. JSON-objektet måste
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                    headline: { type: Type.STRING },
-                    body: { type: Type.STRING },
+                    headline: { type: Type.STRING, description: 'En mycket kort rubrik för en digital skylt, max 5-7 ord.' },
+                    body: { type: Type.STRING, description: 'En kort brödtext, max 1-2 korta meningar.' },
                     imagePrompt: { type: Type.STRING },
                     layout: { type: Type.STRING, enum: ['text-only', 'image-fullscreen', 'image-left', 'image-right'] },
                     backgroundColor: { type: Type.STRING },
@@ -492,7 +501,7 @@ export const generateDisplayPostCampaign = (
     userMediaIndex?: number;
 }[]> => handleAIError(async () => {
     const ai = ensureAiInitialized();
-    const prompt = `Du är en expert på marknadsföringskampanjer för digitala skyltar för ett företag som heter "${organizationName}".
+    const prompt = `Du är en expert på marknadsföringskampanjer för digitala skyltar för ett företag som heter "${organizationName}". All text måste vara koncis och lättläst på några sekunder.
 Verksamhetstyp: ${businessType ? businessType.join(", ") : "Ej specificerad"}.
 Verksamhetsbeskrivning: "${businessDescription || "Ej specificerad"}".
 
@@ -502,8 +511,8 @@ ${userMedia ? `Användaren har laddat upp ${userMedia.length} bild(er) som du ka
 
 Skapa en JSON-array med ${postCount} inläggsobjekt. Varje objekt ska ha:
 - 'internalTitle': En kort intern titel.
-- 'headline': En slagkraftig rubrik.
-- 'body': En kort brödtext.
+- 'headline': En mycket kort, slagkraftig rubrik (max 5-7 ord).
+- 'body': En kort brödtext (max 1-2 korta meningar).
 - 'durationSeconds': Mellan 10-20 sekunder.
 - 'layout': Välj en passande layout från ['text-only', 'image-fullscreen', 'image-left', 'image-right']. Variera gärna.
 - För inlägg med bild, välj ETT av följande:
@@ -531,8 +540,8 @@ Använd inte både 'userMediaIndex' och 'imagePrompt' i samma inlägg. All text,
                     type: Type.OBJECT,
                     properties: {
                         internalTitle: { type: Type.STRING },
-                        headline: { type: Type.STRING },
-                        body: { type: Type.STRING },
+                        headline: { type: Type.STRING, description: 'En mycket kort rubrik för en digital skylt, max 5-7 ord.' },
+                        body: { type: Type.STRING, description: 'En kort brödtext, max 1-2 korta meningar.' },
                         durationSeconds: { type: Type.INTEGER },
                         layout: { type: Type.STRING, enum: ['text-only', 'image-fullscreen', 'image-left', 'image-right'] },
                         imagePrompt: { type: Type.STRING },
@@ -571,7 +580,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
 export const refineDisplayPostContent = (content: { headline: string; body: string }, command: 'shorter' | 'more_formal' | 'add_emojis' | 'more_casual'): Promise<{ headline: string, body: string }> => handleAIError(async () => {
     const ai = ensureAiInitialized();
     const commandDescription = { shorter: "Gör den mer koncis.", more_formal: "Använd en mer formell ton.", add_emojis: "Lägg till passande emojis.", more_casual: "Använd en mer vardaglig ton." }[command];
-    const prompt = `Nuvarande innehåll: Rubrik: "${content.headline}", Brödtext: "${content.body}". Ditt kommando är: ${commandDescription}. Skriv om innehållet på SVENSKA.`;
+    const prompt = `Nuvarande innehåll: Rubrik: "${content.headline}", Brödtext: "${content.body}". Ditt kommando är: ${commandDescription}. Skriv om innehållet på SVENSKA. Håll texten kort och anpassad för en digital skylt.`;
     // FIX: Updated model name per Gemini API guidelines.
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -580,7 +589,10 @@ export const refineDisplayPostContent = (content: { headline: string; body: stri
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
-                properties: { headline: { type: Type.STRING }, body: { type: Type.STRING } },
+                properties: { 
+                    headline: { type: Type.STRING, description: 'En mycket kort rubrik för en digital skylt, max 5-7 ord.' }, 
+                    body: { type: Type.STRING, description: 'En kort brödtext, max 1-2 korta meningar.' } 
+                },
                 required: ["headline", "body"],
             },
         },
@@ -670,7 +682,7 @@ ${styleProfileContext}
 
 Varje idé ska ha en slagkraftig rubrik ('headline'), en kort text ('text') och ett 'visual'-objekt med bildidéer.
 
-**VIKTIGT:** Alla textvärden i JSON-objektet, inklusive alla fält inuti 'visual'-objektet, måste vara på **svenska**. Den visuella beskrivningen ska vara både inspirerande och detaljerad.
+**VIKTIGT:** All text, inklusive rubriker och brödtext, måste vara koncis och anpassad för en digital skylt. Alla textvärden i JSON-objektet, inklusive alla fält inuti 'visual'-objektet, måste vara på **svenska**. Den visuella beskrivningen ska vara både inspirerande och detaljerad.
 Exempel på ett bra 'visual'-objekt på svenska:
 {
   "imageIdea": "En närbild på en nybakad, perfekt semla, pudrad med florsocker.",
@@ -708,7 +720,11 @@ Svara ENDAST med ett JSON-objekt enligt schemat.`;
                         type: Type.ARRAY,
                         items: {
                             type: Type.OBJECT,
-                            properties: { headline: { type: Type.STRING }, text: { type: Type.STRING }, visual: visualSchema },
+                            properties: { 
+                                headline: { type: Type.STRING, description: 'En mycket kort rubrik för en digital skylt, max 5-7 ord.' }, 
+                                text: { type: Type.STRING, description: 'En kort brödtext, max 1-2 korta meningar.' }, 
+                                visual: visualSchema 
+                            },
                             required: ["headline", "text", "visual"],
                         },
                     },
@@ -770,7 +786,7 @@ Ditt uppdrag är att kombinera användarens tidigare säsongsdata med deras varu
 
 Varje kampanjidé ska ha en slagkraftig rubrik ('headline'), en kort text ('text') och ett 'visual'-objekt med bildidéer.
 
-**VIKTIGT:** Alla textvärden i JSON-objektet, inklusive alla fält inuti 'visual'-objektet, måste vara på **svenska**. Den visuella beskrivningen ska vara både inspirerande och detaljerad.
+**VIKTIGT:** All text, inklusive rubriker och brödtext, måste vara koncis och anpassad för en digital skylt. Alla textvärden i JSON-objektet, inklusive alla fält inuti 'visual'-objektet, måste vara på **svenska**. Den visuella beskrivningen ska vara både inspirerande och detaljerad.
 
 Svara ENDAST med ett JSON-objekt enligt schemat.`;
 
@@ -797,7 +813,11 @@ Svara ENDAST med ett JSON-objekt enligt schemat.`;
                         type: Type.ARRAY,
                         items: {
                             type: Type.OBJECT,
-                            properties: { headline: { type: Type.STRING }, text: { type: Type.STRING }, visual: visualSchema },
+                            properties: { 
+                                headline: { type: Type.STRING, description: 'En mycket kort rubrik för en digital skylt, max 5-7 ord.' }, 
+                                text: { type: Type.STRING, description: 'En kort brödtext, max 1-2 korta meningar.' }, 
+                                visual: visualSchema 
+                            },
                             required: ["headline", "text", "visual"],
                         },
                     },
@@ -845,11 +865,11 @@ ${preferenceProfileContext}
 Ditt mål är att ge tre konkreta idéförslag på SVENSKA utifrån användarens input: "${userInput}".
 
 Varje förslag ska innehålla:
-1. 'headline': En kort, slagkraftig rubrik.
-2. 'text': 1–2 meningar som förklarar budskapet tydligt.
+1. 'headline': En mycket kort, slagkraftig rubrik (max 5-7 ord).
+2. 'text': 1–2 korta meningar som förklarar budskapet tydligt.
 3. 'visual': Ett objekt med visuella riktlinjer anpassade för verksamheten (t.ex. Gym: energi, Café: värme, Spa: lugn, Butik: trend).
 
-**VIKTIGT:** Alla textvärden i JSON-objektet, inklusive alla fält inuti 'visual'-objektet, måste vara på **svenska**. Den visuella beskrivningen ska vara både inspirerande och detaljerad.
+**VIKTIGT:** All text, inklusive rubriker och brödtext, måste vara koncis och anpassad för en digital skylt. Alla textvärden i JSON-objektet, inklusive alla fält inuti 'visual'-objektet, måste vara på **svenska**. Den visuella beskrivningen ska vara både inspirerande och detaljerad.
 Exempel på ett bra 'visual'-objekt på svenska:
 {
   "imageIdea": "En närbild på en nybakad, perfekt semla, pudrad med florsocker.",
