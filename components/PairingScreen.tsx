@@ -19,15 +19,30 @@ const writeDeviceId = (uid: string | undefined | null, deviceId: string) => {
 const formatCode = (c: string | null) => (!c ? '' : `${c.substring(0, 3)}-${c.substring(3, 6)}`);
 
 export const PairingScreen: React.FC = () => {
-  const { allOrganizations, selectOrganization, selectDisplayScreen } = useLocation();
+  const { allOrganizations, selectOrganization, selectDisplayScreen, displayScreens } = useLocation();
   const { currentUser } = useAuth();
 
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [pendingScreenId, setPendingScreenId] = useState<string | null>(null);
 
-  // Guard mot att köra parningsflödet flera gånger vid flera snapshot-events
   const handledOnceRef = useRef(false);
   const mountedRef = useRef(true);
+
+  // NEW EFFECT: When screens load into the context, find and select the one we're waiting for.
+  useEffect(() => {
+    if (pendingScreenId && displayScreens.length > 0) {
+      const screen = displayScreens.find(s => s.id === pendingScreenId);
+      if (screen) {
+        selectDisplayScreen(screen);
+        // The component will unmount on success, so no need to reset state.
+      } else {
+        // The screens loaded, but the one we need wasn't there.
+        setError('Konfigurationen som mottogs var ogiltig. Kontakta support.');
+        setPendingScreenId(null); // Stop trying.
+      }
+    }
+  }, [pendingScreenId, displayScreens, selectDisplayScreen]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -35,30 +50,27 @@ export const PairingScreen: React.FC = () => {
 
     const setupPairing = async () => {
       try {
-        // Skapa ny kod och börja lyssna
         const newCode = await createPairingCode();
         if (!mountedRef.current) return;
         setCode(newCode);
 
         unsubscribe = listenToPairingCode(newCode, async (pairingData: ScreenPairingCode) => {
           try {
-            // Ignorera om komponenten redan hanterat parningen
             if (handledOnceRef.current) return;
 
-            // Vi väntar tills admin har satt status=paired och skickat alla fält
             const isReady =
               pairingData?.status === 'paired' &&
               pairingData.organizationId &&
               pairingData.assignedDisplayScreenId;
 
             if (!isReady) return;
+            
+            handledOnceRef.current = true; // Prevent multiple triggers
 
-            // 1) Spara deviceId (om skickat) — både globalt och UID-scopat
             if (pairingData.pairedDeviceId) {
               writeDeviceId(currentUser?.uid, pairingData.pairedDeviceId);
             }
 
-            // 2) Slå upp org (först i minnet, annars hämta)
             let org: Organization | undefined =
               allOrganizations.find(o => o.id === pairingData.organizationId) || undefined;
 
@@ -71,19 +83,14 @@ export const PairingScreen: React.FC = () => {
               return;
             }
 
-            // 3) Hitta skärmen i org
-            const screen: DisplayScreen | undefined = org.displayScreens?.find(
-              s => s.id === pairingData.assignedDisplayScreenId
-            );
-            if (!screen) {
-              setError('Konfigurationen som mottogs var ogiltig. Kontakta support.');
-              return;
-            }
-
-            // 4) Navigera (uppdatera context) och stäng lyssnaren
-            handledOnceRef.current = true; // så vi inte triggar igen om snapshot upprepas
+            // --- REFACTORED LOGIC ---
+            // 1. Select the organization in the context. This will trigger the context to
+            //    fetch the `displayScreens` from the subcollection.
             selectOrganization(org);
-            selectDisplayScreen(screen);
+
+            // 2. Set a pending state with the screen ID we need to select.
+            setPendingScreenId(pairingData.assignedDisplayScreenId!);
+            // The new useEffect above will now handle selecting the screen once it's loaded.
 
             if (unsubscribe) {
               unsubscribe();
@@ -110,9 +117,7 @@ export const PairingScreen: React.FC = () => {
       mountedRef.current = false;
       if (unsubscribe) unsubscribe();
     };
-    // Viktigt: beroenden. Vi behöver currentUser.uid för rätt nyckel,
-    // och listorna/navigationsfunktionerna från context.
-  }, [allOrganizations, selectDisplayScreen, selectOrganization, currentUser?.uid]);
+  }, [allOrganizations, selectOrganization, currentUser?.uid]);
 
   return (
     <div className="w-full h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
