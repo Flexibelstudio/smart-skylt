@@ -1489,6 +1489,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                 onPairSuccess={(newScreen) => {
                     // This is now handled by the context listener, but we might keep it for optimistic updates
                 }}
+                onUpdateOrganization={onUpdateOrganization}
             />
             {screenToPreview && (
                 <DisplayScreenPreviewModal
@@ -2166,7 +2167,8 @@ const PairingModal: React.FC<{
     organization: Organization;
     systemSettings: SystemSettings | null;
     onPairSuccess: (newScreen: PhysicalScreen) => void;
-}> = ({ isOpen, onClose, organization, systemSettings, onPairSuccess }) => {
+    onUpdateOrganization: (organizationId: string, data: Partial<Organization>) => Promise<void>;
+}> = ({ isOpen, onClose, organization, systemSettings, onPairSuccess, onUpdateOrganization }) => {
     const { displayScreens } = useLocation();
     const { currentUser } = useAuth();
     const { showToast } = useToast();
