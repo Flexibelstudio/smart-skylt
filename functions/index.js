@@ -8,7 +8,7 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 // --- firebase-admin (modulära imports för ESM) ---
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { getAuth } from "firebase-admin/auth";
 
@@ -464,66 +464,67 @@ async function runAutomationsOnce(orgIdFilter) {
         console.log(`[Automation:${automation.id}] Targets`, JSON.stringify(targetScreenIds));
         console.log(`[Automation:${automation.id}] DisplayScreens in memory: ${displayScreens.length}`);
 
-        // ---- GENERATE PER SCREEN ----
-        for (const screenId of targetScreenIds) {
-          const screen = displayScreens.find((s) => s.id === screenId);
-          if (!screen) {
-            console.log(`[Automation:${automation.id}] Target screen NOT found in subcollection`, screenId);
-            continue;
-          }
+// ---- GENERATE PER SCREEN ----
+for (const screenId of targetScreenIds) {
+  const screen = displayScreens.find((s) => s.id === screenId);
+  if (!screen) {
+    console.log(`[Automation:${automation.id}] Target screen NOT found in subcollection`, screenId);
+    continue;
+  }
 
-          // Bildgenerering (om layout kräver bild)
-          let imageUrl;
-          if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
-            try {
-              const img = await ai.models.generateImages({
-                model: "imagen-4.0-generate-001",
-                prompt: postDetails.imagePrompt,
-                config: {
-                  numberOfImages: 1,
-                  outputMimeType: "image/jpeg",
-                  aspectRatio: screen.aspectRatio,
-                },
-              });
-              if (img.generatedImages && img.generatedImages.length > 0) {
-                imageUrl = `data:image/jpeg;base64,${img.generatedImages[0].image.imageBytes}`;
-              }
-            } catch (imgErr) {
-              console.warn(
-                `[Automation:${automation.id}] Image generation failed; proceeding with text-only.`,
-                (imgErr && imgErr.message) || imgErr
-              );
-            }
-          }
+  // Bildgenerering (om layout kräver bild)
+  let imageUrl;
+  if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
+    try {
+      const img = await ai.models.generateImages({
+        model: "imagen-4.0-generate-001",
+        prompt: postDetails.imagePrompt,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: "image/jpeg",
+          aspectRatio: screen.aspectRatio,
+        },
+      });
+      if (img.generatedImages && img.generatedImages.length > 0) {
+        imageUrl = `data:image/jpeg;base64,${img.generatedImages[0].image.imageBytes}`;
+      }
+    } catch (imgErr) {
+      console.warn(
+        `[Automation:${automation.id}] Image generation failed; proceeding with text-only.`,
+        (imgErr && imgErr.message) || imgErr
+      );
+    }
+  }
 
-          const newPostData = {
-            id: `sugg-post-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-            internalTitle: `AI: ${postDetails.headline || "Förslag"}`,
-            headline: postDetails.headline || "",
-            body: postDetails.body || "",
-            layout: postDetails.layout || "text-only",
-            durationSeconds: 15,
-            backgroundColor: postDetails.backgroundColor || "primary",
-            textColor: postDetails.textColor || "white",
-            imageOverlayEnabled: !!postDetails.imageOverlayEnabled,
-            textAlign: postDetails.textAlign || "center",
-            textAnimation: postDetails.textAnimation || "none",
-            imageUrl,
-            isAiGeneratedImage: !!imageUrl,
-          };
+  const newPostData = {
+    id: `sugg-post-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+    internalTitle: `AI: ${postDetails.headline || "Förslag"}`,
+    headline: postDetails.headline || "",
+    body: postDetails.body || "",
+    layout: postDetails.layout || "text-only",
+    durationSeconds: 15,
+    backgroundColor: postDetails.backgroundColor || "primary",
+    textColor: postDetails.textColor || "white",
+    imageOverlayEnabled: !!postDetails.imageOverlayEnabled,
+    textAlign: postDetails.textAlign || "center",
+    textAnimation: postDetails.textAnimation || "none",
+    imageUrl,
+    isAiGeneratedImage: !!imageUrl,
+  };
 
-          newSuggestions.push({
-            id: `sugg-${Date.now()}-${Math.random()}`,
-            automationId: automation.id,
-            targetScreenId: screenId,
-            createdAt: FieldValue.serverTimestamp(),
-            status: "pending",
-            postData: newPostData,
-          });
-        }
+  newSuggestions.push({
+    id: `sugg-${Date.now()}-${Math.random()}`,
+    automationId: automation.id,
+    targetScreenId: screenId,
+    createdAt: Timestamp.now(), // <-- ändringen
+    status: "pending",
+    postData: newPostData,
+  });
+}
 
-        automation.lastRunAt = now.toISOString();
-        hasChanges = true;
+automation.lastRunAt = now.toISOString();
+hasChanges = true;
+
       } catch (err) {
         console.error(`[Automation: ${automation.id}] CRITICAL ERROR during generation for org ${orgId}:`, err);
       }
