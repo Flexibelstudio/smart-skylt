@@ -488,34 +488,45 @@ export const addDisplayScreen = async (organizationId: string, screenData: Displ
     await ref.set(removeUndefinedValues(screenData));
 };
 
-export const updateDisplayScreen = async (organizationId: string, screenId: string, data: Partial<DisplayScreen>): Promise<void> => {
-    if (isOffline || !db) {
-        const org = MOCK_ORGANIZATIONS.find(o => o.id === organizationId);
-        const screen = org?.displayScreens?.find(s => s.id === screenId);
-        if (screen) {
-            Object.assign(screen, data);
-        }
-        return offlineWarning('updateDisplayScreen');
+export const updateDisplayScreen = async (
+  organizationId: string,
+  screenId: string,
+  data: Partial<DisplayScreen>
+): Promise<void> => {
+  if (isOffline || !db) {
+    const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
+    const screen = org?.displayScreens?.find((s) => s.id === screenId);
+    if (screen) {
+      Object.assign(screen, data);
     }
-    const ref = db.collection('organizations').doc(organizationId).collection('displayScreens').doc(screenId);
-    
-    const cleanedData = removeUndefinedValues(data);
-    
-    if ((window as any).DEBUG_MODE) {
-        console.log("%c--- DEBUG: Data som skickas till Firestore för updateDisplayScreen ---", "color: yellow; font-weight: bold; background: black; padding: 2px 4px;");
-        console.log("Organisations-ID:", organizationId);
-        console.log("Skärm-ID:", screenId);
-        console.log("Rensat dataobjekt:", cleanedData);
-        
-        // Stringify/parse för att få en ren, expanderbar snapshot av objektet i konsolen
-        try {
-            console.log("Rensat data (JSON-snapshot):", JSON.parse(JSON.stringify(cleanedData)));
-        } catch (e) {
-            console.error("--- DEBUG: Kunde inte JSON-serialisera det rensade objektet, vilket indikerar ett problem. Fel:", e);
-        }
-    }
-    
-    await ref.update(cleanedData);
+    return offlineWarning('updateDisplayScreen');
+  }
+  const ref = db
+    .collection('organizations')
+    .doc(organizationId)
+    .collection('displayScreens')
+    .doc(screenId);
+
+  const cleanedData = removeUndefinedValues(data);
+
+  console.log(
+    '%c--- DEBUG: Data som skickas till Firestore för updateDisplayScreen ---',
+    'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
+  );
+  console.log('Organisations-ID:', organizationId);
+  console.log('Skärm-ID:', screenId);
+  console.log('Rensat dataobjekt:', cleanedData);
+
+  try {
+    console.log('Rensat data (JSON-snapshot):', JSON.parse(JSON.stringify(cleanedData)));
+  } catch (e) {
+    console.error(
+      '--- DEBUG: Kunde inte JSON-serialisera det rensade objektet, vilket indikerar ett problem. Fel:',
+      e
+    );
+  }
+
+  await ref.update(cleanedData);
 };
 
 export const deleteDisplayScreen = async (organizationId: string, screenId: string): Promise<void> => {
@@ -1151,14 +1162,36 @@ export const deleteMediaFromStorage = async (fileUrl: string): Promise<void> => 
   }
 };
 
-export const updateOrganizationMediaLibrary = async (organizationId: string, mediaLibrary: MediaItem[]) => {
+export const updateOrganizationMediaLibrary = async (
+  organizationId: string,
+  mediaLibrary: MediaItem[]
+) => {
   if (isOffline || !db) {
     await offlineWarning('updateOrganizationMediaLibrary');
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
     if (org) org.mediaLibrary = mediaLibrary;
     return getUpdatedOrg(organizationId);
   }
-  await db.collection('organizations').doc(organizationId).update({ mediaLibrary: removeUndefinedValues(mediaLibrary) });
+
+  const cleaned = removeUndefinedValues(mediaLibrary);
+
+  // Enkel debug-logg för just detta case
+  console.log(
+    '%c--- DEBUG: Data som skickas till Firestore för updateOrganizationMediaLibrary ---',
+    'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
+  );
+  console.log('Organisations-ID:', organizationId);
+  console.log('Rensat mediaLibrary-objekt:', cleaned);
+  try {
+    console.log('Rensat mediaLibrary (JSON-snapshot):', JSON.parse(JSON.stringify(cleaned)));
+  } catch (e) {
+    console.error(
+      '--- DEBUG: Kunde inte JSON-serialisera mediaLibrary, vilket tyder på ett konstigt objekt:',
+      e
+    );
+  }
+
+  await db.collection('organizations').doc(organizationId).update({ mediaLibrary: cleaned });
   return getUpdatedOrg(organizationId);
 };
 
