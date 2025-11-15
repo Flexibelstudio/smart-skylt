@@ -98,10 +98,26 @@ function removeUndefinedValues<T = any>(input: T): T {
 
     // Recursively handle plain objects
     if (t === 'object') {
-      if (Object.prototype.toString.call(v) !== '[object Object]') {
-        // For other complex objects we don't support, return null as a safeguard.
-        console.warn("--- DEBUG: [removeUndefinedValues] Hittade ett komplext objekt som inte är ett vanligt dataobjekt. Detta är en trolig orsak till 'invalid nested entity'-felet. Objektet kommer att konverteras till null. Felande objekt:", v);
-        return null;
+      const objType = Object.prototype.toString.call(v);
+      if (objType !== '[object Object]') {
+          console.warn(
+              "--- DEBUG: [removeUndefinedValues] Hittade ett ogiltigt objekt (ej plain object). " +
+              `Typ: ${objType}. Detta är en vanlig orsak till Firestore-fel. ` +
+              "Objektet konverteras till null för att förhindra krasch. Felande objekt:",
+              v
+          );
+          return null;
+      }
+      
+      const proto = Object.getPrototypeOf(v);
+      if (proto !== Object.prototype && proto !== null) {
+          console.warn(
+              "--- DEBUG: [removeUndefinedValues] Hittade ett objekt med en anpassad prototypkedja (troligen en klassinstans). " +
+              "Detta är en vanlig orsak till Firestore-fel. " +
+              "Objektet konverteras till null för att förhindra krasch. Felande objekt:",
+              v
+          );
+          return null;
       }
 
       const out: Record<string, any> = {};
