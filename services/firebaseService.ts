@@ -497,16 +497,18 @@ export const updateDisplayScreen = async (organizationId: string, screenId: stri
     
     const cleanedData = removeUndefinedValues(data);
     
-    console.log("%c--- DEBUG: Data som skickas till Firestore för updateDisplayScreen ---", "color: yellow; font-weight: bold; background: black; padding: 2px 4px;");
-    console.log("Organisations-ID:", organizationId);
-    console.log("Skärm-ID:", screenId);
-    console.log("Rensat dataobjekt:", cleanedData);
-    
-    // Stringify/parse för att få en ren, expanderbar snapshot av objektet i konsolen
-    try {
-        console.log("Rensat data (JSON-snapshot):", JSON.parse(JSON.stringify(cleanedData)));
-    } catch (e) {
-        console.error("--- DEBUG: Kunde inte JSON-serialisera det rensade objektet, vilket indikerar ett problem. Fel:", e);
+    if ((window as any).DEBUG_MODE) {
+        console.log("%c--- DEBUG: Data som skickas till Firestore för updateDisplayScreen ---", "color: yellow; font-weight: bold; background: black; padding: 2px 4px;");
+        console.log("Organisations-ID:", organizationId);
+        console.log("Skärm-ID:", screenId);
+        console.log("Rensat dataobjekt:", cleanedData);
+        
+        // Stringify/parse för att få en ren, expanderbar snapshot av objektet i konsolen
+        try {
+            console.log("Rensat data (JSON-snapshot):", JSON.parse(JSON.stringify(cleanedData)));
+        } catch (e) {
+            console.error("--- DEBUG: Kunde inte JSON-serialisera det rensade objektet, vilket indikerar ett problem. Fel:", e);
+        }
     }
     
     await ref.update(cleanedData);
