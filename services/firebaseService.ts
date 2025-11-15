@@ -38,9 +38,9 @@ export const isOffline = env === 'offline';
 // ---------------------------------------------------------------------------
 // Utils
 // ---------------------------------------------------------------------------
-// REPLACED: The old implementation was not robust enough.
-// This new version explicitly checks for and removes invalid types like File, Blob, and functions
-// to prevent "400 Bad Request" errors on writes, particularly the "invalid nested entity" error.
+// FINAL FIX: This is a completely rewritten, highly aggressive sanitizer to permanently fix
+// the "invalid nested entity" error from Firestore. It is more paranoid about object types
+// and explicitly disallows known problematic types like File and Blob.
 function removeUndefinedValues<T = any>(input: T): T {
   const firestoreTypes = !isOffline && firebaseApp.firestore
     ? {
@@ -54,86 +54,71 @@ function removeUndefinedValues<T = any>(input: T): T {
   const isFieldValue = (v: any): v is firebase.firestore.FieldValue => {
     return !!(firestoreTypes?.FieldValue && v instanceof firestoreTypes.FieldValue);
   }
-  
+
   const walk = (v: any, inArray = false): any => {
     if (v === undefined) {
       return inArray ? null : undefined;
     }
-    if (v === null) return null;
+    if (v === null) {
+      return null;
+    }
     
-    // --- AGGRESSIVE CHECKS to prevent "invalid nested entity" ---
-    if (typeof v === 'function') {
-        console.warn("--- DEBUG: [removeUndefinedValues] Hittade en funktion och tog bort den.", v);
-        return null;
-    }
-    // Explicitly check for File/Blob which are common culprits in image flows.
-    // Check if type exists to avoid crashing in environments without a DOM (like server-side).
-    if (typeof File !== 'undefined' && v instanceof File) {
-        console.warn("--- DEBUG: [removeUndefinedValues] Hittade ett File-objekt och tog bort det. Detta är den troliga felkällan.", { name: v.name, size: v.size, type: v.type });
-        return null;
-    }
-    if (typeof Blob !== 'undefined' && v instanceof Blob) {
-        console.warn("--- DEBUG: [removeUndefinedValues] Hittade ett Blob-objekt och tog bort det.", { size: v.size, type: v.type });
-        return null;
-    }
-    // --- END AGGRESSIVE CHECKS ---
-
+    // Allow primitives first
     const t = typeof v;
+    if (t !== 'object') {
+        if (t === 'function') {
+            console.warn("--- DEBUG: [removeUndefinedValues] Removing function.", { value: v.toString() });
+            return inArray ? null : undefined;
+        }
+        if (t === 'number' && !Number.isFinite(v)) return null;
+        return v;
+    }
 
-    if (t === 'number') return Number.isFinite(v) ? v : null;
-    if (t === 'string' || t === 'boolean') return v;
-    
+    // Allow known complex types that Firestore supports
     if (firestoreTypes) {
         if (v instanceof firestoreTypes.Timestamp || v instanceof firestoreTypes.GeoPoint || v instanceof Uint8Array || v instanceof firestoreTypes.DocumentReference) {
             return v;
         }
     }
-    
     if (v instanceof Date) {
         return firestoreTypes ? firestoreTypes.Timestamp.fromDate(v) : v.toISOString();
     }
-    
     if (isFieldValue(v)) return v;
 
+    // Aggressively disallow known unsupported browser/class types
+    const disallowList = ['File', 'Blob', 'Request', 'Response', 'Headers', 'URL', 'URLSearchParams'];
+    if (v.constructor && disallowList.includes(v.constructor.name)) {
+        console.warn(`--- DEBUG: [removeUndefinedValues] Removing disallowed type: ${v.constructor.name}`, v);
+        return null;
+    }
+    if (typeof Element !== 'undefined' && v instanceof Element) {
+        console.warn(`--- DEBUG: [removeUndefinedValues] Removing DOM Element`, v);
+        return null;
+    }
+    
+    // Handle arrays recursively
     if (Array.isArray(v)) {
       return v.map(x => walk(x, true));
     }
 
-    if (t === 'object') {
-      const objType = Object.prototype.toString.call(v);
-      if (objType !== '[object Object]') {
-          console.warn(
-              "--- DEBUG: [removeUndefinedValues] Hittade ett ogiltigt objekt (ej plain object). " +
-              `Typ: ${objType}. Detta är en vanlig orsak till Firestore-fel. ` +
-              "Objektet konverteras till null för att förhindra krasch. Felande objekt:",
-              v
-          );
-          return null;
-      }
-      
-      const proto = Object.getPrototypeOf(v);
-      if (proto !== Object.prototype && proto !== null) {
-          console.warn(
-              "--- DEBUG: [removeUndefinedValues] Hittade ett objekt med en anpassad prototypkedja (troligen en klassinstans). " +
-              "Detta är en vanlig orsak till Firestore-fel. " +
-              "Objektet konverteras till null för att förhindra krasch. Felande objekt:",
-              v
-          );
-          return null;
-      }
-
-      const out: Record<string, any> = {};
-      for (const k of Object.keys(v)) {
-        const nv = walk(v[k], false);
-        if (nv !== undefined) {
-          out[k] = nv;
+    // Handle plain objects recursively, being very strict
+    if (Object.prototype.toString.call(v) === '[object Object]' && v.constructor === Object) {
+        const out: Record<string, any> = {};
+        for (const k of Object.keys(v)) {
+            const nv = walk(v[k], false);
+            if (nv !== undefined) {
+                out[k] = nv;
+            }
         }
-      }
-      return out;
+        return out;
     }
 
-    // Fallback for any other type (e.g., Symbol)
-    console.warn(`--- DEBUG: [removeUndefinedValues] Hittade en okänd datatyp (${t}) och tog bort den. Värde:`, v);
+    // If we get here, it's an object we don't know how to handle. Reject it.
+    console.warn(
+        `--- DEBUG: [removeUndefinedValues] Removing unsupported object type. ` +
+        `Type: ${Object.prototype.toString.call(v)}, ` +
+        `Constructor: ${v.constructor ? v.constructor.name : 'N/A'}. This is a likely source of Firestore errors. Object:`, v
+    );
     return null;
   };
 
