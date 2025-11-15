@@ -1,0 +1,16 @@
+{
+  "name": "voice-ws",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "engines": { "node": "20" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0",
+    "firebase-admin": "^13.4.0",
+    "@google/genai": "^0.14.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
