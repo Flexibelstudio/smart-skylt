@@ -38,11 +38,10 @@ export const isOffline = env === 'offline';
 // ---------------------------------------------------------------------------
 // Utils
 // ---------------------------------------------------------------------------
-// REPLACED: The old implementation incorrectly converted Timestamps and Dates to strings.
-// This new version correctly handles Firestore data types, converts JS Dates to Timestamps,
-// sanitizes undefined values, and handles other unsupported data to prevent "400 Bad Request" errors on writes.
+// REPLACED: The old implementation was not robust enough.
+// This new version explicitly checks for and removes invalid types like File, Blob, and functions
+// to prevent "400 Bad Request" errors on writes, particularly the "invalid nested entity" error.
 function removeUndefinedValues<T = any>(input: T): T {
-  // OFFLINE/ONLINE FIX: Conditionally access Firestore-specific types only when online to prevent crashes in AI Studio.
   const firestoreTypes = !isOffline && firebaseApp.firestore
     ? {
         Timestamp: firebaseApp.firestore.Timestamp,
@@ -53,50 +52,53 @@ function removeUndefinedValues<T = any>(input: T): T {
     : null;
 
   const isFieldValue = (v: any): v is firebase.firestore.FieldValue => {
-    // Check if FieldValue type exists and if v is an instance of it.
     return !!(firestoreTypes?.FieldValue && v instanceof firestoreTypes.FieldValue);
   }
   
   const walk = (v: any, inArray = false): any => {
     if (v === undefined) {
-      // In an array, undefined must be converted to null.
-      // In an object, it will be stripped by the object handler returning undefined.
       return inArray ? null : undefined;
     }
     if (v === null) return null;
+    
+    // --- AGGRESSIVE CHECKS to prevent "invalid nested entity" ---
+    if (typeof v === 'function') {
+        console.warn("--- DEBUG: [removeUndefinedValues] Hittade en funktion och tog bort den.", v);
+        return null;
+    }
+    // Explicitly check for File/Blob which are common culprits in image flows.
+    // Check if type exists to avoid crashing in environments without a DOM (like server-side).
+    if (typeof File !== 'undefined' && v instanceof File) {
+        console.warn("--- DEBUG: [removeUndefinedValues] Hittade ett File-objekt och tog bort det. Detta är den troliga felkällan.", { name: v.name, size: v.size, type: v.type });
+        return null;
+    }
+    if (typeof Blob !== 'undefined' && v instanceof Blob) {
+        console.warn("--- DEBUG: [removeUndefinedValues] Hittade ett Blob-objekt och tog bort det.", { size: v.size, type: v.type });
+        return null;
+    }
+    // --- END AGGRESSIVE CHECKS ---
 
     const t = typeof v;
 
-    if (t === 'number') return Number.isFinite(v) ? v : null; // Convert NaN/Infinity to null
+    if (t === 'number') return Number.isFinite(v) ? v : null;
     if (t === 'string' || t === 'boolean') return v;
     
-    // OFFLINE/ONLINE FIX: Conditionally handle Firestore native types.
     if (firestoreTypes) {
         if (v instanceof firestoreTypes.Timestamp || v instanceof firestoreTypes.GeoPoint || v instanceof Uint8Array || v instanceof firestoreTypes.DocumentReference) {
             return v;
         }
     }
     
-    // Convert JS Date.
     if (v instanceof Date) {
-        if (firestoreTypes) {
-            // ONLINE: Convert JS Date to Firestore Timestamp for server compatibility.
-            return firestoreTypes.Timestamp.fromDate(v);
-        } else {
-            // OFFLINE (AI Studio): Convert JS Date to ISO string to avoid crashes and keep data readable.
-            return v.toISOString();
-        }
+        return firestoreTypes ? firestoreTypes.Timestamp.fromDate(v) : v.toISOString();
     }
     
-    // Preserve FieldValue (e.g., serverTimestamp(), arrayUnion())
     if (isFieldValue(v)) return v;
 
-    // Recursively handle arrays
     if (Array.isArray(v)) {
       return v.map(x => walk(x, true));
     }
 
-    // Recursively handle plain objects
     if (t === 'object') {
       const objType = Object.prototype.toString.call(v);
       if (objType !== '[object Object]') {
@@ -130,7 +132,8 @@ function removeUndefinedValues<T = any>(input: T): T {
       return out;
     }
 
-    // Fallback for any other type (should be rare)
+    // Fallback for any other type (e.g., Symbol)
+    console.warn(`--- DEBUG: [removeUndefinedValues] Hittade en okänd datatyp (${t}) och tog bort den. Värde:`, v);
     return null;
   };
 
