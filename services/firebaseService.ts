@@ -1182,52 +1182,13 @@ export const updateOrganizationMediaLibrary = async (
     return getUpdatedOrg(organizationId);
   }
 
-  // Tillåt bara ”enkla” fält på varje media-objekt
-  const safeMedia = mediaLibrary.map((item, index) => {
-    const out: any = {};
-
-    // Grundfält vi VET är rimliga att ha
-    if ('url' in item) out.url = (item as any).url;
-    if ('type' in item) out.type = (item as any).type;
-    if ('size' in item) out.size = (item as any).size;
-
-    // Ta med eventuella extra fält – men bara om de är primitiva
-    for (const [key, value] of Object.entries(item as any)) {
-      if (key === 'url' || key === 'type' || key === 'size') continue;
-      const t = typeof value;
-      if (value === null || t === 'string' || t === 'number' || t === 'boolean') {
-        out[key] = value;
-      } else {
-        console.warn(
-          `--- [mediaLibrary sanitize] Tog bort icke-primitivt fält "${key}" på mediaLibrary[${index}]`,
-          value
-        );
-      }
-    }
-
-    return out;
-  });
-
-  const cleaned = removeUndefinedValues(safeMedia);
-
-  if ((window as any).DEBUG_MODE) {
-    console.log(
-      '%c--- DEBUG: updateOrganizationMediaLibrary payload ---',
-      'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
-    );
-    console.log('Org:', organizationId);
-    console.log('Media (rensat):', cleaned);
-    try {
-      console.log('Media (JSON-snapshot):', JSON.parse(JSON.stringify(cleaned)));
-    } catch (e) {
-      console.error('Kunde inte JSON-serialisera mediaLibrary:', e);
-    }
-  }
+  const cleaned = removeUndefinedValues(mediaLibrary);
+  const serializable = JSON.parse(JSON.stringify(cleaned));
 
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update({ mediaLibrary: cleaned });
+    .update({ mediaLibrary: serializable });
 
   return getUpdatedOrg(organizationId);
 };
