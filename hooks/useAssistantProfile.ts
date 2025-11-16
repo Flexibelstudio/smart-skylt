@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { db } from "../services/firebaseInit";
-import { isOffline } from "../services/firebaseService";
+import { db, isOffline } from "../services/firebaseInit";
 
 const FALLBACK_AVATAR = "/skylie-avatar.png";
 
