@@ -55,7 +55,8 @@ if (!cfg || !cfg.firebaseConfig || !cfg.firebaseConfig.apiKey) {
 
               // NEW: Set Firestore log level if in debug mode
               if ((window as any).DEBUG_MODE) {
-                  firebase.firestore().setLogLevel('debug');
+                  // FIX: Property 'setLogLevel' does not exist on type 'Firestore'. It should be called on the firestore namespace.
+                  firebase.firestore.setLogLevel('debug');
               }
             } catch (settingsError) {
               console.warn("Could not apply Firestore settings:", settingsError);
@@ -84,6 +85,7 @@ if (!cfg || !cfg.firebaseConfig || !cfg.firebaseConfig.apiKey) {
 }
 
 export const env = resolvedEnv;
+export const isOffline = env === 'offline';
 export const isFirebaseActive = !!app;
 
 // Export the initialized services (or null if offline/failed)
