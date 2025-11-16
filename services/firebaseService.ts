@@ -409,13 +409,35 @@ export const updateOrganization = async (
   if (isOffline || !db) {
     await offlineWarning('updateOrganization');
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
-    if (org) Object.assign(org, removeUndefinedValues(data));
+    if (org) Object.assign(org, JSON.parse(JSON.stringify(data)));
     return;
   }
+
+  let serializableData: any;
+  try {
+    serializableData = JSON.parse(JSON.stringify(data));
+  } catch (e) {
+    console.error(
+      '--- DEBUG: Kunde inte JSON-serialisera data i updateOrganization ---',
+      data,
+      e
+    );
+    throw new Error('Data kunde inte förberedas för databasen.');
+  }
+
+  if ((window as any).DEBUG_MODE) {
+    console.log(
+      '%c--- DEBUG: Data som skickas till Firestore för updateOrganization ---',
+      'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
+    );
+    console.log('Organisations-ID:', organizationId);
+    console.log('Serializable data:', serializableData);
+  }
+
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update(removeUndefinedValues(data));
+    .update(serializableData);
 };
 
 export const deleteOrganization = async (organizationId: string): Promise<void> => {
@@ -601,7 +623,7 @@ export const updateDisplayScreen = async (
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
     const screen = org?.displayScreens?.find((s) => s.id === screenId);
     if (screen) {
-      Object.assign(screen, data);
+      Object.assign(screen, JSON.parse(JSON.stringify(data)));
     }
     return offlineWarning('updateDisplayScreen');
   }
@@ -612,15 +634,13 @@ export const updateDisplayScreen = async (
     .collection('displayScreens')
     .doc(screenId);
 
-  const cleanedData = removeUndefinedValues(data);
-
   let serializableData: any;
   try {
-    serializableData = JSON.parse(JSON.stringify(cleanedData));
+    serializableData = JSON.parse(JSON.stringify(data));
   } catch (e) {
     console.error(
-      '--- DEBUG: Kunde inte JSON-serialisera cleanedData i updateDisplayScreen ---',
-      cleanedData,
+      '--- DEBUG: Kunde inte JSON-serialisera data i updateDisplayScreen ---',
+      data,
       e
     );
     throw e;
@@ -835,7 +855,7 @@ export const listenToSystemAnnouncements = (
   onUpdate: (announcements: AppNotification[]) => void
 ): (() => void) => {
   if (isOffline || !db) {
-    const mockData: AppNotification[] = [
+    const mockUnsorted: AppNotification[] = [
       {
         id: 'sys-mock-1',
         createdAt: new Date().toISOString(),
@@ -852,7 +872,8 @@ export const listenToSystemAnnouncements = (
         message: 'Ett annat meddelande från igår.',
         isRead: true,
       },
-    ].sort(
+    ];
+    const mockData = mockUnsorted.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
