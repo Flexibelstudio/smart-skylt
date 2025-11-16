@@ -38,127 +38,20 @@ export const isOffline = env === 'offline';
 // ---------------------------------------------------------------------------
 // Utils
 // ---------------------------------------------------------------------------
-// FINAL FIX: Aggressiv sanering för att bli av med
-// "Property array contains an invalid nested entity"-felet.
-function removeUndefinedValues<T = any>(input: T): T {
-  const firestoreTypes = !isOffline && firebaseApp.firestore
-    ? {
-        Timestamp: firebaseApp.firestore.Timestamp,
-        GeoPoint: firebaseApp.firestore.GeoPoint,
-        FieldValue: firebaseApp.firestore.FieldValue,
-        DocumentReference: firebaseApp.firestore.DocumentReference,
-      }
-    : null;
-
-  const isFieldValue = (v: any): v is firebase.firestore.FieldValue => {
-    return !!(firestoreTypes?.FieldValue && v instanceof firestoreTypes.FieldValue);
-  };
-
-  const walk = (v: any, inArray = false): any => {
-    if (v === undefined) {
-      return inArray ? null : undefined;
-    }
-    if (v === null) {
-      return null;
-    }
-
-    const t = typeof v;
-    if (t !== 'object') {
-      if (t === 'function') {
-        console.warn('--- DEBUG: [removeUndefinedValues] Removing function.', {
-          value: v.toString(),
-        });
-        return inArray ? null : undefined;
-      }
-      if (t === 'number' && !Number.isFinite(v)) return null;
-      return v;
-    }
-
-    if (firestoreTypes) {
-      if (
-        v instanceof firestoreTypes.Timestamp ||
-        v instanceof firestoreTypes.GeoPoint ||
-        v instanceof Uint8Array ||
-        v instanceof firestoreTypes.DocumentReference
-      ) {
-        return v;
-      }
-    }
-    if (v instanceof Date) {
-      return firestoreTypes
-        ? firestoreTypes.Timestamp.fromDate(v)
-        : v.toISOString();
-    }
-    if (isFieldValue(v)) return v;
-
-    const disallowList = ['File', 'Blob', 'Request', 'Response', 'Headers', 'URL', 'URLSearchParams'];
-    if (v.constructor && disallowList.includes(v.constructor.name)) {
-      console.warn(
-        `--- DEBUG: [removeUndefinedValues] Removing disallowed type: ${v.constructor.name}`,
-        v
-      );
-      return null;
-    }
-    if (typeof Element !== 'undefined' && v instanceof Element) {
-      console.warn('--- DEBUG: [removeUndefinedValues] Removing DOM Element', v);
-      return null;
-    }
-
-    if (Array.isArray(v)) {
-      return v.map((x) => walk(x, true));
-    }
-
-    if (Object.prototype.toString.call(v) === '[object Object]' && v.constructor === Object) {
-      const out: Record<string, any> = {};
-      for (const k of Object.keys(v)) {
-        const nv = walk(v[k], false);
-        if (nv !== undefined) {
-          out[k] = nv;
-        }
-      }
-      return out;
-    }
-
-    console.warn(
-      `--- DEBUG: [removeUndefinedValues] Removing unsupported object type. ` +
-        `Type: ${Object.prototype.toString.call(v)}, ` +
-        `Constructor: ${v.constructor ? v.constructor.name : 'N/A'}. This is a likely source of Firestore errors. Object:`,
-      v
-    );
-    return null;
-  };
-
-  return walk(input);
-}
-
-// Säkert arrayUnion som alltid sanerar och JSON:ar värdet innan det skickas.
-export const safeArrayUnion = <T = any>(value: T) => {
-  const firestoreTypes = !isOffline && firebaseApp.firestore
-    ? {
-        FieldValue: firebaseApp.firestore.FieldValue,
-      }
-    : null;
-
-  if (!firestoreTypes) {
-    console.warn('safeArrayUnion används i offline-läge – returnerar originalvärde.');
-    return value as any;
+// FINAL FIX: This is the most robust way to ensure data is clean for Firestore.
+// It strips out undefined, functions, classes, etc.
+// NOTE: This should NOT be used on objects containing Firestore FieldValues (e.g., serverTimestamp()).
+function sanitizeData<T>(data: T): T {
+  if (data === undefined || data === null) {
+    return data;
   }
-
-  const cleaned = removeUndefinedValues(value);
-  let serializable: any;
   try {
-    serializable = JSON.parse(JSON.stringify(cleaned));
+    return JSON.parse(JSON.stringify(data));
   } catch (e) {
-    console.error(
-      'safeArrayUnion: kunde inte serialisera värde, använder null istället.',
-      cleaned,
-      e
-    );
-    serializable = null;
+    console.error("Failed to sanitize data, returning as-is. This may cause Firestore errors.", e, data);
+    return data;
   }
-
-  return firestoreTypes.FieldValue.arrayUnion(serializable);
-};
+}
 
 const offlineWarning = (op: string) => {
   console.warn(`OFFLINE MODE: "${op}" skickades inte till servern.`);
@@ -398,7 +291,7 @@ export const createOrganization = async (
     email,
     mediaLibrary: [],
   };
-  await db.collection('organizations').doc(newOrg.id).set(newOrg);
+  await db.collection('organizations').doc(newOrg.id).set(sanitizeData(newOrg));
   return newOrg;
 };
 
@@ -409,35 +302,14 @@ export const updateOrganization = async (
   if (isOffline || !db) {
     await offlineWarning('updateOrganization');
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
-    if (org) Object.assign(org, JSON.parse(JSON.stringify(data)));
+    if (org) Object.assign(org, sanitizeData(data));
     return;
-  }
-
-  let serializableData: any;
-  try {
-    serializableData = JSON.parse(JSON.stringify(data));
-  } catch (e) {
-    console.error(
-      '--- DEBUG: Kunde inte JSON-serialisera data i updateOrganization ---',
-      data,
-      e
-    );
-    throw new Error('Data kunde inte förberedas för databasen.');
-  }
-
-  if ((window as any).DEBUG_MODE) {
-    console.log(
-      '%c--- DEBUG: Data som skickas till Firestore för updateOrganization ---',
-      'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
-    );
-    console.log('Organisations-ID:', organizationId);
-    console.log('Serializable data:', serializableData);
   }
 
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update(serializableData);
+    .update(sanitizeData(data));
 };
 
 export const deleteOrganization = async (organizationId: string): Promise<void> => {
@@ -469,15 +341,16 @@ export const updateOrganizationLogos = async (
     }
     return;
   }
+  // This object is simple enough that it doesn't need full sanitization,
+  // but we ensure undefined isn't passed.
+  const updateData: { logoUrlLight?: string; logoUrlDark?: string } = {};
+  if (logos.light !== undefined) updateData.logoUrlLight = logos.light;
+  if (logos.dark !== undefined) updateData.logoUrlDark = logos.dark;
+  
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update(
-      removeUndefinedValues({
-        logoUrlLight: logos.light,
-        logoUrlDark: logos.dark,
-      })
-    );
+    .update(updateData);
 };
 
 export const updateOrganizationPrimaryColor = async (
@@ -510,7 +383,7 @@ export const updateOrganizationCustomPages = async (
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update({ customPages: removeUndefinedValues(customPages) });
+    .update({ customPages: sanitizeData(customPages) });
   return getUpdatedOrg(organizationId);
 };
 
@@ -527,7 +400,7 @@ export const updateOrganizationInfoCarousel = async (
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update({ infoCarousel: removeUndefinedValues(infoCarousel) });
+    .update({ infoCarousel: sanitizeData(infoCarousel) });
   return getUpdatedOrg(organizationId);
 };
 
@@ -544,7 +417,7 @@ export const updateOrganizationTags = async (
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update({ tags: removeUndefinedValues(tags) });
+    .update({ tags: sanitizeData(tags) });
 };
 
 export const updateOrganizationPostTemplates = async (
@@ -560,7 +433,7 @@ export const updateOrganizationPostTemplates = async (
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update({ postTemplates: removeUndefinedValues(postTemplates) });
+    .update({ postTemplates: sanitizeData(postTemplates) });
 };
 
 // ---------------------------------------------------------------------------
@@ -611,7 +484,7 @@ export const addDisplayScreen = async (
     .doc(organizationId)
     .collection('displayScreens')
     .doc(screenData.id);
-  await ref.set(removeUndefinedValues(screenData));
+  await ref.set(sanitizeData(screenData));
 };
 
 export const updateDisplayScreen = async (
@@ -623,7 +496,7 @@ export const updateDisplayScreen = async (
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
     const screen = org?.displayScreens?.find((s) => s.id === screenId);
     if (screen) {
-      Object.assign(screen, JSON.parse(JSON.stringify(data)));
+      Object.assign(screen, sanitizeData(data));
     }
     return offlineWarning('updateDisplayScreen');
   }
@@ -633,30 +506,8 @@ export const updateDisplayScreen = async (
     .doc(organizationId)
     .collection('displayScreens')
     .doc(screenId);
-
-  let serializableData: any;
-  try {
-    serializableData = JSON.parse(JSON.stringify(data));
-  } catch (e) {
-    console.error(
-      '--- DEBUG: Kunde inte JSON-serialisera data i updateDisplayScreen ---',
-      data,
-      e
-    );
-    throw e;
-  }
-
-  if ((window as any).DEBUG_MODE) {
-    console.log(
-      '%c--- DEBUG: Data som skickas till Firestore för updateDisplayScreen ---',
-      'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
-    );
-    console.log('Organisations-ID:', organizationId);
-    console.log('Skärm-ID:', screenId);
-    console.log('Serializable data:', serializableData);
-  }
-
-  await ref.update(serializableData);
+  
+  await ref.update(sanitizeData(data));
 };
 
 export const deleteDisplayScreen = async (
@@ -741,7 +592,7 @@ export const updateSuggestedPost = async (
     .doc(organizationId)
     .collection('suggestedPosts')
     .doc(suggestionId);
-  await ref.update(removeUndefinedValues(data));
+  await ref.update(sanitizeData(data));
 };
 
 export const deleteSuggestedPost = async (
@@ -781,7 +632,7 @@ export const updateSystemSettings = async (
   await db
     .collection('system_settings')
     .doc('main')
-    .set(removeUndefinedValues(settings), { merge: true });
+    .set(sanitizeData(settings), { merge: true });
 };
 
 // ---------------------------------------------------------------------------
@@ -1243,7 +1094,7 @@ export const pairAndActivateScreen = async (
       pairedDeviceId: deviceId,
     });
     tr.update(orgRef, {
-      physicalScreens: safeArrayUnion<PhysicalScreen>(newScreen),
+      physicalScreens: firebaseApp.firestore.FieldValue.arrayUnion(sanitizeData(newScreen)),
     });
   });
 
@@ -1389,7 +1240,7 @@ export const saveWorkout = async (workout: Workout): Promise<void> => {
   await db
     .collection('workouts')
     .doc(workout.id)
-    .set(removeUndefinedValues(workout), { merge: true });
+    .set(sanitizeData(workout), { merge: true });
 };
 
 export const deleteWorkout = async (workoutId: string): Promise<void> => {
@@ -1522,13 +1373,10 @@ export const updateOrganizationMediaLibrary = async (
     return getUpdatedOrg(organizationId);
   }
 
-  const cleaned = removeUndefinedValues(mediaLibrary);
-  const serializable = JSON.parse(JSON.stringify(cleaned));
-
   await db
     .collection('organizations')
     .doc(organizationId)
-    .update({ mediaLibrary: serializable });
+    .update({ mediaLibrary: sanitizeData(mediaLibrary) });
 
   return getUpdatedOrg(organizationId);
 };
