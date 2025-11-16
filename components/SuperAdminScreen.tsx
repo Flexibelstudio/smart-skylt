@@ -1243,3 +1243,383 @@ const AiAutomationContent: React.FC<SuperAdminScreenProps> = ({ organization, on
         </div>
     );
 };
+
+export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
+    const { organization, adminRole, userRole, theme, onUpdateOrganization, onUpdateLogos, onUpdateTags, onUpdatePostTemplates, onEditDisplayScreen, onUpdateDisplayScreens } = props;
+
+    const [activeTab, setActiveTab] = useState<AdminTab>('skyltfonster');
+    
+    const [isPairingModalOpen, setIsPairingModalOpen] = useState(false);
+    const [previewScreen, setPreviewScreen] = useState<DisplayScreen | null>(null);
+    const [shareScreen, setShareScreen] = useState<DisplayScreen | null>(null);
+    const [newScreenName, setNewScreenName] = useState('');
+    const [isCreatingScreen, setIsCreatingScreen] = useState(false);
+    const [screenToDelete, setScreenToDelete] = useState<DisplayScreen | null>(null);
+    
+    const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+    
+    const [isCompleteProfileModalOpen, setIsCompleteProfileModalOpen] = useState(false);
+    const [admins, setAdmins] = useState<UserData[]>([]);
+    const [isLoadingAdmins, setIsLoadingAdmins] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [isInviting, setIsInviting] = useState(false);
+
+    const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+    const [selectedEventForIdeas, setSelectedEventForIdeas] = useState<{name: string, date: Date, icon: string} | null>(null);
+    const [planningContextForIdeas, setPlanningContextForIdeas] = useState<string | null>(null);
+
+    const [isAIGuideOpen, setIsAIGuideOpen] = useState(false);
+    
+    const { currentUser } = useAuth();
+    const { showToast } = useToast();
+    const { displayScreens: allDisplayScreens, addDisplayScreen, deleteDisplayScreen: fbDeleteDisplayScreen } = useLocation();
+
+    useEffect(() => {
+        const fetchAdmins = async () => {
+            if (activeTab === 'admin' && adminRole === 'superadmin') {
+                setIsLoadingAdmins(true);
+                try {
+                    const fetchedAdmins = await getAdminsForOrganization(organization.id);
+                    setAdmins(fetchedAdmins);
+                } catch (e) {
+                    console.error("Failed to fetch admins:", e);
+                } finally {
+                    setIsLoadingAdmins(false);
+                }
+            }
+        };
+        fetchAdmins();
+    }, [activeTab, organization.id, adminRole]);
+
+    useEffect(() => {
+        if (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson) {
+            const hasDismissed = sessionStorage.getItem(`dismiss-complete-profile-${organization.id}`);
+            if (!hasDismissed) {
+                // Wait a bit before showing the modal to not be too intrusive on load
+                const timer = setTimeout(() => setIsCompleteProfileModalOpen(true), 3000);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [organization.id, organization.address, organization.phone, organization.orgNumber, organization.contactPerson]);
+    
+    useEffect(() => {
+        if (isPairingModalOpen) {
+            getSystemSettings().then(setSystemSettings).catch(console.error);
+        }
+    }, [isPairingModalOpen]);
+
+    const handleCreateDisplayScreen = async () => {
+        if (!newScreenName.trim()) return;
+        setIsCreatingScreen(true);
+        try {
+            const newScreen: Omit<DisplayScreen, 'id'> = {
+                name: newScreenName,
+                isEnabled: true,
+                posts: [],
+                aspectRatio: '16:9',
+            };
+            await addDisplayScreen(newScreen);
+            setNewScreenName('');
+        } catch (e) {
+            console.error(e);
+            showToast({ message: 'Kunde inte skapa kanalen.', type: 'error' });
+        } finally {
+            setIsCreatingScreen(false);
+        }
+    };
+
+    const handleDeleteScreen = async () => {
+        if (!screenToDelete) return;
+        try {
+            await fbDeleteDisplayScreen(screenToDelete.id);
+        } catch (e) {
+            console.error(e);
+            showToast({ message: 'Kunde inte ta bort kanalen.', type: 'error' });
+        } finally {
+            setScreenToDelete(null);
+        }
+    };
+    
+    const handleSetAdminRole = async (uid: string, role: 'superadmin' | 'admin') => {
+        try {
+            await setAdminRole(uid, role);
+            setAdmins(prev => prev.map(a => a.uid === uid ? { ...a, adminRole: role } : a));
+            showToast({ message: 'Behörighet uppdaterad.', type: 'success' });
+        } catch (error) {
+            showToast({ message: 'Kunde inte uppdatera behörighet.', type: 'error' });
+        }
+    };
+    
+    const handleInviteUser = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inviteEmail.trim()) return;
+        setIsInviting(true);
+        try {
+            const result = await inviteUser(organization.id, inviteEmail.trim());
+            if (result.success) {
+                showToast({ message: result.message, type: 'success' });
+                setInviteEmail('');
+                // Refetch admins
+                const fetchedAdmins = await getAdminsForOrganization(organization.id);
+                setAdmins(fetchedAdmins);
+            } else {
+                showToast({ message: result.message, type: 'error' });
+            }
+        } catch (e) {
+            showToast({ message: `Inbjudan misslyckades: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
+    const handleGetCampaignIdeas = (event: { name: string, date: Date, icon: string }) => {
+        setSelectedEventForIdeas(event);
+        setPlanningContextForIdeas(null);
+        setIsCampaignModalOpen(true);
+    };
+
+    const handleGetSeasonalIdeas = (context: string) => {
+        setPlanningContextForIdeas(context);
+        setSelectedEventForIdeas(null);
+        setIsCampaignModalOpen(true);
+    };
+    
+    const handleUnpair = async (physicalScreenId: string) => {
+        if (!window.confirm("Är du säker på att du vill koppla från detta skyltfönster?")) return;
+        try {
+            await unpairPhysicalScreen(organization.id, physicalScreenId);
+            showToast({ message: 'Skyltfönstret har kopplats från.', type: 'success' });
+        } catch (e) {
+            console.error("Failed to unpair screen:", e);
+            showToast({ message: `Kunde inte koppla från: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error'});
+        }
+    };
+
+    const handleSaveCompletedProfile = async (data: Partial<Organization>) => {
+        await onUpdateOrganization(organization.id, data);
+        setIsCompleteProfileModalOpen(false);
+        sessionStorage.setItem(`dismiss-complete-profile-${organization.id}`, 'true');
+        showToast({ message: 'Tack! Din profil är nu uppdaterad.', type: 'success' });
+    };
+
+    return (
+        <div className="w-full max-w-7xl mx-auto space-y-6 pb-12 animate-fade-in">
+             <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{organization.name}</h1>
+                    <p className="text-slate-500 dark:text-slate-400 mt-1">Här hanterar du allt innehåll och alla inställningar för din organisation.</p>
+                </div>
+                <button
+                    onClick={() => setIsAIGuideOpen(true)}
+                    className="flex items-center gap-2 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+                >
+                    <LightBulbIcon className="h-5 w-5" />
+                    Hur fungerar AI-assistenten?
+                </button>
+            </div>
+            
+            <div className="space-y-6 mb-8">
+                <ProactiveUpcomingEventBanner organization={organization} onGenerateIdeas={handleGetCampaignIdeas} />
+                <ProactiveRhythmBanner organization={organization} onGenerateIdeas={handleGetSeasonalIdeas} />
+                <ProactiveSeasonalBanner organization={organization} onGenerateIdeas={handleGetSeasonalIdeas} />
+            </div>
+
+            <div className="border-b border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
+                    <TabButton tabId="skyltfonster" activeTab={activeTab} setActiveTab={setActiveTab}>Skyltfönster</TabButton>
+                    <TabButton tabId="organisation" activeTab={activeTab} setActiveTab={setActiveTab}>Varumärke</TabButton>
+                    <TabButton tabId="galleri" activeTab={activeTab} setActiveTab={setActiveTab}>Galleri</TabButton>
+                    <TabButton tabId="automation" activeTab={activeTab} setActiveTab={setActiveTab} highlight={(organization.aiAutomations || []).some(a => (a.isAutopilotEnabled && a.isEnabled))}>Automation</TabButton>
+                    {adminRole === 'superadmin' && (
+                        <TabButton tabId="admin" activeTab={activeTab} setActiveTab={setActiveTab}>Admin</TabButton>
+                    )}
+                </div>
+            </div>
+
+            <div className="mt-6">
+                {activeTab === 'skyltfonster' && (
+                    <div className="space-y-8">
+                        <Card title="Anslutna Skyltfönster" subTitle="Fysiska skärmar som är parkopplade med ditt konto." actions={<PrimaryButton onClick={() => setIsPairingModalOpen(true)}>Anslut ny skärm</PrimaryButton>}>
+                            <div className="space-y-3">
+                                {(organization.physicalScreens || []).map(ps => (
+                                    <div key={ps.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex justify-between items-center border border-slate-200 dark:border-slate-700">
+                                        <div>
+                                            <p className="font-semibold text-slate-900 dark:text-white">{ps.name}</p>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400">Visar kanalen: {allDisplayScreens.find(ds => ds.id === ps.displayScreenId)?.name || 'Okänd'}</p>
+                                        </div>
+                                        <DestructiveButton onClick={() => handleUnpair(ps.id)}>Koppla från</DestructiveButton>
+                                    </div>
+                                ))}
+                                {(organization.physicalScreens || []).length === 0 && (
+                                    <SkylieEmptyState 
+                                        title="Inga anslutna skyltfönster" 
+                                        message="Klicka på 'Anslut ny skärm' för att parkoppla din första fysiska skärm med en kod."
+                                        action={{ text: "Anslut ny skärm", onClick: () => setIsPairingModalOpen(true) }}
+                                    />
+                                )}
+                            </div>
+                        </Card>
+                         <Card title="Kanaler" subTitle="En kanal är en spellista med innehåll som du kan visa på ett eller flera skyltfönster.">
+                             <div className="space-y-3">
+                                {allDisplayScreens.map(screen => (
+                                    <div key={screen.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-4 border border-slate-200 dark:border-slate-700">
+                                        <div className={`${getAspectRatioClass(screen.aspectRatio)} w-32 bg-slate-200 dark:bg-slate-900 rounded-md overflow-hidden flex-shrink-0 relative group`}>
+                                            {screen.posts && screen.posts.length > 0 && <DisplayPostRenderer post={screen.posts[0]} mode="preview" allTags={organization.tags} showTags={false} organization={organization}/>}
+                                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <button onClick={() => setPreviewScreen(screen)} className="bg-white/80 text-black px-3 py-1.5 text-xs font-bold rounded-full">Förhandsgranska</button>
+                                            </div>
+                                        </div>
+                                        <div className="flex-grow">
+                                            <p className="font-semibold text-lg text-slate-900 dark:text-white">{screen.name}</p>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400">{screen.posts?.length || 0} inlägg</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <SecondaryButton onClick={() => setShareScreen(screen)}>Dela</SecondaryButton>
+                                            <PrimaryButton onClick={() => onEditDisplayScreen(screen)}>Redigera</PrimaryButton>
+                                            <DestructiveButton onClick={() => setScreenToDelete(screen)}><TrashIcon/></DestructiveButton>
+                                        </div>
+                                    </div>
+                                ))}
+                                <div className="p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
+                                    <form onSubmit={e => { e.preventDefault(); handleCreateDisplayScreen(); }} className="flex gap-2">
+                                        <StyledInput value={newScreenName} onChange={e => setNewScreenName(e.target.value)} placeholder="Namn på ny kanal" />
+                                        <PrimaryButton type="submit" disabled={!newScreenName.trim()} loading={isCreatingScreen}>Skapa</PrimaryButton>
+                                    </form>
+                                </div>
+                            </div>
+                         </Card>
+                    </div>
+                )}
+                {activeTab === 'organisation' && (
+                    <OrganisationTab {...props} />
+                )}
+                {activeTab === 'galleri' && (
+                    <MediaGalleryManager {...props} />
+                )}
+                {activeTab === 'automation' && (
+                    <AiAutomationContent {...props} />
+                )}
+                {activeTab === 'admin' && adminRole === 'superadmin' && (
+                    <Card title="Administratörer" subTitle={`Hantera användare med behörighet för ${organization.name}.`}>
+                        <div className="space-y-3">
+                            {isLoadingAdmins && <p>Laddar...</p>}
+                            {admins.map(admin => (
+                                <div key={admin.uid} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex justify-between items-center border border-slate-200 dark:border-slate-700">
+                                    <div>
+                                        <p className="font-semibold text-slate-800 dark:text-slate-200">{admin.email}</p>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">{admin.adminRole === 'superadmin' ? 'Superadmin' : 'Admin'}</p>
+                                    </div>
+                                    {admin.uid !== currentUser?.uid && (
+                                        <StyledSelect value={admin.adminRole} onChange={e => handleSetAdminRole(admin.uid, e.target.value as 'superadmin' | 'admin')}>
+                                            <option value="admin">Admin</option>
+                                            <option value="superadmin">Superadmin</option>
+                                        </StyledSelect>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                         <form onSubmit={handleInviteUser} className="pt-6 border-t border-slate-300 dark:border-gray-700 space-y-3 mt-6">
+                            <h4 className="text-xl font-semibold text-slate-800 dark:text-slate-200">Bjud in ny administratör</h4>
+                            <div className="flex gap-2">
+                                <StyledInput type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="E-postadress" required />
+                                <PrimaryButton type="submit" disabled={!inviteEmail.trim()} loading={isInviting}>Bjud in</PrimaryButton>
+                            </div>
+                        </form>
+                    </Card>
+                )}
+            </div>
+
+            {previewScreen && <DisplayScreenPreviewModal screen={previewScreen} organization={organization} onClose={() => setPreviewScreen(null)} />}
+            {shareScreen && <ShareModal screen={shareScreen} organization={organization} onClose={() => setShareScreen(null)} />}
+            <PairingModal isOpen={isPairingModalOpen} onClose={() => setIsPairingModalOpen(false)} organization={organization} systemSettings={systemSettings} onPairSuccess={() => {}} onUpdateOrganization={onUpdateOrganization} />
+            <ConfirmDialog isOpen={!!screenToDelete} onClose={() => setScreenToDelete(null)} onConfirm={handleDeleteScreen} title={`Ta bort kanalen "${screenToDelete?.name}"?`}>
+                Är du säker? Alla inlägg i kanalen kommer att raderas permanent.
+            </ConfirmDialog>
+            <CampaignIdeaGeneratorForOrg
+                isOpen={isCampaignModalOpen}
+                onClose={() => setIsCampaignModalOpen(false)}
+                event={selectedEventForIdeas}
+                planningContext={planningContextForIdeas}
+                organization={organization}
+                onUpdateOrganization={onUpdateOrganization}
+                onEditDisplayScreen={onEditDisplayScreen}
+            />
+            <CompleteProfileModal
+                isOpen={isCompleteProfileModalOpen}
+                onSave={handleSaveCompletedProfile}
+                organization={organization}
+            />
+             <AIGuideModal isOpen={isAIGuideOpen} onClose={() => setIsAIGuideOpen(false)} />
+        </div>
+    );
+};
+```
+  </change>
+  <change>
+    <file>components/ErrorBoundary.tsx</file>
+    <description>Förbättrar ErrorBoundary genom att konvertera render-metoden till en standard klassmetod, vilket är bästa praxis och kan hjälpa till att förhindra subtila fel i vissa byggmiljöer.</description>
+    <content><![CDATA[import React, { ErrorInfo, ReactNode } from 'react';
+
+interface Props {
+  children: ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ErrorBoundary extends React.Component<Props, State> {
+  public state: State = {
+    hasError: false,
+    error: undefined,
+  };
+
+  public static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+    if ((window as any).DEBUG_MODE) {
+        console.error("ErrorBoundary caught an error", error, errorInfo);
+    }
+  }
+
+  public render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-4 text-center">
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-8 max-w-lg">
+                <h1 className="text-3xl font-bold text-red-400 mb-4">Ett oväntat fel inträffade</h1>
+                <p className="text-slate-300 mb-6">
+                    Något gick fel under renderingen av applikationen. Detta har loggats automatiskt.
+                    Försök att ladda om sidan.
+                </p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="bg-primary hover:brightness-110 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                >
+                    Ladda om sidan
+                </button>
+                 {(window as any).DEBUG_MODE && this.state.error && (
+                    <pre className="mt-6 p-4 bg-slate-900 rounded-md text-left text-xs text-red-300 overflow-auto max-h-60">
+                        <code>
+                            {this.state.error?.stack}
+                        </code>
+                    </pre>
+                )}
+            </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default ErrorBoundary;
+```
+  </change>
+</changes>
+```
