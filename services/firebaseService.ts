@@ -1173,25 +1173,53 @@ export const updateOrganizationMediaLibrary = async (
     return getUpdatedOrg(organizationId);
   }
 
-  const cleaned = removeUndefinedValues(mediaLibrary);
+  // Tillåt bara ”enkla” fält på varje media-objekt
+  const safeMedia = mediaLibrary.map((item, index) => {
+    const out: any = {};
 
-  // Enkel debug-logg för just detta case
-  console.log(
-    '%c--- DEBUG: Data som skickas till Firestore för updateOrganizationMediaLibrary ---',
-    'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
-  );
-  console.log('Organisations-ID:', organizationId);
-  console.log('Rensat mediaLibrary-objekt:', cleaned);
-  try {
-    console.log('Rensat mediaLibrary (JSON-snapshot):', JSON.parse(JSON.stringify(cleaned)));
-  } catch (e) {
-    console.error(
-      '--- DEBUG: Kunde inte JSON-serialisera mediaLibrary, vilket tyder på ett konstigt objekt:',
-      e
+    // Grundfält vi VET är rimliga att ha
+    if ('url' in item) out.url = (item as any).url;
+    if ('type' in item) out.type = (item as any).type;
+    if ('size' in item) out.size = (item as any).size;
+
+    // Ta med eventuella extra fält – men bara om de är primitiva
+    for (const [key, value] of Object.entries(item as any)) {
+      if (key === 'url' || key === 'type' || key === 'size') continue;
+      const t = typeof value;
+      if (value === null || t === 'string' || t === 'number' || t === 'boolean') {
+        out[key] = value;
+      } else {
+        console.warn(
+          `--- [mediaLibrary sanitize] Tog bort icke-primitivt fält "${key}" på mediaLibrary[${index}]`,
+          value
+        );
+      }
+    }
+
+    return out;
+  });
+
+  const cleaned = removeUndefinedValues(safeMedia);
+
+  if ((window as any).DEBUG_MODE) {
+    console.log(
+      '%c--- DEBUG: updateOrganizationMediaLibrary payload ---',
+      'color: yellow; font-weight: bold; background: black; padding: 2px 4px;'
     );
+    console.log('Org:', organizationId);
+    console.log('Media (rensat):', cleaned);
+    try {
+      console.log('Media (JSON-snapshot):', JSON.parse(JSON.stringify(cleaned)));
+    } catch (e) {
+      console.error('Kunde inte JSON-serialisera mediaLibrary:', e);
+    }
   }
 
-  await db.collection('organizations').doc(organizationId).update({ mediaLibrary: cleaned });
+  await db
+    .collection('organizations')
+    .doc(organizationId)
+    .update({ mediaLibrary: cleaned });
+
   return getUpdatedOrg(organizationId);
 };
 
