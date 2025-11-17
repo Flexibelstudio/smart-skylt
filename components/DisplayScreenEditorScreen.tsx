@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant } from '../types';
 import { useToast } from '../context/ToastContext';
-import { StarIcon } from '../icons';
+import { StarIcon } from './icons';
 import { useLocation } from '../context/StudioContext';
 import { getSuggestedPostById, updateSuggestedPost, uploadPostAsset } from '../services/firebaseService';
 
