@@ -1,6 +1,6 @@
 // services/firebaseService.ts
 import type firebase from 'firebase/compat/app';
-import { app, auth, db, storage, functions, firebase as firebaseApp, isOffline } from './firebaseInit';
+import { env, app, auth, db, storage, functions, firebase as firebaseApp } from './firebaseInit';
 
 import {
   Organization,
@@ -29,6 +29,11 @@ import {
   MOCK_SYSTEM_SETTINGS,
   MOCK_PAIRING_CODES,
 } from '../data/mockData';
+
+// ---------------------------------------------------------------------------
+// Offline-läge
+// ---------------------------------------------------------------------------
+export const isOffline = env === 'offline';
 
 // ---------------------------------------------------------------------------
 // Utils

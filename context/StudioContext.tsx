@@ -16,12 +16,12 @@ import {
   getOrganizationById,
   listenToPairingCodeByDeviceId,
   listenToScreenSession,
+  isOffline,
   listenToDisplayScreens,
   addDisplayScreen as fbAddDisplayScreen,
   updateDisplayScreen as fbUpdateDisplayScreen,
   deleteDisplayScreen as fbDeleteDisplayScreen,
 } from '../services/firebaseService';
-import { isOffline } from '../services/firebaseInit';
 import { useAuth } from './AuthContext';
 import type firebase from 'firebase/compat/app';
 
@@ -446,8 +446,6 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
       allOrganizations,
       displayScreens,
       selectedDisplayScreen,
-      selectOrganization,
-      setAllOrganizations,
       selectDisplayScreen,
       selectDisplayScreenById,
       addDisplayScreen,

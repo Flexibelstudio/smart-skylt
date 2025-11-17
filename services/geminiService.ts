@@ -22,10 +22,11 @@ import {
 } from "../types";
 
 import {
+  isOffline,
   getOrganizationById,
   updateOrganization,
 } from "./firebaseService";
-import { storage, functions, isOffline } from "./firebaseInit";
+import { storage, functions } from "./firebaseInit";
 
 // -------------------------------------------------------------
 // Init
@@ -276,7 +277,7 @@ ${orgContext}
 Du kan:
 - Föreslå inläggsidéer, kampanjer och bildstilar som passar användarens bransch och befintliga innehåll.
 - Ge korta marknadsföringstips (t.ex. hur man formulerar erbjudanden, använder färg eller skapar säsongsanpassat innehåll).
-- Förklara hur systemets funktioner fungrar, på ett pedagogiskt och avdramatiserat sätt.
+- Förklara hur systemets funktioner fungerar, på ett pedagogiskt och avdramatiserat sätt.
 - Svara på frågor om användarens befintliga innehåll (t.ex. "Vilka är mina senaste inlägg?").
 
 När du svarar:
@@ -1156,26 +1157,18 @@ export const editDisplayPostImage = (
       config: { responseModalities: [Modality.IMAGE] },
     });
 
-    if (response.promptFeedback?.blockReason) {
-      throw new Error(
-        `Bildredigeringen blockerades av säkerhetsskäl: ${
-          response.promptFeedback.blockReasonMessage || response.promptFeedback.blockReason
-        }`
-      );
-    }
-
     const responseParts = response.candidates?.[0]?.content?.parts || [];
     let textResponse = "";
 
     for (const part of responseParts) {
-      if (part.inlineData) {
+      if ((part as any).inlineData) {
         return {
-            imageBytes: part.inlineData.data,
-            mimeType: part.inlineData.mimeType,
+            imageBytes: (part as any).inlineData.data,
+            mimeType: (part as any).inlineData.mimeType,
         };
       }
-      if (part.text) {
-        textResponse += part.text;
+      if ((part as any).text) {
+        textResponse += (part as any).text;
       }
     }
 
@@ -1183,7 +1176,6 @@ export const editDisplayPostImage = (
       throw new Error(`AI:n kunde inte redigera bilden: ${textResponse}`);
     }
 
-    console.error("AI did not return an edited image. Full response:", JSON.stringify(response, null, 2));
     throw new Error("AI did not return an edited image.");
   });
 

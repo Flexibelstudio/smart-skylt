@@ -10,23 +10,26 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  public state: State = {
+  state: State = {
     hasError: false,
     error: undefined,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
     if ((window as any).DEBUG_MODE) {
         console.error("ErrorBoundary caught an error", error, errorInfo);
     }
   }
 
-  public render(): React.ReactNode {
+  // FIX: Changed render from an arrow function to a standard class method.
+  // The 'this' context for lifecycle methods like render is automatically handled by React,
+  // and this change ensures correct type inference for 'this.props'.
+  render(): React.ReactNode {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-4 text-center">

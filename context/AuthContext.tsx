@@ -1,8 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useMemo, useCallback } from 'react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
-import { onAuthChange, signOut as firebaseSignOut, signIn, signInAsScreen, getUserData } from '../services/firebaseService';
-import { isOffline } from '../services/firebaseInit';
+import { onAuthChange, signOut as firebaseSignOut, signIn, signInAsScreen, getUserData, isOffline } from '../services/firebaseService';
 import { UserData, UserRole } from '../types';
 import { MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
 

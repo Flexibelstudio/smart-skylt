@@ -8,11 +8,11 @@ import {
     updateOrganization, 
     deleteOrganization, 
     getOrganizationById, 
+    isOffline,
     updateOrganizationLogos,
     updateOrganizationPostTemplates,
     updateOrganizationTags
 } from './services/firebaseService';
-import { isOffline } from './services/firebaseInit';
 
 import { getAppMode } from './utils/appMode';
 import { LoginScreen } from './components/LoginScreen';
