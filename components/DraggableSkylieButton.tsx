@@ -20,6 +20,7 @@ export const DraggableSkylieButton: React.FC<DraggableSkylieButtonProps> = ({ is
   const isDraggingRef = useRef(false);
   const dragStartPosRef = useRef({ x: 0, y: 0 });
   const dragOffsetRef = useRef({ x: 0, y: 0 }); // Offset inom själva knappen
+  const longPressTimer = useRef<number | null>(null);
 
   // State för knappens visuella egenskaper
   const [isMinimized, setIsMinimized] = useState(false);
@@ -52,88 +53,71 @@ export const DraggableSkylieButton: React.FC<DraggableSkylieButtonProps> = ({ is
     }
   }, [corner, isMinimized, minimizedSide]);
 
-  const handleDragStart = useCallback((e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
-    isDraggingRef.current = false; // Sätts till true vid första rörelsen
-    setIsInteracting(true);
-    
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-    dragStartPosRef.current = { x: clientX, y: clientY };
-
-    if (buttonRef.current) {
-        const rect = buttonRef.current.getBoundingClientRect();
-        dragOffsetRef.current = { x: clientX - rect.left, y: clientY - rect.top };
-    }
-    
-    window.addEventListener('mousemove', handleDragMove);
-    window.addEventListener('touchmove', handleDragMove, { passive: false });
-    window.addEventListener('mouseup', handleDragEnd, { once: true });
-    window.addEventListener('touchend', handleDragEnd, { once: true });
-  }, []);
-  
-  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-    e.preventDefault();
-    if (!buttonRef.current) return;
-    
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
+  const handlePointerMove = useCallback((e: PointerEvent) => {
     if (!isDraggingRef.current) {
-        const dx = clientX - dragStartPosRef.current.x;
-        const dy = clientY - dragStartPosRef.current.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 5) return;
-        isDraggingRef.current = true;
-    }
-
-    buttonRef.current.style.left = `${clientX - dragOffsetRef.current.x}px`;
-    buttonRef.current.style.top = `${clientY - dragOffsetRef.current.y}px`;
-    buttonRef.current.style.transform = `scale(1.1)`;
-    // Ta bort hörnklasser under dragning
-    buttonRef.current.classList.remove('top-6', 'bottom-6', 'left-6', 'right-6');
-
-  }, []);
-
-  const handleDragEnd = useCallback((e: MouseEvent | TouchEvent) => {
-    window.removeEventListener('mousemove', handleDragMove);
-    window.removeEventListener('touchmove', handleDragMove);
-    
-    if (!isDraggingRef.current) {
-        setIsInteracting(false);
-        onClick();
+        const dx = e.clientX - dragStartPosRef.current.x;
+        const dy = e.clientY - dragStartPosRef.current.y;
+        if (Math.sqrt(dx * dx + dy * dy) > 10) {
+            if (longPressTimer.current) clearTimeout(longPressTimer.current);
+            window.removeEventListener('pointermove', handlePointerMove);
+            if (buttonRef.current) {
+                try {
+                    buttonRef.current.releasePointerCapture(e.pointerId);
+                } catch (err) {
+                    // Ignore error if pointer was not captured.
+                }
+            }
+        }
         return;
     }
     
+    e.preventDefault();
+    if (!buttonRef.current) return;
+    
+    buttonRef.current.style.left = `${e.clientX - dragOffsetRef.current.x}px`;
+    buttonRef.current.style.top = `${e.clientY - dragOffsetRef.current.y}px`;
+  }, []);
+  
+  const handlePointerUp = useCallback((e: PointerEvent) => {
     if (buttonRef.current) {
-        buttonRef.current.style.transform = '';
-        buttonRef.current.style.left = '';
-        buttonRef.current.style.top = '';
+        try {
+            buttonRef.current.releasePointerCapture(e.pointerId);
+        } catch (err) {
+            // Ignore error if pointer was not captured.
+        }
     }
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    window.removeEventListener('pointermove', handlePointerMove);
+    
+    if (isDraggingRef.current) {
+        if (buttonRef.current) {
+            buttonRef.current.style.transform = '';
+            buttonRef.current.style.left = '';
+            buttonRef.current.style.top = '';
+        }
 
-    const clientX = 'changedTouches' in e ? e.changedTouches[0].clientX : e.clientX;
-    const clientY = 'changedTouches' in e ? e.changedTouches[0].clientY : e.clientY;
+        const { innerWidth, innerHeight } = window;
+        const minimizeZone = 50; 
 
-    const { innerWidth, innerHeight } = window;
-    const minimizeZone = 50; 
-
-    // Minimeringslogik
-    const isVerticalCenter = clientY > innerHeight * 0.25 && clientY < innerHeight * 0.75;
-    if (isVerticalCenter && clientX < minimizeZone) {
-      setIsMinimized(true);
-      setMinimizedSide('left');
-    } else if (isVerticalCenter && clientX > innerWidth - minimizeZone) {
-      setIsMinimized(true);
-      setMinimizedSide('right');
+        const isVerticalCenter = e.clientY > innerHeight * 0.25 && e.clientY < innerHeight * 0.75;
+        if (isVerticalCenter && e.clientX < minimizeZone) {
+            setIsMinimized(true);
+            setMinimizedSide('left');
+        } else if (isVerticalCenter && e.clientX > innerWidth - minimizeZone) {
+            setIsMinimized(true);
+            setMinimizedSide('right');
+        } else {
+            setIsMinimized(false);
+            const isTop = e.clientY < innerHeight / 2;
+            const isLeft = e.clientX < innerWidth / 2;
+            
+            if (isTop && isLeft) setCorner('top-left');
+            else if (isTop && !isLeft) setCorner('top-right');
+            else if (!isTop && isLeft) setCorner('bottom-left');
+            else setCorner('bottom-right');
+        }
     } else {
-      // Hörn-snapping logik
-      setIsMinimized(false);
-      const isTop = clientY < innerHeight / 2;
-      const isLeft = clientX < innerWidth / 2;
-      
-      if (isTop && isLeft) setCorner('top-left');
-      else if (isTop && !isLeft) setCorner('top-right');
-      else if (!isTop && isLeft) setCorner('bottom-left');
-      else setCorner('bottom-right');
+        onClick();
     }
 
     setTimeout(() => {
@@ -141,7 +125,34 @@ export const DraggableSkylieButton: React.FC<DraggableSkylieButtonProps> = ({ is
         isDraggingRef.current = false;
     }, 50);
 
-  }, [handleDragMove, onClick]);
+  }, [handlePointerMove, onClick]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    isDraggingRef.current = false;
+    
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+
+    if (buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        dragOffsetRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        buttonRef.current.setPointerCapture(e.pointerId);
+    }
+    
+    longPressTimer.current = window.setTimeout(() => {
+        isDraggingRef.current = true;
+        setIsInteracting(true);
+        if (buttonRef.current) {
+            buttonRef.current.style.transform = `scale(1.1)`;
+            buttonRef.current.classList.remove('top-6', 'bottom-6', 'left-6', 'right-6');
+        }
+    }, 200);
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+
+  }, [handlePointerMove, handlePointerUp]);
 
   useEffect(() => {
     saveConfig();
@@ -177,8 +188,7 @@ export const DraggableSkylieButton: React.FC<DraggableSkylieButtonProps> = ({ is
   return (
     <button
       ref={buttonRef}
-      onMouseDown={handleDragStart}
-      onTouchStart={handleDragStart}
+      onPointerDown={handlePointerDown}
       className={`fixed w-20 h-20 rounded-full shadow-lg flex items-center justify-center z-40 overflow-hidden 
       ${getCornerClasses()} 
       ${isInteracting ? 'transition-none cursor-grabbing' : 'transition-all duration-300 ease-in-out'} 
@@ -186,6 +196,7 @@ export const DraggableSkylieButton: React.FC<DraggableSkylieButtonProps> = ({ is
       ${!isInteracting ? 'hover:scale-105' : ''}`}
       aria-label={isOpen ? "Stäng AI-assistent" : "Öppna AI-assistent & Support"}
       title={isDraggingRef.current ? "Dra för att flytta" : (isOpen ? "Stäng AI-assistent" : "AI-assistent & Support")}
+      style={{ touchAction: 'none' }}
     >
       {isOpen ? (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="h-10 w-10 text-white">
