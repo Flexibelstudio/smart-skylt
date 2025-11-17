@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant } from '../types';
 import { useToast } from '../context/ToastContext';
-import { StarIcon } from './icons';
+import { StarIcon } from '../icons';
 import { useLocation } from '../context/StudioContext';
 import { getSuggestedPostById, updateSuggestedPost, uploadPostAsset } from '../services/firebaseService';
 
@@ -104,7 +104,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         const isNewPost = postToSave.id.startsWith('new-');
         const finalPostId = isNewPost ? `post-${Date.now()}` : postToSave.id;
         let postWithStorageUrls = { ...postToSave, id: finalPostId };
-
+    
+        // Flag to check if the main image was a new AI-generated data URI before upload
+        const wasAiDataUri = postToSave.imageUrl?.startsWith('data:') && postToSave.isAiGeneratedImage;
+    
         // Process and upload all data URIs
         try {
             const processUrl = async (url: string | undefined): Promise<string | undefined> => {
@@ -113,7 +116,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 const file = new File([blob], "ai-media.png", { type: blob.type });
                 return await uploadPostAsset(organization.id, finalPostId, file, () => {});
             };
-
+    
             // Main image/video
             if (postWithStorageUrls.imageUrl?.startsWith('data:')) {
                 postWithStorageUrls.imageUrl = await processUrl(postWithStorageUrls.imageUrl);
@@ -122,6 +125,19 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 postWithStorageUrls.videoUrl = await processUrl(postWithStorageUrls.videoUrl);
             }
             
+            // AI Image Variants
+            if (postWithStorageUrls.aiImageVariants) {
+                postWithStorageUrls.aiImageVariants = await Promise.all(
+                    postWithStorageUrls.aiImageVariants.map(async (variant) => {
+                        if (variant.url.startsWith('data:')) {
+                            const storageUrl = await processUrl(variant.url);
+                            return { ...variant, url: storageUrl! };
+                        }
+                        return variant;
+                    })
+                );
+            }
+    
             // Collage items
             if (postWithStorageUrls.collageItems) {
                 postWithStorageUrls.collageItems = await Promise.all(
@@ -138,13 +154,13 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                     })
                 );
             }
-
+    
         } catch (uploadError) {
             console.error("Error uploading media during save:", uploadError);
             showToast({ message: "Kunde inte ladda upp media till molnet. Försök igen.", type: 'error' });
             throw uploadError; // Stop the save process
         }
-
+    
         const updatedPosts = isNewPost
             ? [...(screen.posts || []), postWithStorageUrls]
             : (screen.posts || []).map(p => p.id === postWithStorageUrls.id ? postWithStorageUrls : p);
@@ -164,12 +180,12 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         
         const allPostsForProfile = displayScreens.flatMap(s => s.id === screen.id ? updatedPosts : s.posts || []);
         const newPlanningProfile = calculatePlanningProfile(allPostsForProfile);
-
+    
         const styleProfile: StyleProfile = organization.styleProfile || { version: 0 };
         const newVersion = (styleProfile.version || 0) + 1;
         let updatedSummary = styleProfile.summary;
         let updatedProfile: StyleProfile = { ...styleProfile, version: newVersion };
-
+    
         if (postToSave.suggestionOriginId) {
             showToast({ message: "AI:n kommer att lära sig av dina ändringar.", type: 'info' });
         } else {
@@ -184,10 +200,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 }
             }
         }
-
+    
         updatedProfile.summary = updatedSummary;
         updatedProfile.lastUpdatedAt = new Date().toISOString();
-
+    
         if (postToSave.suggestionOriginId) {
             try {
                 await updateSuggestedPost(organization.id, postToSave.suggestionOriginId, { status: 'edited-and-published', finalPostId: postWithStorageUrls.id });
@@ -195,14 +211,30 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 console.warn("Could not update suggestion status:", e);
             }
         }
-
-        await onUpdateOrganization(organization.id, {
+    
+        let orgUpdatePayload: Partial<Organization> = {
             styleProfile: updatedProfile,
             planningProfile: newPlanningProfile,
-        });
-
+        };
+    
+        // If we just uploaded a new AI image, add it to the media library now.
+        if (wasAiDataUri && postWithStorageUrls.imageUrl) {
+            const newMediaItem: MediaItem = {
+                id: `media-ai-${Date.now()}`,
+                type: 'image',
+                url: postWithStorageUrls.imageUrl, // Use the final storage URL
+                internalTitle: `AI: ${postToSave.aiImagePrompt?.slice(0, 30) || postToSave.internalTitle || 'Bild'}...`,
+                createdAt: new Date().toISOString(),
+                createdBy: 'ai',
+                aiPrompt: postToSave.aiImagePrompt,
+            };
+            orgUpdatePayload.mediaLibrary = [...(organization.mediaLibrary || []), newMediaItem];
+        }
+    
+        await onUpdateOrganization(organization.id, orgUpdatePayload);
+    
         showToast({ message: "Inlägget sparades.", type: 'success' });
-
+    
         setEditingPost(null);
         setOriginalPost(null);
         if (isNewPost) setShowStarAnimation(true);

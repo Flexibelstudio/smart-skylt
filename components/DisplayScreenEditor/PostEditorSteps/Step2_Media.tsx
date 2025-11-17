@@ -269,19 +269,6 @@ const SingleMediaEditor: React.FC<{
         try {
             const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
-    
-            const newMediaItem: MediaItem = {
-                id: `media-ai-${Date.now()}`,
-                type: 'image',
-                url: dataUri,
-                internalTitle: `AI: ${promptToGenerate.slice(0, 30)}...`,
-                createdAt: new Date().toISOString(),
-                createdBy: 'ai',
-                aiPrompt: promptToGenerate,
-            };
-    
-            const updatedLibrary = [...(organization.mediaLibrary || []), newMediaItem];
-            await onUpdateOrganization(organization.id, { mediaLibrary: updatedLibrary });
             
             onPostChange({
                 ...post,
@@ -345,22 +332,15 @@ const SingleMediaEditor: React.FC<{
                 createdAt: new Date().toISOString(),
                 createdByUid: currentUser.uid,
             };
-            
-            const newMediaItem: MediaItem = {
-                id: newVariant.id,
-                type: 'image',
-                url: newDataUri,
-                internalTitle: `AI Variant: ${editPrompt.slice(0, 30)}...`,
-                createdAt: newVariant.createdAt,
-                createdBy: 'ai',
-                aiPrompt: editPrompt,
-            };
     
             const newVariants = [...(post.aiImageVariants || []), newVariant];
-            onPostChange({ ...post, imageUrl: newDataUri, aiImageVariants: newVariants, aiImagePrompt: editPrompt });
-            
-            const updatedLibrary = [...(organization.mediaLibrary || []), newMediaItem];
-            await onUpdateOrganization(organization.id, { mediaLibrary: updatedLibrary });
+            onPostChange({ 
+                ...post, 
+                imageUrl: newDataUri, 
+                aiImageVariants: newVariants, 
+                aiImagePrompt: editPrompt,
+                isAiGeneratedImage: true
+            });
     
             showToast({ message: 'Ny bildvariant skapad!', type: 'success' });
         } catch (error) {
