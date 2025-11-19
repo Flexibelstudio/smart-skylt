@@ -5,6 +5,16 @@ import { LocationProvider } from './context/StudioContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -14,14 +24,16 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <AuthProvider>
-      <LocationProvider>
-        <ToastProvider>
-          <ErrorBoundary>
-            <App />
-          </ErrorBoundary>
-        </ToastProvider>
-      </LocationProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <LocationProvider>
+          <ToastProvider>
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
+          </ToastProvider>
+        </LocationProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   </React.StrictMode>
 );
