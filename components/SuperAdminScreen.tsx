@@ -1,31 +1,27 @@
-import React from 'react';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Organization, CustomPage, UserRole, InfoCarousel, InfoMessage, DisplayScreen, DisplayPost, UserData, Tag, SystemSettings, ScreenPairingCode, BrandingOptions, PostTemplate, CampaignIdea, CustomEvent, PhysicalScreen, MediaItem, AiAutomation, SuggestedPost } from '../types';
-import { ToggleSwitch, CompactToggleSwitch, MonitorIcon, PencilIcon, TrashIcon, CodeBracketIcon, MagnifyingGlassIcon, SparklesIcon, ShareIcon, DuplicateIcon, ChevronDownIcon, CheckCircleIcon, VideoCameraIcon, PlayIcon, PauseIcon, LightBulbIcon, Cog6ToothIcon, LoadingSpinnerIcon, HandThumbUpIcon } from './icons';
-import { getAdminsForOrganization, setAdminRole, inviteUser, getSystemSettings, getPairingCode, pairAndActivateScreen, uploadMediaForGallery, deleteMediaFromStorage, unpairPhysicalScreen, isOffline, callTestFunction, updateDisplayScreen, listenToSuggestedPosts, updateSuggestedPost, deleteSuggestedPost } from '../services/firebaseService';
-import { MarkdownRenderer } from './CustomContentScreen';
-import { useAuth } from '../context/AuthContext';
-import { DisplayPostRenderer } from './DisplayPostRenderer';
-import { useToast } from '../context/ToastContext';
-import { ConfirmDialog } from './ConfirmDialog';
-import { PrimaryButton, SecondaryButton, DestructiveButton } from './Buttons';
-import { StyledInput, StyledSelect } from './Forms';
-import { EmptyState } from './EmptyState';
-import { getSwedishHolidays } from '../data/holidays';
-import { parseToDate } from '../utils/dateUtils';
-import { generateCampaignIdeasForEvent, generateSeasonalCampaignIdeas, generateEventReminderText, generateDisplayPostCampaign, generateDisplayPostImage, urlToBase64, editDisplayPostImage } from '../services/geminiService';
-import QRCode from 'https://esm.sh/qrcode@1.5.3';
-import { Card } from './Card';
-import { OrganisationTab } from './OrganisationTab';
-// FIX: Added import for AiImageEditorModal.
-import { InputDialog, AiImageEditorModal } from './DisplayScreenEditor/Modals';
-import { ProactiveRhythmBanner, ProactiveSeasonalBanner } from './ProactiveRhythmBanner';
-import { AIGuideModal } from './AIGuideModal';
-import { AiAutomationEditorModal } from './AiAutomationEditorModal';
-import { useLocation } from '../context/StudioContext';
-import { SkylieEmptyState } from './SkylieEmptyState';
-import { PlanningView } from './DisplayScreenEditor/PlanningView';
 
+import React, { useState, useEffect, useMemo } from 'react';
+import { Organization, UserRole, DisplayScreen, DisplayPost, Tag, SystemSettings, PostTemplate, PhysicalScreen } from '../types';
+import { getSystemSettings, pairAndActivateScreen, getPairingCode } from '../services/firebaseService';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { PrimaryButton, SecondaryButton } from './Buttons';
+import { StyledInput, StyledSelect } from './Forms';
+import { SparklesIcon, CodeBracketIcon, ShareIcon } from './icons';
+import { DisplayPostRenderer } from './DisplayPostRenderer';
+import { parseToDate } from '../utils/dateUtils';
+import QRCode from 'https://esm.sh/qrcode@1.5.3';
+import { AIGuideModal } from './AIGuideModal';
+import { useLocation } from '../context/StudioContext';
+
+// Import the extracted tabs
+import { SkyltfonsterTab } from './admin/SkyltfonsterTab';
+import { AdminTab } from './admin/AdminTab';
+import { AiAutomationTab } from './admin/AiAutomationTab';
+import { OrganisationTab } from './OrganisationTab';
+
+// Import Modals (We can move these too later, but let's keep them here for now to minimize file explosion in one step)
+// or assume they are internal to this file for simplicity if they weren't extracted.
+// However, since I can't update non-existent files, I will keep the modals here but streamlined.
 
 interface SuperAdminScreenProps {
     organization: Organization;
@@ -49,14 +45,13 @@ const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): string => {
     }
 };
 
-
 const DisplayScreenPreviewModal: React.FC<{
     screen: DisplayScreen;
     organization: Organization;
     onClose: () => void;
 }> = ({ screen, organization, onClose }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
-    const timerRef = useRef<number | null>(null);
+    const timerRef = React.useRef<number | null>(null);
 
     const activePosts = useMemo(() => {
         if (!screen.isEnabled || !screen.posts) return [];
@@ -74,7 +69,7 @@ const DisplayScreenPreviewModal: React.FC<{
         if (currentIndex >= activePosts.length) setCurrentIndex(0);
     }, [activePosts, currentIndex]);
 
-    const advance = useCallback(() => {
+    const advance = React.useCallback(() => {
         if (activePosts.length <= 1) return;
         setCurrentIndex(prev => (prev + 1) % activePosts.length);
     }, [activePosts.length]);
@@ -139,12 +134,10 @@ const PairingModal: React.FC<{
     const [selectedDisplayScreenId, setSelectedDisplayScreenId] = useState<string>('');
 
     const { currentUser } = useAuth();
-    const { showToast } = useToast();
     const { displayScreens: allDisplayScreens } = useLocation();
 
     useEffect(() => {
         if (isOpen) {
-            // Reset state when modal opens
             setStep('code');
             setCode('');
             setIsLoading(false);
@@ -191,7 +184,6 @@ const PairingModal: React.FC<{
                 displayScreenId: selectedDisplayScreenId,
             });
 
-            // The context will update automatically via listener, but we can do an optimistic update
             const updatedScreens = [...(organization.physicalScreens || []), newScreen];
             onUpdateOrganization(organization.id, { physicalScreens: updatedScreens });
             
@@ -452,100 +444,49 @@ const CompleteProfileModal: React.FC<{
     );
 };
 
-const ProactiveUpcomingEventBanner: React.FC<{
-    organization: Organization;
-    onGenerateIdeas: (event: { name: string; date: Date; icon: string; }) => void;
-}> = ({ organization, onGenerateIdeas }) => {
-    const [event, setEvent] = useState<{ name: string; date: Date; icon: string; } | null>(null);
-    const [reminder, setReminder] = useState<{ headline: string, subtext: string } | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-
-    useEffect(() => {
-        const now = new Date();
-        const year = now.getFullYear();
-        const holidays = getSwedishHolidays(year);
-        const customEvents = (organization.customEvents || []).map(ce => ({ ...ce, date: parseToDate(ce.date) as Date }));
-        
-        const allEvents = [...holidays, ...customEvents].filter(e => e.date && e.date >= now);
-        allEvents.sort((a, b) => a.date.getTime() - b.date.getTime());
-        
-        const nextEvent = allEvents[0];
-        
-        if (!nextEvent) {
-            setIsLoading(false);
-            setEvent(null);
-            return;
-        }
-
-        const diffDays = (nextEvent.date.getTime() - now.getTime()) / (1000 * 3600 * 24);
-
-        if (diffDays <= 30) {
-            const hasExistingCampaign = (organization.displayScreens || []).some(screen =>
-                (screen.posts || []).some(post => post.internalTitle.toLowerCase().includes(nextEvent.name.toLowerCase()))
-            );
-
-            if (!hasExistingCampaign) {
-                setEvent(nextEvent);
-            } else {
-                setEvent(null);
-                setIsLoading(false);
-            }
-        } else {
-            setEvent(null);
-            setIsLoading(false);
-        }
-    }, [organization]);
-
-    useEffect(() => {
-        if (event) {
-            const now = new Date();
-            const diffTime = event.date.getTime() - now.getTime();
-            const daysUntil = Math.max(0, Math.ceil(diffTime / (1000 * 3600 * 24)));
-
-            // hasExistingCampaign is always false when this runs, due to logic in first useEffect
-            generateEventReminderText(event, daysUntil, organization, false)
-                .then(setReminder)
-                .catch(err => {
-                    console.error("Failed to generate event reminder text:", err);
-                    setReminder({
-                        headline: `${event.name} närmar sig!`,
-                        subtext: 'Ska vi skapa en kampanj?'
-                    });
-                })
-                .finally(() => setIsLoading(false));
-        } else {
-            setReminder(null);
-        }
-    }, [event, organization]);
-
-    if (isLoading || !reminder || !event) {
-        return null;
-    }
-
+const BrandingSetupGuide: React.FC<{ onGoToBranding: () => void; onDismiss: () => void }> = ({ onGoToBranding, onDismiss }) => {
     return (
-        <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4 rounded-xl shadow-lg animate-fade-in flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white p-6 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-6 shadow-lg relative animate-fade-in">
+            <button onClick={onDismiss} className="absolute top-3 right-3 text-cyan-100 hover:text-white" title="Dölj guide">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
             <div className="flex items-center gap-4 text-center sm:text-left">
-                <div className="text-4xl">{event.icon}</div>
+                <div className="text-5xl">
+                    <SparklesIcon className="w-12 h-12" />
+                </div>
                 <div>
-                    <h3 className="text-xl font-bold">{reminder.headline}</h3>
-                    <p className="text-pink-200 mt-1">{reminder.subtext}</p>
+                    <h3 className="text-2xl font-bold">Börja här för bästa resultat!</h3>
+                    <p className="text-cyan-100 mt-1">Fyll i din varumärkesprofil så kan AI:n skapa innehåll som är perfekt anpassat för dig.</p>
                 </div>
             </div>
-            <PrimaryButton onClick={() => onGenerateIdeas(event)} className="bg-white/90 hover:bg-white text-pink-600 font-bold flex-shrink-0">
-                <SparklesIcon className="h-5 w-5 mr-2"/>
-                Generera Idéer
+            <PrimaryButton onClick={onGoToBranding} className="bg-white/90 hover:bg-white text-teal-600 font-bold flex-shrink-0">
+                Fyll i varumärkesprofil
             </PrimaryButton>
         </div>
     );
 };
 
+// --- MediaGalleryManager Placeholder ---
+// This can be moved to its own file later if it grows
+const MediaGalleryManager: React.FC<SuperAdminScreenProps> = () => {
+    return (
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Galleri</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Hantera dina uppladdade bilder och videos.</p>
+            <p className="text-slate-500 dark:text-slate-400">Gallerifunktionen är under utveckling.</p>
+        </div>
+    );
+};
 
-type AdminTab = 'skyltfonster' | 'organisation' | 'galleri' | 'automation' | 'admin';
+
+// --- Main Component ---
+
+type AdminTabType = 'skyltfonster' | 'organisation' | 'galleri' | 'automation' | 'admin';
 
 const TabButton: React.FC<{
-    tabId: AdminTab;
-    activeTab: AdminTab;
-    setActiveTab: (tabId: AdminTab) => void;
+    tabId: AdminTabType;
+    activeTab: AdminTabType;
+    setActiveTab: (tabId: AdminTabType) => void;
     children: React.ReactNode;
     highlight?: boolean;
 }> = ({ tabId, activeTab, setActiveTab, children, highlight }) => {
@@ -571,568 +512,12 @@ const TabButton: React.FC<{
     );
 };
 
-interface CampaignIdeaGeneratorForOrgProps {
-    isOpen: boolean;
-    onClose: () => void;
-    event: { name: string; date: Date } | null;
-    organization: Organization;
-    onUpdateOrganization: (organizationId: string, data: Partial<Organization>) => Promise<void>;
-    onEditDisplayScreen: (screen: DisplayScreen, post?: DisplayPost) => void;
-    planningContext?: string;
-}
-
-const CampaignIdeaGeneratorForOrg: React.FC<CampaignIdeaGeneratorForOrgProps> = ({ isOpen, onClose, event, organization, onUpdateOrganization, onEditDisplayScreen, planningContext }) => {
-    const { displayScreens } = useLocation();
-    const [isLoading, setIsLoading] = useState(false);
-    const [ideas, setIdeas] = useState<CampaignIdea[] | null>(null);
-    const [followUpSuggestion, setFollowUpSuggestion] = useState<{ question: string; eventName: string; } | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const { showToast } = useToast();
-    const isGeneratingRef = useRef(false);
-    const [modalTitle, setModalTitle] = useState('');
-
-    const [step, setStep] = useState<'ideas' | 'configure' | 'generating'>('ideas');
-    const [selectedIdea, setSelectedIdea] = useState<CampaignIdea | null>(null);
-    const [selectedScreenId, setSelectedScreenId] = useState<string>('');
-    const [generationStatus, setGenerationStatus] = useState('');
-    const [isConfirmCloseOpen, setIsConfirmCloseOpen] = useState(false);
-
-    useEffect(() => {
-        if (displayScreens && displayScreens.length > 0) {
-            setSelectedScreenId(displayScreens[0].id);
-        }
-    }, [displayScreens]);
-
-    const fetchEventIdeas = useCallback(async (eventForIdeas: { name: string, date: Date }) => {
-        setModalTitle(`✨ AI-inläggsidéer för "${eventForIdeas.name}"`);
-        setIsLoading(true);
-        setIdeas(null);
-        setFollowUpSuggestion(null);
-        setError(null);
-        try {
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const eventDate = new Date(eventForIdeas.date.getFullYear(), eventForIdeas.date.getMonth(), eventForIdeas.date.getDate());
-            const diffTime = eventDate.getTime() - today.getTime();
-            const daysUntil = Math.max(0, Math.ceil(diffTime / (1000 * 3600 * 24)));
-            const { ideas: fetchedIdeas, followUpSuggestion: suggestion } = await generateCampaignIdeasForEvent(eventForIdeas.name, daysUntil, organization);
-            setIdeas(fetchedIdeas);
-            setFollowUpSuggestion(suggestion || null);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Kunde inte hämta idéer.");
-        } finally {
-            setIsLoading(false);
-        }
-    }, [organization]);
-
-    useEffect(() => {
-        if (isOpen) {
-            if (isGeneratingRef.current) {
-                return; // Prevent reset during generation/update cycle
-            }
-            setStep('ideas');
-            setSelectedIdea(null);
-            
-            if (event) {
-                fetchEventIdeas(event);
-            } else if (planningContext) {
-                setModalTitle(`✨ AI-inläggsidéer`);
-                const fetchSeasonalIdeas = async () => {
-                    setIsLoading(true);
-                    setIdeas(null);
-                    setFollowUpSuggestion(null);
-                    try {
-                        const { ideas: fetchedIdeas } = await generateSeasonalCampaignIdeas(organization, planningContext);
-                        setIdeas(fetchedIdeas);
-                        setFollowUpSuggestion(null);
-                    } catch (e) {
-                        setError(e instanceof Error ? e.message : "Kunde inte hämta idéer.");
-                    } finally {
-                        setIsLoading(false);
-                    }
-                };
-                fetchSeasonalIdeas();
-            }
-        } else {
-            // When modal closes, ensure the ref is reset for the next time.
-            isGeneratingRef.current = false;
-        }
-    }, [isOpen, event, organization, planningContext, fetchEventIdeas]);
-
-    const handleSelectIdea = (idea: CampaignIdea) => {
-        setSelectedIdea(idea);
-        setStep('configure');
-    };
-
-    const handleBackToIdeas = () => {
-        setSelectedIdea(null);
-        setStep('ideas');
-    };
-
-    const handleAttemptClose = () => {
-        if (step === 'configure' || step === 'generating') {
-            setIsConfirmCloseOpen(true);
-        } else {
-            onClose();
-        }
-    };
-    
-    const handleConfirmClose = () => {
-        onClose();
-        setIsConfirmCloseOpen(false);
-    };
-
-    const handleGenerateCampaign = async () => {
-        if (!selectedIdea || !selectedScreenId) return;
-    
-        isGeneratingRef.current = true;
-        setStep('generating');
-        setGenerationStatus('Skapar inläggsutkast...');
-        setError(null);
-        try {
-            const screen = displayScreens.find(s => s.id === selectedScreenId);
-            if (!screen) throw new Error("Valt skyltfönster kunde inte hittas.");
-    
-            const newPost: DisplayPost = {
-                id: `new-${Date.now()}`,
-                internalTitle: selectedIdea.headline || 'AI-genererat inlägg',
-                headline: selectedIdea.headline,
-                body: selectedIdea.text,
-                layout: 'image-fullscreen',
-                durationSeconds: 15,
-                imageUrl: undefined,
-                videoUrl: undefined,
-                aiImagePrompt: selectedIdea.visual.imageIdea,
-                isAiGeneratedImage: false,
-                isAiGeneratedVideo: false,
-                backgroundColor: 'black',
-                textColor: 'white',
-                imageOverlayEnabled: false,
-                headlineFontFamily: organization.headlineFontFamily,
-                bodyFontFamily: organization.bodyFontFamily,
-            };
-    
-            showToast({ message: `Utkast skapat! Öppnar redigeraren för "${screen.name}".`, type: 'success' });
-            
-            onEditDisplayScreen(screen, newPost);
-            onClose();
-    
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Kunde inte skapa inlägg.");
-            setStep('configure');
-            isGeneratingRef.current = false;
-        } finally {
-            setGenerationStatus('');
-        }
-    };
-    
-    const handleFollowUpClick = (eventName: string) => {
-        fetchEventIdeas({ name: eventName, date: new Date() });
-    };
-
-    if (!isOpen) return null;
-
-    const renderContent = () => {
-        if (isLoading) {
-            return (
-                <div className="text-center py-12">
-                   <SparklesIcon className="h-10 w-10 text-primary animate-pulse mx-auto" />
-                   <p className="mt-4 text-slate-600 dark:text-slate-300">Genererar kreativa idéer...</p>
-               </div>
-           );
-        }
-        if (error && step === 'ideas') {
-             return (
-                <div className="text-center py-12">
-                    <p className="text-red-400">Ett fel inträffade:</p>
-                    <p className="text-slate-600 dark:text-slate-300 mt-2">{error}</p>
-                </div>
-            );
-        }
-
-        switch (step) {
-            case 'generating':
-                return (
-                    <div className="text-center py-12">
-                        <SparklesIcon className="h-10 w-10 text-primary animate-pulse mx-auto" />
-                        <p className="mt-4 text-slate-600 dark:text-slate-300">{generationStatus || 'AI:n arbetar...'}</p>
-                    </div>
-                );
-            case 'configure':
-                return (
-                    <>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold">Konfigurera Inlägg</h2>
-                            <SecondaryButton onClick={handleBackToIdeas}>Tillbaka till idéer</SecondaryButton>
-                        </div>
-                        <div className="bg-slate-100 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-600 mb-6">
-                            <h3 className="font-bold text-primary">{selectedIdea?.headline}</h3>
-                            <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">{selectedIdea?.text}</p>
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Lägg till i kanal</label>
-                                {displayScreens && displayScreens.length > 0 ? (
-                                    <StyledSelect value={selectedScreenId} onChange={e => setSelectedScreenId(e.target.value)}>
-                                        {displayScreens.map(screen => <option key={screen.id} value={screen.id}>{screen.name}</option>)}
-                                    </StyledSelect>
-                                ) : (
-                                    <p className="text-sm text-yellow-400 bg-yellow-900/50 p-3 rounded-lg">Du måste skapa ett skyltfönster (en kanal) först.</p>
-                                )}
-                            </div>
-                        </div>
-                        {error && <p className="text-red-400 mt-4">{error}</p>}
-                    </>
-                );
-            case 'ideas':
-            default:
-                return (
-                    <>
-                        <h2 className="text-2xl font-bold mb-2">{modalTitle}</h2>
-                        <div className="space-y-4 mt-6">
-                            <p className="text-slate-600 dark:text-slate-300">Här är några förslag. Välj en idé för att låta AI:n bygga ett inlägg.</p>
-                            {ideas && ideas.map((idea, index) => (
-                                <div key={index} className="bg-slate-100 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-600 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                    <div className="flex-grow">
-                                        <h3 className="font-bold text-primary">{idea.headline}</h3>
-                                        <p className="text-slate-600 dark:text-slate-300 text-sm mt-1 mb-3">{idea.text}</p>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400 italic space-y-1">
-                                            <p><strong>Visuell Idé:</strong> {idea.visual.imageIdea}</p>
-                                            <p><strong>Stil:</strong> {idea.visual.style}, {idea.visual.mood}, {idea.visual.colorPalette}</p>
-                                        </div>
-                                    </div>
-                                    <PrimaryButton onClick={() => handleSelectIdea(idea)} className="flex-shrink-0 self-start sm:self-center">
-                                        Använd denna inläggsidé
-                                    </PrimaryButton>
-                                </div>
-                            ))}
-                            {followUpSuggestion && (
-                                <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-600 text-center">
-                                    <button
-                                        onClick={() => handleFollowUpClick(followUpSuggestion.eventName)}
-                                        className="text-sm text-purple-400 italic hover:underline hover:text-purple-300 transition-colors"
-                                    >
-                                        {followUpSuggestion.question}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </>
-                );
-        }
-    }
-
-    return (
-        <>
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => handleAttemptClose()}>
-                <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-2xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                    {renderContent()}
-                    <div className="flex justify-end gap-4 mt-6 border-t border-slate-200 dark:border-slate-700 pt-4">
-                        {step === 'configure' && (
-                            <PrimaryButton 
-                                onClick={handleGenerateCampaign} 
-                                disabled={!selectedScreenId || (displayScreens?.length || 0) === 0}
-                            >
-                                Skapa Utkast
-                            </PrimaryButton>
-                        )}
-                        <SecondaryButton onClick={handleAttemptClose}>Stäng</SecondaryButton>
-                    </div>
-                </div>
-            </div>
-            <ConfirmDialog
-                isOpen={isConfirmCloseOpen}
-                onClose={() => setIsConfirmCloseOpen(false)}
-                onConfirm={handleConfirmClose}
-                title="Avbryta skapandet?"
-                confirmText="Ja, avbryt"
-                variant="destructive"
-            >
-                <p>Är du säker på att du vill stänga? Dina val kommer inte att sparas och du får börja om från början.</p>
-            </ConfirmDialog>
-        </>
-    );
-};
-
-// FIX: Added missing component definition.
-const MediaPreviewModal: React.FC<{
-    media: MediaItem;
-    onClose: () => void;
-    usageText: string;
-}> = ({ media, onClose, usageText }) => {
-    return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 w-full max-w-4xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                <div className="flex-grow flex items-center justify-center relative min-h-0">
-                    {media.type === 'image' ? (
-                        <img src={media.url} alt={media.internalTitle} className="max-w-full max-h-full object-contain" />
-                    ) : (
-                        <video src={media.url} controls autoPlay className="max-w-full max-h-full" />
-                    )}
-                </div>
-                <div className="flex-shrink-0 p-4 border-t border-slate-200 dark:border-slate-700">
-                    <h3 className="font-bold text-lg">{media.internalTitle}</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Används i: {usageText}</p>
-                    <div className="flex justify-end mt-4">
-                        <SecondaryButton onClick={onClose}>Stäng</SecondaryButton>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// FIX: Added missing component definition.
-const ShareMediaToChannelModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    onShare: (targetScreenIds: string[]) => void;
-    screens: DisplayScreen[];
-    isSharing: boolean;
-}> = ({ isOpen, onClose, onShare, screens, isSharing }) => {
-    const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    useEffect(() => { if (isOpen) setSelectedIds([]); }, [isOpen]);
-    if (!isOpen) return null;
-
-    const handleToggle = (screenId: string) => {
-        setSelectedIds(prev => prev.includes(screenId) ? prev.filter(id => id !== screenId) : [...prev, screenId]);
-    };
-    const handleSubmit = () => { onShare(selectedIds); };
-
-    return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-lg text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in" onClick={e => e.stopPropagation()}>
-                <h2 className="text-2xl font-bold mb-2">Dela media till kanaler</h2>
-                <p className="text-slate-600 dark:text-slate-300 mb-6">Vald media kommer att skapas som nya inlägg i de valda kanalerna.</p>
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                    {screens.length > 0 ? (
-                        screens.map(screen => (
-                            <label key={screen.id} className="flex items-center gap-3 p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={selectedIds.includes(screen.id)}
-                                    onChange={() => handleToggle(screen.id)}
-                                    className="h-5 w-5 rounded text-primary focus:ring-primary"
-                                />
-                                <span className="font-medium text-slate-800 dark:text-slate-200">{screen.name}</span>
-                            </label>
-                        ))
-                    ) : (
-                        <p className="text-slate-500 dark:text-slate-400 text-center py-4">Det finns inga kanaler att dela till.</p>
-                    )}
-                </div>
-                <div className="flex justify-end gap-4 mt-8 border-t border-slate-200 dark:border-slate-700 pt-4">
-                    <SecondaryButton onClick={onClose} disabled={isSharing}>Avbryt</SecondaryButton>
-                    <PrimaryButton onClick={handleSubmit} disabled={selectedIds.length === 0 || isSharing} loading={isSharing}>
-                        Dela
-                    </PrimaryButton>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// FIX: Added placeholder for MediaGalleryManager component to resolve 'Cannot find name' error.
-const MediaGalleryManager: React.FC<SuperAdminScreenProps> = (props) => {
-    return (
-        <Card title="Galleri" subTitle="Hantera dina uppladdade bilder och videos.">
-            <p className="text-slate-500 dark:text-slate-400">Gallerifunktionen är under utveckling.</p>
-        </Card>
-    );
-};
-
-const AiAutomationContent: React.FC<SuperAdminScreenProps> = (props) => {
-    const { organization, onUpdateOrganization, onEditDisplayScreen } = props;
-    const { showToast } = useToast();
-    const { updateDisplayScreen } = useLocation();
-
-    const [editingAutomation, setEditingAutomation] = useState<AiAutomation | null>(null);
-    const [isEditorOpen, setIsEditorOpen] = useState(false);
-    const [automationToDelete, setAutomationToDelete] = useState<AiAutomation | null>(null);
-
-    const [suggestedPosts, setSuggestedPosts] = useState<SuggestedPost[]>([]);
-    const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true);
-
-    useEffect(() => {
-        setIsLoadingSuggestions(true);
-        const unsubscribe = listenToSuggestedPosts(organization.id, (posts) => {
-            setSuggestedPosts(posts);
-            setIsLoadingSuggestions(false);
-        });
-        return () => unsubscribe();
-    }, [organization.id]);
-
-    const handleSaveAutomation = async (automation: AiAutomation) => {
-        const currentAutomations = organization.aiAutomations || [];
-        const isNew = !currentAutomations.some(a => a.id === automation.id);
-        const updatedAutomations = isNew
-            ? [...currentAutomations, automation]
-            : currentAutomations.map(a => a.id === automation.id ? automation : a);
-
-        try {
-            await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
-            showToast({ message: `Automation ${isNew ? 'skapades' : 'uppdaterades'}.`, type: 'success' });
-            setIsEditorOpen(false);
-            setEditingAutomation(null);
-        } catch (e) {
-            showToast({ message: "Kunde inte spara automationen.", type: 'error' });
-        }
-    };
-
-    const handleDeleteAutomation = async () => {
-        if (!automationToDelete) return;
-        const updatedAutomations = (organization.aiAutomations || []).filter(a => a.id !== automationToDelete.id);
-        try {
-            await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
-            showToast({ message: "Automationen togs bort.", type: 'success' });
-            setAutomationToDelete(null);
-        } catch (e) {
-            showToast({ message: "Kunde inte ta bort automationen.", type: 'error' });
-        }
-    };
-    
-    const handleEditSuggestion = (suggestion: SuggestedPost) => {
-        const targetScreen = organization.displayScreens.find(s => s.id === suggestion.targetScreenId);
-        if (targetScreen) {
-            const postToEdit: DisplayPost = {
-                ...suggestion.postData,
-                suggestionOriginId: suggestion.id, // Link it back
-            };
-            onEditDisplayScreen(targetScreen, postToEdit);
-        } else {
-            showToast({ message: `Kanalen "${suggestion.targetScreenId}" kunde inte hittas.`, type: 'error' });
-        }
-    };
-
-    const handleApproveSuggestion = async (suggestion: SuggestedPost) => {
-        try {
-            const screen = organization.displayScreens.find(s => s.id === suggestion.targetScreenId);
-            if (!screen) throw new Error("Målkanalen kunde inte hittas.");
-            
-            const newPost = { ...suggestion.postData, id: `post-${Date.now()}` };
-            const updatedPosts = [...(screen.posts || []), newPost];
-            
-            // This is a multi-step operation.
-            // 1. Update the display screen with the new post.
-            await updateDisplayScreen(screen.id, { posts: updatedPosts });
-            // 2. Update the suggestion status.
-            await updateSuggestedPost(organization.id, suggestion.id, { status: 'approved', finalPostId: newPost.id });
-
-            showToast({ message: `Inlägget "${newPost.internalTitle}" har publicerats!`, type: 'success' });
-        } catch (e) {
-             showToast({ message: `Kunde inte godkänna förslaget: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
-        }
-    };
-
-    const handleRejectSuggestion = async (suggestion: SuggestedPost) => {
-         try {
-            await updateSuggestedPost(organization.id, suggestion.id, { status: 'rejected' });
-            showToast({ message: `Förslaget har arkiverats.`, type: 'info' });
-        } catch (e) {
-            showToast({ message: `Kunde inte arkivera förslaget.`, type: 'error' });
-        }
-    };
-    
-    const pendingSuggestions = suggestedPosts.filter(p => p.status === 'pending');
-    const pastSuggestions = suggestedPosts.filter(p => p.status !== 'pending');
-
-    return (
-        <div className="space-y-8">
-            <Card
-                title="AI Automation"
-                subTitle="Schemalägg AI:n att automatiskt skapa och föreslå nytt innehåll."
-                actions={<PrimaryButton onClick={() => { setEditingAutomation(null); setIsEditorOpen(true); }}>Skapa ny automation</PrimaryButton>}
-            >
-                <div className="space-y-3">
-                    {(organization.aiAutomations || []).length > 0 ? (
-                        (organization.aiAutomations || []).map(auto => (
-                            <div key={auto.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg flex justify-between items-center border border-slate-200 dark:border-slate-700">
-                                <div>
-                                    <p className="font-semibold text-lg text-slate-900 dark:text-white">{auto.name}</p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">{auto.topic}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <CompactToggleSwitch checked={auto.isEnabled} onChange={(checked) => handleSaveAutomation({...auto, isEnabled: checked })} />
-                                    <SecondaryButton onClick={() => { setEditingAutomation(auto); setIsEditorOpen(true); }}><PencilIcon /></SecondaryButton>
-                                    <DestructiveButton onClick={() => setAutomationToDelete(auto)}><TrashIcon /></DestructiveButton>
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <SkylieEmptyState
-                            title="Skapa din första automation!"
-                            message="Låt AI:n jobba åt dig! Skapa en automation för att regelbundet få nya inläggsförslag, t.ex. 'Veckans Tips' eller 'Måndagsmotivation'."
-                            action={{ text: 'Skapa ny automation', onClick: () => { setEditingAutomation(null); setIsEditorOpen(true); } }}
-                        />
-                    )}
-                </div>
-            </Card>
-
-            <Card
-                title="Inläggsförslag att granska"
-                subTitle="Här är de senaste inläggen som AI:n har skapat baserat på dina automationer."
-            >
-                {isLoadingSuggestions ? (
-                    <div className="flex justify-center p-8"><LoadingSpinnerIcon className="h-8 w-8 text-primary"/></div>
-                ) : pendingSuggestions.length > 0 ? (
-                    <div className="space-y-4">
-                        {pendingSuggestions.map(suggestion => (
-                           <div key={suggestion.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-4">
-                                <div className="flex-shrink-0 w-full sm:w-32 h-20 sm:h-auto bg-black rounded-md overflow-hidden">
-                                    <DisplayPostRenderer post={suggestion.postData} mode="preview" allTags={organization.tags} organization={organization}/>
-                                </div>
-                                <div className="flex-grow">
-                                    <p className="font-semibold text-slate-900 dark:text-white">{suggestion.postData.internalTitle}</p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{suggestion.postData.body}</p>
-                                    <div className="text-xs font-semibold text-slate-400 mt-1">
-                                        För kanal: <span className="font-bold text-slate-600 dark:text-slate-300">{organization.displayScreens.find(s => s.id === suggestion.targetScreenId)?.name || 'Okänd'}</span>
-                                    </div>
-                                </div>
-                                <div className="flex sm:flex-col gap-2 self-end sm:self-center flex-shrink-0">
-                                     <PrimaryButton onClick={() => handleApproveSuggestion(suggestion)} className="bg-green-600 hover:bg-green-500 !py-2 !px-3 text-sm">Godkänn</PrimaryButton>
-                                     <SecondaryButton onClick={() => handleEditSuggestion(suggestion)} className="!py-2 !px-3 text-sm">Redigera</SecondaryButton>
-                                     <DestructiveButton onClick={() => handleRejectSuggestion(suggestion)} className="!py-2 !px-3 text-sm">Neka</DestructiveButton>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                     <SkylieEmptyState
-                        title="Inga nya förslag just nu"
-                        message="När dina automationer körs kommer nya inläggsförslag att dyka upp här för din granskning."
-                    />
-                )}
-            </Card>
-
-            {isEditorOpen && (
-                <AiAutomationEditorModal
-                    isOpen={isEditorOpen}
-                    onClose={() => setIsEditorOpen(false)}
-                    onSave={handleSaveAutomation}
-                    automation={editingAutomation}
-                    organization={organization}
-                />
-            )}
-            
-            <ConfirmDialog
-                isOpen={!!automationToDelete}
-                onClose={() => setAutomationToDelete(null)}
-                onConfirm={handleDeleteAutomation}
-                title="Ta bort automation"
-            >
-                Är du säker på att du vill ta bort automationen "{automationToDelete?.name}"?
-            </ConfirmDialog>
-        </div>
-    );
-};
-
 export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
-    const { organization, theme, onUpdateOrganization, onEditDisplayScreen } = props;
+    const { organization, theme, onUpdateOrganization } = props;
     const { displayScreens } = useLocation();
-    const [activeTab, setActiveTab] = useState<AdminTab>('skyltfonster');
+    const [activeTab, setActiveTab] = useState<AdminTabType>('skyltfonster');
     
     const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
-    const [isSettingsLoading, setIsSettingsLoading] = useState(true);
     
     const [isPairingModalOpen, setIsPairingModalOpen] = useState(false);
     const [screenToPreview, setScreenToPreview] = useState<DisplayScreen | null>(null);
@@ -1173,8 +558,6 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                 setSystemSettings(settings);
             } catch (error) {
                 console.error("Failed to load system settings", error);
-            } finally {
-                setIsSettingsLoading(false);
             }
         };
         fetchSettings();
@@ -1191,7 +574,6 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
 
     const handleSaveProfile = async (data: Partial<Organization>) => {
         await onUpdateOrganization(organization.id, data);
-        // The modal will close automatically because the organization prop will update, and the useEffect will set isOpen to false.
     };
 
     const displayLogoUrl = theme === 'dark' 
@@ -1240,7 +622,6 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                     </TabButton>
                 </div>
                 <div>
-                    {/* // Tidigare snabbguide ersatt med permanent AI-guide-modal för bättre tillgänglighet. */}
                     <SecondaryButton onClick={() => setIsAiGuideModalOpen(true)}>
                         💡 AI-guide
                     </SecondaryButton>
@@ -1248,11 +629,20 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
             </div>
 
             <div className="space-y-8">
-                {activeTab === 'skyltfonster' && <SkyltfonsterContent {...props} displayScreens={displayScreens} systemSettings={systemSettings} onOpenPairingModal={() => setIsPairingModalOpen(true)} onPreviewScreen={setScreenToPreview} onShareScreen={setScreenToShare} />}
+                {activeTab === 'skyltfonster' && (
+                    <SkyltfonsterTab
+                        {...props}
+                        displayScreens={displayScreens}
+                        systemSettings={systemSettings}
+                        onOpenPairingModal={() => setIsPairingModalOpen(true)}
+                        onPreviewScreen={setScreenToPreview}
+                        onShareScreen={setScreenToShare}
+                    />
+                )}
                 {activeTab === 'organisation' && <OrganisationTab {...props} />}
                 {activeTab === 'galleri' && <MediaGalleryManager {...props} />}
-                {activeTab === 'automation' && <AiAutomationContent {...props} />}
-                {activeTab === 'admin' && <AdminContent {...props} />}
+                {activeTab === 'automation' && <AiAutomationTab {...props} />}
+                {activeTab === 'admin' && <AdminTab {...props} />}
             </div>
             
             <PairingModal
@@ -1260,9 +650,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                 onClose={() => setIsPairingModalOpen(false)}
                 organization={organization}
                 systemSettings={systemSettings}
-                onPairSuccess={(newScreen) => {
-                    // This is now handled by the context listener, but we might keep it for optimistic updates
-                }}
+                onPairSuccess={() => {}}
                 onUpdateOrganization={onUpdateOrganization}
             />
             {screenToPreview && (
@@ -1288,636 +676,6 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                 isOpen={isAiGuideModalOpen}
                 onClose={() => setIsAiGuideModalOpen(false)}
             />
-        </div>
-    );
-};
-
-const BrandingSetupGuide: React.FC<{ onGoToBranding: () => void; onDismiss: () => void }> = ({ onGoToBranding, onDismiss }) => {
-    return (
-        <div className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white p-6 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-6 shadow-lg relative animate-fade-in">
-            <button onClick={onDismiss} className="absolute top-3 right-3 text-cyan-100 hover:text-white" title="Dölj guide">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-            <div className="flex items-center gap-4 text-center sm:text-left">
-                <div className="text-5xl">
-                    <SparklesIcon className="w-12 h-12" />
-                </div>
-                <div>
-                    <h3 className="text-2xl font-bold">Börja här för bästa resultat!</h3>
-                    <p className="text-cyan-100 mt-1">Fyll i din varumärkesprofil så kan AI:n skapa innehåll som är perfekt anpassat för dig.</p>
-                </div>
-            </div>
-            <PrimaryButton onClick={onGoToBranding} className="bg-white/90 hover:bg-white text-teal-600 font-bold flex-shrink-0">
-                Fyll i varumärkesprofil
-            </PrimaryButton>
-        </div>
-    );
-};
-
-// --- Content Components for each Tab ---
-
-const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
-    const now = new Date();
-
-    const activePosts = (screen.posts || []).filter(post => {
-        const startDate = post.startDate ? new Date(post.startDate) : null;
-        const endDate = post.endDate ? new Date(post.endDate) : null;
-        if (startDate && startDate > now) return false;
-        if (endDate && endDate < now) return false;
-        return true;
-    });
-
-    const activePostCount = activePosts.length;
-    
-    // Logic to calculate days remaining until the last post expires
-    let latestEndDate: Date | null = null;
-    (screen.posts || []).forEach(post => {
-        if (post.endDate) {
-            const endDate = new Date(post.endDate);
-            if (!latestEndDate || endDate > latestEndDate) {
-                latestEndDate = endDate;
-            }
-        }
-    });
-
-    let daysRemaining: number | null = null;
-    let daysRemainingText = '';
-    let textColorClass = 'text-slate-500 dark:text-slate-400';
-
-    if (latestEndDate && latestEndDate > now) {
-        const diffTime = latestEndDate.getTime() - now.getTime();
-        daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        if (daysRemaining <= 7) {
-            textColorClass = 'text-red-500 font-bold';
-        } else if (daysRemaining <= 14) {
-            textColorClass = 'text-yellow-500';
-        }
-        
-        daysRemainingText = `${daysRemaining} ${daysRemaining === 1 ? 'dag' : 'dagar'} kvar`;
-    }
-
-    return (
-        <div className="flex items-center gap-4 text-sm font-semibold">
-            {daysRemainingText && (
-                <span className={textColorClass} title={`Sista inlägget går ut om ${daysRemaining} ${daysRemaining === 1 ? 'dag' : 'dagar'}.`}>
-                    {daysRemainingText}
-                </span>
-            )}
-            <span className="text-slate-600 dark:text-slate-300" title={`${activePostCount} inlägg är aktiva just nu.`}>
-                {activePostCount} {activePostCount === 1 ? 'inlägg' : 'inlägg'}
-            </span>
-        </div>
-    );
-};
-
-interface ScreenManagerProps {
-    screens: DisplayScreen[];
-    isSaving: boolean;
-    onEditDisplayScreen: (screen: DisplayScreen) => void;
-    onPreview: (screen: DisplayScreen) => void;
-    onShare: (screen: DisplayScreen) => void;
-    onCreateScreenTemplate: () => void;
-    organization: Organization;
-    onUpdateOrganization: (orgId: string, data: Partial<Organization>) => Promise<void>;
-    onGetCampaignIdeas: (event: any) => void;
-    isAIAssistantEnabled: boolean;
-}
-
-const ScreenManager: React.FC<ScreenManagerProps> = ({ screens, isSaving, onEditDisplayScreen, onPreview, onShare, onCreateScreenTemplate, organization, onUpdateOrganization, onGetCampaignIdeas, isAIAssistantEnabled }) => {
-    const { updateDisplayScreen, deleteDisplayScreen } = useLocation();
-    const { showToast } = useToast();
-    const [renamingScreenId, setRenamingScreenId] = useState<string | null>(null);
-    const [newName, setNewName] = useState('');
-    const [screenToDelete, setScreenToDelete] = useState<DisplayScreen | null>(null);
-    const [expandedScreenId, setExpandedScreenId] = useState<string | null>(null);
-    
-    const toggleExpand = (screenId: string) => {
-        setExpandedScreenId(prev => prev === screenId ? null : screenId);
-    };
-
-    const handleUpdatePosts = async (screenId: string, updatedPosts: DisplayPost[]) => {
-        try {
-            await updateDisplayScreen(screenId, { posts: updatedPosts });
-        } catch(e) {
-            showToast({ message: "Kunde inte spara planering.", type: 'error' });
-        }
-    };
-
-    const confirmDeleteScreen = async () => {
-        if (!screenToDelete) return;
-        try {
-            await deleteDisplayScreen(screenToDelete.id);
-            showToast({message: 'Kanalen togs bort.', type: 'success'});
-        } catch (e) {
-            showToast({message: 'Kunde inte ta bort kanalen.', type: 'error'});
-        } finally {
-            setScreenToDelete(null);
-        }
-    };
-
-    const handleSaveName = async (screenId: string) => {
-        if (newName.trim() === '') return;
-        try {
-            await updateDisplayScreen(screenId, { name: newName.trim() });
-            showToast({message: 'Namnet uppdaterades.', type: 'success'});
-        } catch (e) {
-            showToast({message: 'Kunde inte uppdatera namnet.', type: 'error'});
-        } finally {
-            setRenamingScreenId(null);
-        }
-    };
-
-    return (
-        <>
-            <div className="space-y-3">
-                {(screens || []).length > 0 ? (
-                    screens.map(screen => {
-                        const isExpanded = expandedScreenId === screen.id;
-                        return (
-                        <div key={screen.id} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 transition-all duration-300">
-                           {renamingScreenId === screen.id ? (
-                                <div className="p-4 w-full flex-grow flex items-center gap-2">
-                                    <StyledInput
-                                        type="text"
-                                        value={newName}
-                                        onChange={(e) => setNewName(e.target.value)}
-                                        autoFocus
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSaveName(screen.id)}
-                                    />
-                                    <PrimaryButton onClick={() => handleSaveName(screen.id)}>Spara</PrimaryButton>
-                                    <SecondaryButton onClick={() => setRenamingScreenId(null)}>Avbryt</SecondaryButton>
-                                </div>
-                           ) : (
-                                <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-                                    <div className="flex-grow flex items-center gap-4 text-center sm:text-left justify-center sm:justify-start">
-                                        <button 
-                                            onClick={() => toggleExpand(screen.id)}
-                                            className="flex items-center gap-2 font-semibold text-slate-600 dark:text-slate-300 hover:text-primary dark:hover:text-primary transition-colors group p-2 -m-2 rounded-lg"
-                                            aria-expanded={isExpanded}
-                                            aria-controls={`planering-${screen.id}`}
-                                        >
-                                            <ChevronDownIcon className={`h-6 w-6 text-slate-400 group-hover:text-primary transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                            <span className="text-base">{isExpanded ? 'Dölj planering' : 'Visa planering'}</span>
-                                        </button>
-                                        <div className="w-px h-6 bg-slate-200 dark:border-slate-700"></div>
-                                        <p className="font-semibold text-lg text-slate-900 dark:text-white">{screen.name}</p>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); setRenamingScreenId(screen.id); setNewName(screen.name); }}
-                                            disabled={isSaving}
-                                            className="text-slate-400 hover:text-primary dark:hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600"
-                                            aria-label={`Byt namn på ${screen.name}`}
-                                        >
-                                            <PencilIcon className="h-5 w-5" />
-                                        </button>
-                                    </div>
-                                    <div onClick={e => e.stopPropagation()} className="flex items-center flex-wrap justify-center sm:justify-end gap-2">
-                                        <div className="flex-shrink-0 mr-2">
-                                            <ScreenStats screen={screen} />
-                                        </div>
-                                        <PrimaryButton onClick={() => onEditDisplayScreen(screen)} disabled={isSaving} className="bg-blue-600 hover:bg-blue-500">Hantera inlägg</PrimaryButton>
-                                        <button onClick={() => onPreview(screen)} disabled={isSaving} title="Förhandsgranska" className="p-3 rounded-lg bg-teal-600 hover:bg-teal-500 text-white transition-colors"><MagnifyingGlassIcon className="h-5 w-5"/></button>
-                                        <button onClick={() => setScreenToDelete(screen)} disabled={isSaving} title="Ta bort" className="p-3 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors"><TrashIcon className="h-5 w-5"/></button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {isExpanded && (
-                                <div id={`planering-${screen.id}`} className="border-t border-slate-200 dark:border-slate-700 p-0 sm:p-4 bg-slate-100 dark:bg-slate-900/50 animate-fade-in">
-                                    <PlanningView 
-                                        screen={screen}
-                                        posts={screen.posts || []}
-                                        organization={organization}
-                                        onUpdateOrganization={onUpdateOrganization}
-                                        onGetCampaignIdeas={onGetCampaignIdeas}
-                                        isAIAssistantEnabled={isAIAssistantEnabled}
-                                        onUpdatePosts={(updatedPosts) => handleUpdatePosts(screen.id, updatedPosts)}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    )})
-                ) : (
-                   <SkylieEmptyState
-                        title="Dags att skapa en kanal!"
-                        message={<>En 'kanal' är som en spellista för ditt innehåll. Du kan ha olika kanaler för olika skärmar. Ska vi hjälpa dig skapa din första? 💡</>}
-                        action={{ text: 'Skapa första kanalen', onClick: onCreateScreenTemplate, disabled: isSaving }}
-                   />
-                )}
-            </div>
-            
-            <ConfirmDialog
-                isOpen={!!screenToDelete}
-                onClose={() => setScreenToDelete(null)}
-                onConfirm={confirmDeleteScreen}
-                title="Bekräfta borttagning"
-            >
-                <p>Är du säker på att du vill ta bort kanalen "{screenToDelete?.name}" och allt dess innehåll? Detta kan inte ångras.</p>
-            </ConfirmDialog>
-        </>
-    );
-};
-
-
-interface SkyltfonsterContentProps extends SuperAdminScreenProps {
-    displayScreens: DisplayScreen[];
-    systemSettings: SystemSettings | null;
-    onOpenPairingModal: () => void;
-    onPreviewScreen: (screen: DisplayScreen) => void;
-    onShareScreen: (screen: DisplayScreen) => void;
-}
-
-const SkyltfonsterContent: React.FC<SkyltfonsterContentProps> = (props) => {
-    const { organization, displayScreens, onUpdateOrganization, onEditDisplayScreen, onOpenPairingModal, onPreviewScreen, onShareScreen, systemSettings } = props;
-    const { addDisplayScreen } = useLocation();
-    const [isSaving, setIsSaving] = useState(false);
-    const { showToast } = useToast();
-    const [ideaModalEvent, setIdeaModalEvent] = useState<{ name: string; date: Date } | null>(null);
-    const [isRhythmIdeaModalOpen, setIsRhythmIdeaModalOpen] = useState(false);
-    const [rhythmContext, setRhythmContext] = useState('');
-    const [isSeasonalIdeaModalOpen, setIsSeasonalIdeaModalOpen] = useState(false);
-    const [seasonalContext, setSeasonalContext] = useState('');
-    
-    const physicalScreens = organization.physicalScreens || [];
-
-
-    const handleGenerateIdeasClick = (event: { name: string; date: Date; icon: string; }) => {
-        setIdeaModalEvent(event);
-    };
-    
-    const handleCreateScreenTemplate = async () => {
-        setIsSaving(true);
-        try {
-            const newScreen: Omit<DisplayScreen, 'id'> = {
-                name: 'Ny Kanal',
-                isEnabled: true,
-                posts: [],
-                aspectRatio: '16:9',
-            };
-            await addDisplayScreen(newScreen);
-            showToast({ message: "Ny kanal skapad.", type: 'success' });
-        } catch(e) {
-             console.error(e);
-             showToast({ message: `Ett fel uppstod: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-8">
-            <ProactiveUpcomingEventBanner
-                organization={organization}
-                onGenerateIdeas={handleGenerateIdeasClick}
-            />
-
-            <ProactiveSeasonalBanner
-                organization={organization}
-                onGenerateIdeas={(context) => {
-                    setSeasonalContext(context);
-                    setIsSeasonalIdeaModalOpen(true);
-                }}
-            />
-            
-            <ProactiveRhythmBanner
-                organization={organization}
-                onGenerateIdeas={(context) => {
-                    setRhythmContext(context);
-                    setIsRhythmIdeaModalOpen(true);
-                }}
-            />
-
-            <div>
-                <Card 
-                    title="Dina kanaler" 
-                    subTitle="Skapa och hantera kanaler som sedan kan visas på dina skyltfönster." 
-                    saving={isSaving}
-                    actions={
-                        <SecondaryButton onClick={handleCreateScreenTemplate} disabled={isSaving}>
-                            Skapa ny kanal
-                        </SecondaryButton>
-                    }
-                >
-                    <ScreenManager
-                        screens={displayScreens}
-                        isSaving={isSaving}
-                        onEditDisplayScreen={onEditDisplayScreen}
-                        onPreview={onPreviewScreen}
-                        onShare={onShareScreen}
-                        onCreateScreenTemplate={handleCreateScreenTemplate}
-                        organization={organization}
-                        onUpdateOrganization={onUpdateOrganization}
-                        onGetCampaignIdeas={handleGenerateIdeasClick}
-                        isAIAssistantEnabled={true}
-                    />
-                </Card>
-
-                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                    <Card 
-                        title="Anslutna skyltfönster" 
-                        subTitle={`Här ser du vilka skärmar som är kopplade till dina kanaler. Du har ${physicalScreens.length} anslutna skyltfönster.`} 
-                        saving={isSaving}
-                        actions={
-                            <PrimaryButton onClick={onOpenPairingModal} className="bg-teal-600 hover:bg-teal-500">
-                                Anslut nytt skyltfönster
-                            </PrimaryButton>
-                        }
-                    >
-                        <PhysicalScreenManager 
-                            organization={organization}
-                            allDisplayScreens={displayScreens}
-                            onUpdateOrganization={onUpdateOrganization}
-                        />
-                    </Card>
-                </div>
-            </div>
-
-            <CampaignIdeaGeneratorForOrg
-                isOpen={!!ideaModalEvent}
-                onClose={() => setIdeaModalEvent(null)}
-                event={ideaModalEvent}
-                organization={organization}
-                onUpdateOrganization={onUpdateOrganization}
-                onEditDisplayScreen={onEditDisplayScreen}
-            />
-            <CampaignIdeaGeneratorForOrg
-                isOpen={isRhythmIdeaModalOpen}
-                onClose={() => setIsRhythmIdeaModalOpen(false)}
-                event={{ name: `Inläggsförslag`, date: new Date() }}
-                organization={organization}
-                onUpdateOrganization={onUpdateOrganization}
-                onEditDisplayScreen={onEditDisplayScreen}
-                planningContext={rhythmContext}
-            />
-            <CampaignIdeaGeneratorForOrg
-                isOpen={isSeasonalIdeaModalOpen}
-                onClose={() => setIsSeasonalIdeaModalOpen(false)}
-                event={{ name: `Idéer baserat på förra året`, date: new Date() }}
-                organization={organization}
-                onUpdateOrganization={onUpdateOrganization}
-                onEditDisplayScreen={onEditDisplayScreen}
-                planningContext={seasonalContext}
-            />
-        </div>
-    );
-};
-
-
-// --- NEW Component to manage the list of physical screens
-const PhysicalScreenManager: React.FC<{ 
-    organization: Organization;
-    allDisplayScreens: DisplayScreen[];
-    onUpdateOrganization: (orgId: string, data: Partial<Organization>) => Promise<void>;
-}> = ({ organization, allDisplayScreens, onUpdateOrganization }) => {
-    const { showToast } = useToast();
-    const [screenToRename, setScreenToRename] = useState<PhysicalScreen | null>(null);
-    const [screenToDisconnect, setScreenToDisconnect] = useState<PhysicalScreen | null>(null);
-    const physicalScreens = organization.physicalScreens || [];
-    
-    const getChannelName = (displayScreenId: string) => {
-        return allDisplayScreens.find(s => s.id === displayScreenId)?.name || 'Okänd kanal';
-    };
-
-    const handleSaveName = async (newName: string) => {
-        if (!screenToRename) return;
-        const updatedScreens = physicalScreens.map(s => 
-            s.id === screenToRename.id ? { ...s, name: newName } : s
-        );
-        try {
-            await onUpdateOrganization(organization.id, { physicalScreens: updatedScreens });
-            showToast({ message: "Namnet har ändrats.", type: 'success' });
-        } catch (e) {
-            showToast({ message: "Kunde inte ändra namnet.", type: 'error' });
-        } finally {
-            setScreenToRename(null);
-        }
-    };
-
-    const confirmDisconnect = async () => {
-        if (!screenToDisconnect) return;
-        try {
-            await unpairPhysicalScreen(organization.id, screenToDisconnect.id);
-            // The UI will update automatically via the onSnapshot listener in StudioContext for online mode.
-            // For offline mode, we need to trigger a state update manually.
-            if (isOffline) {
-                const updatedScreens = (organization.physicalScreens || []).filter(s => s.id !== screenToDisconnect.id);
-                // This prop chain eventually updates the context state, forcing a re-render.
-                await onUpdateOrganization(organization.id, { physicalScreens: updatedScreens });
-            }
-            showToast({ message: "Skyltfönstret har kopplats från.", type: 'success' });
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : "Ett okänt fel inträffade.";
-            showToast({ message: `Kunde inte koppla från: ${errorMessage}`, type: 'error' });
-            if ((window as any).DEBUG_MODE) {
-                console.error("Full unpair error object:", e);
-            }
-        } finally {
-            setScreenToDisconnect(null);
-        }
-    };
-
-    return (
-        <>
-            <div className="space-y-3">
-                {physicalScreens.length > 0 ? (
-                    physicalScreens.map(screen => (
-                        <div key={screen.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4 border border-slate-200 dark:border-slate-700">
-                            <div className="flex-grow text-center sm:text-left">
-                                <p className="font-semibold text-lg text-slate-900 dark:text-white">{screen.name}</p>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">Visar: "{getChannelName(screen.displayScreenId)}"</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <SecondaryButton onClick={() => setScreenToRename(screen)}>Byt namn</SecondaryButton>
-                                <DestructiveButton onClick={() => setScreenToDisconnect(screen)}>Koppla från</DestructiveButton>
-                            </div>
-                        </div>
-                    ))
-                ) : (
-                    <SkylieEmptyState
-                        title="Dags att ansluta en skärm!"
-                        message={<>Nu när du har en kanal är det dags att koppla den till en fysisk TV eller skärm. Använd knappen 'Anslut nytt skyltfönster' för att komma igång! 💡</>}
-                    />
-                )}
-            </div>
-
-            <InputDialog
-                isOpen={!!screenToRename}
-                onClose={() => setScreenToRename(null)}
-                onSave={handleSaveName}
-                title="Byt namn på skyltfönster"
-                labelText="Nytt namn"
-                initialValue={screenToRename?.name || ''}
-                saveText="Spara namn"
-            />
-
-            <ConfirmDialog
-                isOpen={!!screenToDisconnect}
-                onClose={() => setScreenToDisconnect(null)}
-                onConfirm={confirmDisconnect}
-                title="Koppla från skyltfönster"
-                confirmText="Ja, koppla från"
-            >
-                <p>Är du säker på att du vill koppla från "{screenToDisconnect?.name}"? Skärmen kommer att återgå till anslutningsläget och behöver paras ihop på nytt för att visa innehåll.</p>
-            </ConfirmDialog>
-        </>
-    );
-};
-
-const AdminContent: React.FC<SuperAdminScreenProps> = ({ organization, adminRole, onUpdateOrganization }) => {
-    const [name, setName] = useState(organization.name);
-    const [brandName, setBrandName] = useState(organization.brandName || '');
-    const [address, setAddress] = useState(organization.address || '');
-    const [email, setEmail] = useState(organization.email || '');
-    const [phone, setPhone] = useState(organization.phone || '');
-    const [contactPerson, setContactPerson] = useState(organization.contactPerson || '');
-    const [orgNumber, setOrgNumber] = useState(organization.orgNumber || '');
-    const [isSavingOrgDetails, setIsSavingOrgDetails] = useState(false);
-    const [isTestingFunction, setIsTestingFunction] = useState(false);
-    const { showToast } = useToast();
-
-    useEffect(() => {
-        setName(organization.name);
-        setBrandName(organization.brandName || '');
-        setAddress(organization.address || '');
-        setEmail(organization.email || '');
-        setPhone(organization.phone || '');
-        setContactPerson(organization.contactPerson || '');
-        setOrgNumber(organization.orgNumber || '');
-    }, [organization]);
-    
-    const handleSaveGrunduppgifter = async () => {
-        setIsSavingOrgDetails(true);
-        try {
-            await onUpdateOrganization(organization.id, { 
-                name: name.trim(),
-                brandName: brandName.trim(),
-                address: address.trim(),
-                email: email.trim(),
-                phone: phone.trim(),
-                contactPerson: contactPerson.trim(),
-                orgNumber: orgNumber.trim(),
-            });
-            showToast({ message: "Organisationsuppgifter sparade.", type: 'success' });
-        } catch (e) {
-            showToast({ message: `Kunde inte spara: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
-        } finally {
-            setIsSavingOrgDetails(false);
-        }
-    };
-    
-    const isGrunduppgifterDirty = 
-        name.trim() !== organization.name ||
-        brandName.trim() !== (organization.brandName || '') ||
-        address.trim() !== (organization.address || '') ||
-        email.trim() !== (organization.email || '') ||
-        phone.trim() !== (organization.phone || '') ||
-        contactPerson.trim() !== (organization.contactPerson || '') ||
-        orgNumber.trim() !== (organization.orgNumber || '');
-
-    const handleTestCloudFunction = async () => {
-        setIsTestingFunction(true);
-        try {
-            const result = await callTestFunction();
-            console.log("Svar från Cloud Function:", result);
-            showToast({
-                message: result.message || "Okänt svar från funktionen.",
-                type: 'success',
-                duration: 8000
-            });
-        } catch (error) {
-            console.error(error);
-            showToast({
-                message: `Fel vid anrop: ${error instanceof Error ? error.message : 'Okänt fel'}`,
-                type: 'error',
-                duration: 8000
-            });
-        } finally {
-            setIsTestingFunction(false);
-        }
-    };
-
-    return (
-        <div className="space-y-8">
-            <Card title="Grunduppgifter" saving={isSavingOrgDetails}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Organisationsnamn (juridiskt)</label>
-                        <StyledInput type="text" value={name} onChange={e => setName(e.target.value)} />
-                    </div>
-                     <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Varumärkesnamn (för kommunikation)</label>
-                        <StyledInput type="text" value={brandName} onChange={e => setBrandName(e.target.value)} placeholder="T.ex. Flexibel Hälsostudio"/>
-                    </div>
-                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Organisationsnummer</label>
-                        <StyledInput type="text" value={orgNumber} onChange={e => setOrgNumber(e.target.value)} />
-                    </div>
-                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Adress</label>
-                        <StyledInput type="text" value={address} onChange={e => setAddress(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Kontaktperson</label>
-                        <StyledInput type="text" value={contactPerson} onChange={e => setContactPerson(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">E-post</label>
-                        <StyledInput type="email" value={email} onChange={e => setEmail(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Telefon</label>
-                        <StyledInput type="tel" value={phone} onChange={e => setPhone(e.target.value)} />
-                    </div>
-                </div>
-                 <div className="flex justify-end mt-4">
-                    <PrimaryButton 
-                        onClick={handleSaveGrunduppgifter} 
-                        disabled={!isGrunduppgifterDirty} 
-                        loading={isSavingOrgDetails}
-                        title={!isGrunduppgifterDirty ? "Inga ändringar att spara" : ""}
-                    >
-                        Spara
-                    </PrimaryButton>
-                </div>
-            </Card>
-
-            <Card title="Användare">
-                <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <h4 className="font-semibold text-lg text-slate-900 dark:text-white">Kontakta oss för att lägga till nya användare</h4>
-                    <p className="mt-2 text-slate-600 dark:text-slate-300">
-                        För att lägga till en ny administratör eller innehållsskapare, vänligen skicka ett mail till <a href="mailto:info@flexibelfriskvardhalsa.se" className="text-primary font-semibold hover:underline">info@flexibelfriskvardhalsa.se</a> med personens e-postadress och önskad roll.
-                    </p>
-                    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-600">
-                        <h5 className="font-semibold text-slate-800 dark:text-slate-200">Roller:</h5>
-                        <ul className="mt-2 space-y-2 list-disc list-inside text-slate-600 dark:text-slate-300">
-                            <li>
-                                <strong className="font-semibold text-slate-800 dark:text-slate-200">Organisationsadmin:</strong> Har fullständig tillgång att hantera allt för er organisation, inklusive skyltfönster, varumärke, innehåll och andra användare.
-                            </li>
-                            <li>
-                                <strong className="font-semibold text-slate-800 dark:text-slate-200">Innehållsskapare:</strong> Har begränsad tillgång till att endast skapa och hantera innehåll (skyltfönster och inlägg). Kan inte ändra varumärkesinställningar eller hantera användare.
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-            </Card>
-
-            {adminRole === 'superadmin' && (
-                 <Card title="Utvecklarverktyg">
-                    <div className="p-4 bg-slate-100 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <h4 className="font-semibold text-lg mb-2">Testa Cloud Function</h4>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                            Denna knapp anropar en testfunktion (`testFunction`) i Firebase för att verifiera att kopplingen mellan frontend och backend fungerar. Svaret visas som en notis.
-                        </p>
-                        <PrimaryButton
-                            onClick={handleTestCloudFunction}
-                            loading={isTestingFunction}
-                            disabled={isTestingFunction}
-                        >
-                            Kör testfunktion
-                        </PrimaryButton>
-                    </div>
-                </Card>
-            )}
         </div>
     );
 };

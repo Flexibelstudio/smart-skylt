@@ -62,7 +62,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     const [postToShare, setPostToShare] = useState<DisplayPost | null>(null);
     const [isSharing, setIsSharing] = useState(false);
 
-    // FIX: Added state and ref for the post actions dropdown to fix missing props error
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [generatingFollowUpPostId, setGeneratingFollowUpPostId] = useState<string | null>(null);
@@ -105,10 +104,8 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         const finalPostId = isNewPost ? `post-${Date.now()}` : postToSave.id;
         let postWithStorageUrls = { ...postToSave, id: finalPostId };
     
-        // Flag to check if the main image was a new AI-generated data URI before upload
         const wasAiDataUri = postToSave.imageUrl?.startsWith('data:') && postToSave.isAiGeneratedImage;
     
-        // Process and upload all data URIs
         try {
             const processUrl = async (url: string | undefined): Promise<string | undefined> => {
                 if (!url || !url.startsWith('data:')) return url;
@@ -117,7 +114,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 return await uploadPostAsset(organization.id, finalPostId, file, () => {});
             };
     
-            // Main image/video
             if (postWithStorageUrls.imageUrl?.startsWith('data:')) {
                 postWithStorageUrls.imageUrl = await processUrl(postWithStorageUrls.imageUrl);
             }
@@ -125,7 +121,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 postWithStorageUrls.videoUrl = await processUrl(postWithStorageUrls.videoUrl);
             }
             
-            // AI Image Variants
             if (postWithStorageUrls.aiImageVariants) {
                 postWithStorageUrls.aiImageVariants = await Promise.all(
                     postWithStorageUrls.aiImageVariants.map(async (variant) => {
@@ -138,7 +133,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 );
             }
     
-            // Collage items
             if (postWithStorageUrls.collageItems) {
                 postWithStorageUrls.collageItems = await Promise.all(
                     postWithStorageUrls.collageItems.map(async (item) => {
@@ -158,7 +152,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         } catch (uploadError) {
             console.error("Error uploading media during save:", uploadError);
             showToast({ message: "Kunde inte ladda upp media till molnet. Försök igen.", type: 'error' });
-            throw uploadError; // Stop the save process
+            throw uploadError;
         }
     
         const updatedPosts = isNewPost
@@ -217,12 +211,11 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             planningProfile: newPlanningProfile,
         };
     
-        // If we just uploaded a new AI image, add it to the media library now.
         if (wasAiDataUri && postWithStorageUrls.imageUrl) {
             const newMediaItem: MediaItem = {
                 id: `media-ai-${Date.now()}`,
                 type: 'image',
-                url: postWithStorageUrls.imageUrl, // Use the final storage URL
+                url: postWithStorageUrls.imageUrl,
                 internalTitle: `AI: ${postToSave.aiImagePrompt?.slice(0, 30) || postToSave.internalTitle || 'Bild'}...`,
                 createdAt: new Date().toISOString(),
                 createdBy: 'ai',
@@ -334,12 +327,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         await updateDisplayScreen(screen.id, data);
     };
 
-    // FIX: Added handler functions for missing ControlPanel props
     const handleSaveAsTemplate = async (postToSave: DisplayPost) => {
         if (!organization) return;
         const templateName = prompt("Ange ett namn för mallen:", postToSave.internalTitle);
         if (templateName) {
-            // FIX: Use destructuring to remove properties that are not part of the PostTemplate['postData'] type.
             const { id, startDate, endDate, internalTitle, ...postData } = postToSave;
             const newTemplate: PostTemplate = {
                 id: `template-${Date.now()}`,
