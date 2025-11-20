@@ -1,13 +1,14 @@
+// hooks/useRealtimeData.ts
 import { useEffect, useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen, ScreenPairingCode } from '../types';
-import {
-  getOrganizations,
-  listenToOrganizationChanges,
+import { 
+  getOrganizations, 
+  listenToOrganizationChanges, 
   listenToDisplayScreens,
   listenToPairingCodeByDeviceId,
   listenToScreenSession,
-  getOrganizationById,
+  getOrganizationById
 } from '../services/firebaseService';
 
 // --- Organizations ---
@@ -25,7 +26,7 @@ export function useOrganizationDetails(orgId: string | undefined) {
   const queryClient = useQueryClient();
 
   // Initial fetch via useQuery
-  const queryResult = useQuery<Organization | null>({
+  const queryResult = useQuery({
     queryKey: ['organization', orgId],
     queryFn: () => (orgId ? getOrganizationById(orgId) : Promise.resolve(null)),
     enabled: !!orgId,
@@ -36,13 +37,12 @@ export function useOrganizationDetails(orgId: string | undefined) {
     if (!orgId) return;
 
     const unsubscribe = listenToOrganizationChanges(orgId, (snapshot: any) => {
-      let data: any = null;
+      let data: Organization | null = null;
 
-      if (snapshot && snapshot.exists) {
-        // Firestore: snapshot.data() är en funktion
-        data = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
-        if (data) {
-          data = { ...data, id: snapshot.id };
+      if (snapshot?.exists) {
+        const raw = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
+        if (raw) {
+          data = { ...raw, id: snapshot.id } as Organization;
         }
       }
 
@@ -60,7 +60,7 @@ export function useOrganizationDetails(orgId: string | undefined) {
 export function useOrganizationScreens(orgId: string | undefined) {
   const queryClient = useQueryClient();
 
-  const queryResult = useQuery<DisplayScreen[]>({
+  const queryResult = useQuery({
     queryKey: ['screens', orgId],
     queryFn: () => Promise.resolve([] as DisplayScreen[]),
     enabled: !!orgId,
@@ -84,7 +84,7 @@ export function useOrganizationScreens(orgId: string | undefined) {
 export function usePairingCodeListener(deviceId: string | null, isScreenMode: boolean) {
   const queryClient = useQueryClient();
 
-  const queryResult = useQuery<ScreenPairingCode | null>({
+  const queryResult = useQuery({
     queryKey: ['pairingCode', deviceId],
     queryFn: () => Promise.resolve(null as ScreenPairingCode | null),
     enabled: !!deviceId && isScreenMode,
@@ -105,107 +105,77 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
 
 // --- Session ---
 
-/**
- * Lyssnar på skärmens session-dokument.
- * - Har en "grace period" där vi INTE kastar ut skärmen om sessionen inte hittas direkt.
- * - Minns om vi NÅGON GÅNG haft en giltig session (hasValidSessionRef), så att en
- *   tillfällig null/permission-glitch inte direkt kastar tillbaka till parningsläget.
- */
 export function useScreenSessionListener(
   deviceId: string | null,
   isScreenMode: boolean,
   onForceDisconnect: () => void
 ) {
-  // Grace-period: under denna tid ignorerar vi att doc saknas.
+  // Grace period: ge tid för session-dokumentet att dyka upp.
   const [isGracePeriod, setIsGracePeriod] = useState(true);
 
-  // Minns om vi någon gång hittat en giltig session under den här livstiden.
-  const hasValidSessionRef = useRef(false);
+  // Har vi någonsin sett en giltig session?
+  // Om ja → ignorera tillfälliga "null"-snapshots, så vi inte kastar ut skärmen i onödan.
+  const hasSeenValidSessionRef = useRef(false);
 
-  // Starta / nollställ grace-period när vi går in i screen mode
   useEffect(() => {
-    if (!isScreenMode) {
-      setIsGracePeriod(true);
-      hasValidSessionRef.current = false;
-      return;
-    }
+    if (!isScreenMode) return;
 
+    // Ny session-start → nollställ state
+    hasSeenValidSessionRef.current = false;
     setIsGracePeriod(true);
-    hasValidSessionRef.current = false;
 
-    const timer = window.setTimeout(() => {
+    const timer = setTimeout(() => {
       setIsGracePeriod(false);
-      console.log('[Session] Grace period slut – om ingen session finns nu kan vi koppla ner.');
-    }, 30000); // 30 sekunder
+    }, 30000); // 30 sek grace
 
-    return () => {
-      window.clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [isScreenMode, deviceId]);
 
   useEffect(() => {
     if (!isScreenMode || !deviceId) return;
 
-    let isMounted = true;
+    const unsubscribe = listenToScreenSession(deviceId, (doc) => {
+      console.log('[Session] snapshot', {
+        doc,
+        isGracePeriod,
+        hasSeenValid: hasSeenValidSessionRef.current,
+      });
 
-    console.log('[Session] Startar session-listener för deviceId:', deviceId);
-
-    const unsubscribe = listenToScreenSession(deviceId, (doc: any) => {
-      if (!isMounted) return;
-
-      // 1. Giltig session (finns, och INTE forceDisconnect)
+      // 1. Giltig session, ingen forceDisconnect → allt är bra
       if (doc && !doc.forceDisconnect) {
-        if (!hasValidSessionRef.current) {
-          console.log('[Session] Giltig session hittad för den här skärmen:', doc);
+        if (!hasSeenValidSessionRef.current) {
+          console.log('[Session] First valid session seen → keep screen connected');
         }
-        hasValidSessionRef.current = true;
-
-        // Vi kan vara defensiva och avsluta grace-perioden nu,
-        // eftersom vi vet att sessionen faktiskt finns och funkar.
-        if (isGracePeriod) {
-          setIsGracePeriod(false);
-        }
+        hasSeenValidSessionRef.current = true;
         return;
       }
 
-      // 2. Explicit forceDisconnect från backend/admin
+      // 2. Explicit forceDisconnect → alltid koppla ner direkt
       if (doc && doc.forceDisconnect) {
-        console.log('[Session] forceDisconnect flaggad i doc → kopplar ner skärmen');
-        hasValidSessionRef.current = false;
+        console.log('[Session] forceDisconnect flag set → reset to pairing');
+        hasSeenValidSessionRef.current = false;
         onForceDisconnect();
         return;
       }
 
-      // 3. doc saknas (null / undefined)
+      // 3. doc saknas (null)
       if (!doc) {
-        // Under grace-period → gör ingenting, bara vänta.
-        if (isGracePeriod && !hasValidSessionRef.current) {
-          console.log('[Session] Ingen session ännu, men fortfarande grace-period → väntar...');
-          return;
-        }
-
-        // Ingen grace, och vi har ALDRIG haft en giltig session → kasta ut.
-        if (!hasValidSessionRef.current && !isGracePeriod) {
-          console.log('[Session] Ingen session efter grace-period och aldrig haft en giltig → reset till pairing');
+        // Om vi aldrig sett en giltig session och grace-perioden är slut → antag att sessionen inte finns
+        if (!isGracePeriod && !hasSeenValidSessionRef.current) {
+          console.log(
+            '[Session] No session doc after grace & never had a valid one → reset to pairing'
+          );
           onForceDisconnect();
-          return;
-        }
-
-        // Ingen grace, men vi HAR haft en session tidigare:
-        // Det här kan vara tillfälligt (lagg, rättighetsglitch, delay).
-        // För att undvika flicker låter vi skärmen vara kvar.
-        if (hasValidSessionRef.current && !isGracePeriod) {
-          console.warn(
-            '[Session] Session-dokumentet saknas plötsligt trots att vi haft en giltig session tidigare. ' +
-              'Ignorerar detta för att undvika att kasta ut skärmen direkt.'
+        } else {
+          // Antingen är vi fortfarande i grace, eller så har vi redan haft en giltig session.
+          // I båda fallen ignorerar vi detta för att undvika onödiga disconnects.
+          console.log(
+            '[Session] No doc, but in grace or had valid session before → ignoring transient state'
           );
         }
       }
     });
 
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [deviceId, isScreenMode, isGracePeriod, onForceDisconnect]);
 }
