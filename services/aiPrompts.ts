@@ -154,7 +154,8 @@ Each object must have:
 1. 'headline': A short, punchy headline in SWEDISH (max 5-7 words).
 2. 'text': A concise body text in SWEDISH (1-2 sentences).
 3. 'visual': An object with detailed Art Direction for an AI image generator:
-   - 'imageIdea': A clear description of the subject (in Swedish).
+   - 'imageIdea': A clear, descriptive sentence in Swedish describing the subject (e.g. "En närbild på nybakat bröd"). 
+     **IMPORTANT:** Do NOT use technical parameters like --ar, --v, --s, or aspect ratios. Use natural language only.
    - 'style': e.g., 'cinematic photorealism', 'minimalist 3d', 'vibrant studio photography'.
    - 'colorPalette': e.g., 'warm sunset tones', 'cool corporate blues'.
    - 'mood': e.g., 'energetic', 'trustworthy'.
