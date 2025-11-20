@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useState,
@@ -7,6 +8,7 @@ import React, {
   ReactNode,
   useMemo
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen } from '../types';
 import {
   addDisplayScreen as fbAddDisplayScreen,
@@ -69,6 +71,7 @@ const removeDeviceId = (uid?: string | null) => {
 
 export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser, isScreenMode, authLoading } = useAuth();
+  const queryClient = useQueryClient();
 
   // 1. Fetch All Organizations (Initial List)
   const { data: allOrganizations = [], isLoading: orgsLoading } = useAllOrganizations(!authLoading);
@@ -124,6 +127,11 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const selectOrganization = useCallback((organization: Organization | null) => {
       if (organization) {
+        // Pre-seed the React Query cache with the organization data we already have.
+        // This ensures useOrganizationDetails returns data immediately, preventing UI flicker/bounce
+        // and fixing the "double click" issue.
+        queryClient.setQueryData(['organization', organization.id], organization);
+
         setSelectedOrgId(organization.id);
         localStorage.setItem(LOCAL_STORAGE_ORG_KEY, JSON.stringify({ id: organization.id, name: organization.name }));
         
@@ -139,7 +147,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
           localStorage.removeItem(LOCAL_STORAGE_ORG_KEY);
           setSelectedDisplayScreen(null);
       }
-  }, [currentUser, isScreenMode]);
+  }, [currentUser, isScreenMode, queryClient]);
 
   const selectDisplayScreen = useCallback((screen: DisplayScreen | null) => {
     setSelectedDisplayScreen(screen);
