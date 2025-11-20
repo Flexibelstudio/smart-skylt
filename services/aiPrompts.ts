@@ -155,12 +155,12 @@ Each object must have:
 2. 'text': A concise body text in SWEDISH (1-2 sentences).
 3. 'visual': An object with detailed Art Direction for an AI image generator:
    - 'imageIdea': A clear, descriptive sentence in Swedish describing the subject (e.g. "En närbild på nybakat bröd"). 
-     **IMPORTANT:** Do NOT use technical parameters like --ar, --v, --s, or aspect ratios. Use natural language only.
-   - 'style': e.g., 'cinematic photorealism', 'minimalist 3d', 'vibrant studio photography'.
-   - 'colorPalette': e.g., 'warm sunset tones', 'cool corporate blues'.
-   - 'mood': e.g., 'energetic', 'trustworthy'.
-   - 'composition': e.g., 'rule of thirds', 'centered symmetry'.
-   - 'lighting': e.g., 'soft window light', 'dramatic neon'.
+     **IMPORTANT:** Do NOT use technical parameters like --ar, --v, --s. Use natural language only. Max 20 words.
+   - 'style': e.g., 'cinematic photorealism', 'minimalist 3d'. **KEEP SHORT (max 10 words).**
+   - 'colorPalette': e.g., 'warm sunset tones'. **KEEP SHORT (max 5 words).**
+   - 'mood': e.g., 'energetic'. **KEEP SHORT (max 5 words).**
+   - 'composition': e.g., 'rule of thirds'. **KEEP SHORT (max 10 words).**
+   - 'lighting': e.g., 'soft window light'. **KEEP SHORT (max 10 words).**
 `;
 
 export const getCampaignIdeasForEventPrompt = (eventName: string, daysUntil: number, organization: Organization): string => `
@@ -173,6 +173,7 @@ Consider the timing (${daysUntil} days away). Is it time for a teaser, a main la
 
 Respond ONLY with a JSON object containing:
 1. 'ideas': Array of 3 objects (headline, text, visual object). All text in SWEDISH.
+   **IMPORTANT:** In the 'visual' object, keep 'imageIdea', 'style', 'mood', etc. extremely concise (max 10-15 words each) to avoid JSON truncation errors.
 2. 'followUpSuggestion': Object with 'question' (Swedish) and 'eventName' (string) to suggest the next planning step.
 `;
 
@@ -184,6 +185,7 @@ Task: Generate 3 creative campaign ideas that fit this seasonal context and the 
 
 Respond ONLY with a JSON object containing:
 1. 'ideas': Array of 3 objects (headline, text, visual object). All text in SWEDISH.
+   **IMPORTANT:** In the 'visual' object, keep descriptions concise to prevent JSON errors.
 `;
 
 export const getCompletePostPrompt = (userPrompt: string, organization: Organization, layout?: string): string => {
@@ -222,7 +224,7 @@ Respond ONLY with a JSON object inside a markdown block.
 Fields:
 - 'headline' (Swedish)
 - 'body' (Swedish)
-- 'imagePrompt' (English, detailed, NO TEXT in image)
+- 'imagePrompt' (English, detailed, NO TEXT in image, max 50 words)
 - 'layout'
 - 'backgroundColor'
 - 'textColor'
@@ -238,7 +240,7 @@ Body: "${originalPost.body}"
 
 Goal: Create a new variation or next step in the campaign. Do not repeat the exact same text. Keep the brand voice consistent.
 
-Respond with a JSON object for the new post (headline, body, imagePrompt, layout, colors, etc). All text in Swedish. Image prompt in English (NO TEXT in image).`;
+Respond with a JSON object for the new post (headline, body, imagePrompt, layout, colors, etc). All text in Swedish. Image prompt in English (NO TEXT in image, max 50 words).`;
 };
 
 export const getDisplayPostCampaignPrompt = (userPrompt: string, postCount: number, organizationName: string, hasUserMedia: boolean, businessType?: string[], businessDescription?: string): string => `

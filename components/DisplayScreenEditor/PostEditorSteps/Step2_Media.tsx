@@ -29,18 +29,18 @@ const VideoGenerationStatus: React.FC<{ operation: VideoOperation | null }> = ({
     let statusText = 'Videogenerering pågår...';
     let isProcessing = true;
     let icon = <LoadingSpinnerIcon className="h-6 w-6" />;
-    let color = 'bg-blue-900/30 border-blue-800/50 text-blue-300';
+    let color = 'bg-blue-100 border-blue-200 text-blue-800 dark:bg-blue-900/30 dark:border-blue-800/50 dark:text-blue-300';
 
     if (operation.status === 'done') {
         statusText = 'Video klar och tillagd i inlägget!';
         isProcessing = false;
         icon = <CheckCircleIcon className="h-6 w-6" />;
-        color = 'bg-green-900/30 border-green-800/50 text-green-300';
+        color = 'bg-green-100 border-green-200 text-green-800 dark:bg-green-900/30 dark:border-green-800/50 dark:text-green-300';
     } else if (operation.status === 'error') {
         statusText = `Ett fel inträffade: ${operation.errorMessage || 'Okänt fel'}`;
         isProcessing = false;
         icon = <ExclamationTriangleIcon className="h-6 w-6" />;
-        color = 'bg-red-900/30 border-red-800/50 text-red-300';
+        color = 'bg-red-100 border-red-200 text-red-800 dark:bg-red-900/30 dark:border-red-800/50 dark:text-red-300';
     } else if (operation.status !== 'processing') {
         return null;
     }

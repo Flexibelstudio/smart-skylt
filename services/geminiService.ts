@@ -272,7 +272,7 @@ export async function initializeMarketingCoachChat(
   };
 
   const chat = ai.chats.create({
-    model: "gemini-3-pro-preview", // Upgraded for smarter reasoning
+    model: "gemini-3-pro-preview", // Keep Pro for the chat/coach, it needs reasoning.
     config: {
       systemInstruction,
       tools: [{ functionDeclarations: [createDisplayPost] }],
@@ -304,7 +304,7 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
   handleAIError(async () => {
     const ai = ensureAiInitialized();
     const prompt = Prompts.getGeneratePageContentPrompt(userPrompt);
-    // Upgraded to Pro for better content generation
+    // Pro is good for generating long content
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
@@ -346,9 +346,9 @@ export const generateAutomationPrompt = (inputs: {
   handleAIError(async () => {
     const ai = ensureAiInitialized();
     const prompt = Prompts.getAutomationPromptPrompt(inputs);
-    // Upgraded to Pro to generate better prompts for itself
+    // Flash is sufficient for summarizing prompts
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
     return (response.text ?? "").trim();
@@ -362,7 +362,7 @@ export const generateSkyltIdeas = (
     const ai = ensureAiInitialized();
     const fullPrompt = Prompts.getSkyltIdeasPrompt(prompt, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Pro for creativity
+      model: "gemini-2.5-flash", // Changed to Flash for speed in the interactive UI
       contents: fullPrompt,
       config: {
         responseMimeType: "application/json",
@@ -381,7 +381,7 @@ export const generateCampaignIdeasForEvent = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getCampaignIdeasForEventPrompt(eventName, daysUntil, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-pro-preview", // Keep Pro for strategic campaign planning
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -399,11 +399,11 @@ export const generateSeasonalCampaignIdeas = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getSeasonalCampaignIdeasPrompt(organization, planningContext);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-pro-preview", // Keep Pro for strategic campaign planning
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: Schemas.GenAiCampaignIdeasResponse, // Reuse same schema
+        responseSchema: Schemas.GenAiCampaignIdeasResponse, 
       },
     });
     return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as { ideas: CampaignIdea[] };
@@ -434,7 +434,7 @@ export const generateCompletePost = (
     }
 
     const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Pro for better design decisions
+      model: "gemini-3-pro-preview", // Keep Pro here for good Art Direction prompts
       contents: { parts },
       config: {
         responseMimeType: "application/json",
@@ -476,11 +476,11 @@ export const generateFollowUpPost = (
     const prompt = Prompts.getFollowUpPostPrompt(originalPost, organization);
 
     const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-pro-preview", // Keep Pro for context awareness
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: Schemas.GenAiCompletePostResponse, // Reusing schema
+        responseSchema: Schemas.GenAiCompletePostResponse,
       },
     });
 
@@ -514,7 +514,7 @@ export const generateHeadlineSuggestions = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getHeadlineSuggestionsPrompt(body, existingHeadlines);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash", // Changed to Flash for speed
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -537,7 +537,7 @@ export const generateBodySuggestions = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getBodySuggestionsPrompt(headline, existingBodies);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash", // Changed to Flash for speed
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -580,7 +580,7 @@ export const refineDisplayPostContent = (
     const prompt = Prompts.getRefineContentPrompt(content, commandDescription);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash", // Changed to Flash for speed
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -606,7 +606,7 @@ export const refineTextWithCustomPrompt = (
     const prompt = Prompts.getRefineWithCustomPromptPrompt(content, customPrompt);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash", // Changed to Flash for speed
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -631,7 +631,7 @@ export const generateDisplayPostImage = (
     const ai = ensureAiInitialized();
     const apiPrompt = Prompts.getGenerateImagePrompt(prompt);
     const response = await ai.models.generateImages({
-      model: "imagen-4.0-generate-001",
+      model: "imagen-4.0-generate-001", // Keep Imagen 4 for high quality
       prompt: apiPrompt,
       config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
     });
@@ -662,7 +662,7 @@ export const editDisplayPostImage = (
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image", // Editing still works best with the flash-image model for now
+      model: "gemini-2.5-flash-image", // Editing works best/fastest with flash-image
       contents: { parts },
       config: { responseModalities: [Modality.IMAGE] },
     });
@@ -761,7 +761,7 @@ export const generateEventReminderText = (
       const prompt = Prompts.getEventReminderPrompt(event, daysUntil, organization, hasExistingCampaign);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-3-pro-preview", // Keep Pro for clever copy
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -807,7 +807,7 @@ export const updateStyleProfileSummary = (
     const prompt = Prompts.getStyleProfileSummaryPrompt(organization, postSummaries);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-pro-preview", // Pro for analysis
       contents: prompt,
       config: {
         responseMimeType: "application/json",
