@@ -1,4 +1,3 @@
-
 // services/firebaseService.ts
 import type firebase from 'firebase/compat/app';
 import { auth, db, storage, functions, firebase as firebaseApp, isOffline } from './firebaseInit';
@@ -207,6 +206,22 @@ const MockBackend = {
        const idx = codes.findIndex((c: any) => c.code === code);
        const pairedDeviceId = `phys_mock_${Date.now()}`;
        
+       // Also sync organization to localstorage to ensure the other tab sees it
+       const currentOrgs = MOCK_ORGANIZATIONS;
+       const targetOrg = currentOrgs.find(o => o.id === orgId);
+       if (targetOrg) {
+            const newScreen: PhysicalScreen = {
+                id: pairedDeviceId,
+                name: details.name,
+                organizationId: orgId,
+                displayScreenId: details.displayScreenId,
+                pairedAt: new Date().toISOString(),
+                pairedByUid: uid,
+            };
+            targetOrg.physicalScreens = [...(targetOrg.physicalScreens || []), newScreen];
+            // In a full implementation, we'd save MOCK_ORGANIZATIONS to localStorage here too
+       }
+
        if (idx > -1) {
            codes[idx].status = 'paired';
            codes[idx].organizationId = orgId;
@@ -467,10 +482,14 @@ export const createPairingCode = async () => {
     if (isOffline) return MockBackend.createPairingCode();
 
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const currentUser = auth!.currentUser;
+    
     // Use .set() on a doc with the ID equal to the code, so we can find it easily by code later.
+    // Save the createdByUid so we know who owns the session initially (the screen)
     await db!.collection('screenPairingCodes').doc(code).set({
         code,
         status: 'pending',
+        createdByUid: currentUser ? currentUser.uid : null,
         createdAt: firebaseApp.firestore.FieldValue.serverTimestamp()
     });
     return code;
@@ -483,8 +502,7 @@ export const listenToPairingCode = (code: string, cb: (data: ScreenPairingCode) 
 
 export const listenToPairingCodeByDeviceId = (deviceId: string, cb: (data: ScreenPairingCode | null) => void) => {
     if (isOffline) { 
-        // Offline mode needs to check LS, similar to getPairingCode logic but purely read-only here.
-        // Actually, pairAndActivate updates the code in LS, so we can just check if any code has this pairedDeviceId
+        // Offline mode logic for reading localStorage
         const check = () => {
              const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
              const found = codes.find((c: any) => c.pairedDeviceId === deviceId);
@@ -492,9 +510,6 @@ export const listenToPairingCodeByDeviceId = (deviceId: string, cb: (data: Scree
              else cb(null);
         };
         check();
-        // Normally we'd poll, but for this specific use case (screen detecting it is paired),
-        // the screen usually starts in 'pairing' mode and waits. 
-        // For simplicity, we can just rely on initial check or implement polling if needed.
         const interval = setInterval(check, 2000);
         return () => clearInterval(interval);
     }
@@ -512,6 +527,10 @@ export const getPairingCode = async (code: string): Promise<ScreenPairingCode | 
 export const pairAndActivateScreen = async (code: string, orgId: string, uid: string, details: {name: string, displayScreenId: string}) => {
     if (isOffline) return MockBackend.pairScreen(code, orgId, uid, details);
     
+    // Retrieve the screen's anonymous UID from the code doc
+    const codeDoc = await db!.collection('screenPairingCodes').doc(code).get();
+    const screenUid = codeDoc.data()?.createdByUid;
+
     const deviceId = `phys_${Date.now()}`;
     const newScreen: PhysicalScreen = {
         id: deviceId,
@@ -523,7 +542,7 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
     };
 
     const batch = db!.batch();
-    // Update the pairing code doc. It is keyed by 'code'.
+    // Update the pairing code doc.
     batch.update(db!.collection('screenPairingCodes').doc(code), {
         status: 'paired', organizationId: orgId, assignedDisplayScreenId: details.displayScreenId,
         pairedByUid: uid, pairedAt: firebaseApp.firestore.FieldValue.serverTimestamp(), pairedDeviceId: deviceId
@@ -531,8 +550,15 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
     batch.update(db!.collection('organizations').doc(orgId), {
         physicalScreens: firebaseApp.firestore.FieldValue.arrayUnion(sanitizeData(newScreen))
     });
+    
+    // Create the session document. Crucially, include the screen's UID to allow it access via security rules.
     batch.set(db!.collection('screenSessions').doc(deviceId), {
-        deviceId, organizationId: orgId, displayScreenId: details.displayScreenId, forceDisconnect: false, updatedAt: firebaseApp.firestore.FieldValue.serverTimestamp()
+        deviceId, 
+        organizationId: orgId, 
+        displayScreenId: details.displayScreenId, 
+        forceDisconnect: false, 
+        updatedAt: firebaseApp.firestore.FieldValue.serverTimestamp(),
+        screenUid: screenUid || null // Link session to specific auth user
     }, { merge: true });
 
     await batch.commit();
@@ -545,10 +571,8 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
         if (org) org.physicalScreens = (org.physicalScreens || []).filter(s => s.id !== screenId);
         return offlineWarning('unpairScreen');
     }
-    // Complex transaction logic omitted for brevity in this refactor step, relying on Cloud Function or simple batch in real app
-    // For now, simple remove from org array
     await db!.collection('organizations').doc(orgId).update({
-        physicalScreens: firebaseApp.firestore.FieldValue.arrayRemove({ id: screenId } as any) // Simplified, usually needs full object match or read-modify-write
+        physicalScreens: firebaseApp.firestore.FieldValue.arrayRemove({ id: screenId } as any)
     });
     await db!.collection('screenSessions').doc(screenId).delete();
 };

@@ -75,22 +75,26 @@ export const PairingScreen: React.FC = () => {
               allOrganizations.find(o => o.id === pairingData.organizationId) || undefined;
 
             if (!org) {
+              // Fallback fetch if not in loaded list
               const fetched = await getOrganizationById(pairingData.organizationId!);
               if (fetched) org = fetched;
             }
-            if (!org) {
-              setError('Organisationen kunde inte hittas. Kontakta support.');
-              return;
+            
+            if (org) {
+                 // 1. Select the organization to trigger data loading
+                selectOrganization(org);
+    
+                // 2. Set a pending state with the screen ID
+                setPendingScreenId(pairingData.assignedDisplayScreenId!);
+                
+                // 3. FAILSAFE: Force reload after a short delay to ensure clean permission state
+                // This is often necessary when upgrading from anonymous/unpaired to authorized/paired state
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2500);
+            } else {
+               setError('Organisationen kunde inte hittas. Kontakta support.');
             }
-
-            // --- REFACTORED LOGIC ---
-            // 1. Select the organization in the context. This will trigger the context to
-            //    fetch the `displayScreens` from the subcollection.
-            selectOrganization(org);
-
-            // 2. Set a pending state with the screen ID we need to select.
-            setPendingScreenId(pairingData.assignedDisplayScreenId!);
-            // The new useEffect above will now handle selecting the screen once it's loaded.
 
             if (unsubscribe) {
               unsubscribe();
@@ -155,6 +159,7 @@ export const PairingScreen: React.FC = () => {
           </div>
         )}
         {error && <p className="text-red-400 mt-4">{error}</p>}
+        {pendingScreenId && !error && <p className="text-green-400 mt-4 text-lg animate-bounce">Ansluter... Skärmen startar strax om.</p>}
       </div>
 
       <p className="text-gray-500 mt-16 text-sm">Skärmen uppdateras automatiskt när den har anslutits.</p>
