@@ -176,74 +176,6 @@ function dbg(aid, msg, extra) {
   }
 }
 
-const getMarketingCoachSystemInstruction_server = (organization) => {
-    const allPosts = (organization.displayScreens || []).flatMap(s => s.posts || []);
-    const recentPosts = allPosts
-        .sort((a, b) => {
-            const dateA = a.startDate ? toDateSafe(a.startDate)?.getTime() ?? 0 : 0;
-            const dateB = b.startDate ? toDateSafe(b.startDate)?.getTime() ?? 0 : 0;
-            return dateB - dateA;
-        })
-        .slice(0, 5);
-
-    const recentMedia = (organization.mediaLibrary || [])
-        .sort((a, b) => toDateSafe(b.createdAt)?.getTime() - toDateSafe(a.createdAt)?.getTime())
-        .slice(0, 5);
-        
-    const customPages = (organization.customPages || []).slice(0, 5);
-    const tags = (organization.tags || []).slice(0, 10);
-    const postTemplates = (organization.postTemplates || []).slice(0, 5);
-
-    let contentContext = "\n**Användarens nuvarande innehåll i SmartSkylt:**";
-    if (recentPosts.length > 0) contentContext += "\n- **Senaste inlägg:** " + recentPosts.map(p => `"${p.internalTitle}"`).join(', ');
-    if (recentMedia.length > 0) contentContext += "\n- **Senaste media:** " + recentMedia.map(m => `"${m.internalTitle}"`).join(', ');
-    if (customPages.length > 0) contentContext += "\n- **Egna infosidor:** " + customPages.map(p => `"${p.title}"`).join(', ');
-    if (tags.length > 0) contentContext += "\n- **Definierade taggar:** " + tags.map(t => `"${t.text}"`).join(', ');
-    if (postTemplates.length > 0) contentContext += "\n- **Sparade mallar:** " + postTemplates.map(t => `"${t.templateName}"`).join(', ');
-    if (contentContext === "\n**Användarens nuvarande innehåll i SmartSkylt:**") contentContext = "\nAnvändaren har inte skapat så mycket innehåll än.";
-
-    const orgContext = `
-**Företagskontext:**
-- Företagsnamn: ${organization.brandName || organization.name}
-- Verksamhetstyp: ${organization.businessType?.join(', ') || 'ej angiven'}
-- Beskrivning: ${organization.businessDescription || 'ej angiven'}
-- Hemsida: ${organization.preferenceProfile?.websiteUrl || 'ej angiven'}
-- Exempeltexter (tonalitet): ${(organization.preferenceProfile?.textSnippets || []).map(s => `"${s}"`).join(', ') || 'inga angivna'}
-- AI-lärd stilprofil: ${organization.styleProfile?.summary || 'ej analyserad än'}
-${contentContext}
-`;
-
-    const isProfileIncomplete = !organization.businessDescription || !organization.businessType || organization.businessType.length === 0;
-    const profileCompletionInstruction = isProfileIncomplete 
-        ? "VIKTIGT: Användarens profil är ofullständig. Uppmana dem vänligt att fylla i sin varumärkesprofil under fliken 'Varumärke' för att du ska kunna ge mer träffsäkra tips."
-        : "";
-
-    return `Du är Skylie, SmartSkylts digitala marknadsassistent.
-Din avatar visas i gränssnittet — en rund ikon med blå bakgrund och headset.
-
-Ditt uppdrag är att hjälpa varje företag att skapa bättre innehåll, få idéer och förstå hur de kan använda SmartSkylt på bästa sätt. Du är vänlig, coachande och kreativ – men alltid tydlig och effektiv.
-
-Du har tillgång till följande information om företaget du hjälper. Använd alltid denna information för att ge branschspecifika råd och relevanta exempel.
-${orgContext}
-
-Du kan:
-- Föreslå inläggsidéer, kampanjer och bildstilar som passar användarens bransch och befintliga innehåll.
-- Ge korta marknadsföringstips (t.ex. hur man formulerar erbjudanden, använder färg eller skapar säsongsanpassat innehåll).
-- Förklara hur SmartSkylts funktioner fungerar, på ett pedagogiskt och avdramatiserat sätt.
-- Svara på frågor om användarens befintliga innehåll (t.ex. "Vilka är mina senaste inlägg?").
-
-När du svarar:
-- Tala i första person (“Jag heter Skylie…”).
-- Håll språket enkelt, glatt och konkret.
-- Låt dina svar kännas personliga och relevanta för användarens företag.
-- Använd gärna emoji sparsamt för att skapa värme (t.ex. 🌟, 💡, 📈).
-
-${profileCompletionInstruction}
-
-Den här assistenten har en visuell avatar som visas i gränssnittet (hämtas från aiAssistant.avatarUrl i Firebase).
-`;
-};
-
 
 /* ------------------------------------------------------------------ */
 /*                             Testfunktion                            */
@@ -756,8 +688,9 @@ async function runAutomationsOnce(orgIdFilter) {
           `8. 'textAlign'\n` +
           `9. 'textAnimation'`;
 
+        // Upgrade to Gemini 3.0 Pro for backend automation logic
         const textGen = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-3-pro-preview",
           contents: prompt,
         });
 
@@ -796,6 +729,7 @@ async function runAutomationsOnce(orgIdFilter) {
           let imageUrl;
           if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
             try {
+              // Ensure Imagen 4.0 for images
               const img = await ai.models.generateImages({
                 model: "imagen-4.0-generate-001",
                 prompt: postDetails.imagePrompt,
@@ -968,8 +902,9 @@ Svara ENDAST med ett JSON-objekt i ett markdown-kodblock (\`\`\`json ... \`\`\`)
   "förslagFörFramtiden": "En kort instruktion till AI:n för hur den ska agera i framtiden, t.ex. 'Använd en mer avslappnad ton och kortare rubriker.'."
 }`;
 
+  // Upgrade backend learning to Gemini 3.0 Pro
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3-pro-preview",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -1178,6 +1113,7 @@ export const gemini = onCall(
         case "formatPageWithAI": {
           const rawContent = params.rawContent;
           const prompt = `You are a world-class digital content designer... Raw text to transform: --- ${rawContent} ---`;
+          // Keep using Flash for simple formatting
           const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
           return (response && response.text) || "";
         }
@@ -1185,7 +1121,8 @@ export const gemini = onCall(
         case "generatePageContentFromPrompt": {
           const userPrompt = params.userPrompt;
           const prompt = `You are a world-class digital content designer... The user's idea/prompt is: --- ${userPrompt} ---`;
-          const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
+          // Upgrade to Pro
+          const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt });
           return (response && response.text) || "";
         }
 
@@ -1193,8 +1130,9 @@ export const gemini = onCall(
           const userPrompt = params.userPrompt;
           const organizationName = params.organizationName;
           const prompt = `You are an expert copywriter for "${organizationName}". The user's idea is: --- ${userPrompt} ---`;
+          // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1212,8 +1150,9 @@ export const gemini = onCall(
           const userPrompt = params.userPrompt;
           const organizationName = params.organizationName;
           const aspectRatio = params.aspectRatio;
+          // Upgrade to Pro
           const textGen = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents:
               `Du är en expert på marknadsföring och copywriting för "${organizationName}". ` +
               `Idé: "${userPrompt}". Svara med JSON {headline, body, imagePrompt (ENGELSKA, för en enda bild, ej collage, ingen text)}.`,
@@ -1233,6 +1172,7 @@ export const gemini = onCall(
 
           const content = JSON.parse(String((textGen && textGen.text) || "").trim() || "{}");
 
+          // Upgrade to Imagen 4.0
           const imageResponse = await ai.models.generateImages({
             model: "imagen-4.0-generate-001",
             prompt: content.imagePrompt,
@@ -1253,8 +1193,9 @@ export const gemini = onCall(
           const prompt =
             `You are an expert copywriter. Body: --- ${body} --- ` +
             (existingHeadlines.length ? `Avoid these: "${existingHeadlines.join('", "')}".` : "");
+          // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1284,8 +1225,9 @@ export const gemini = onCall(
             `Headline: "${content.headline}", Body: "${content.body}". ` +
             `Command: ${commandDescription}`;
 
+          // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1302,7 +1244,9 @@ export const gemini = onCall(
         case "generateDisplayPostImage": {
           const prompt = params.prompt;
           const aspectRatio = params.aspectRatio;
-          const apiPrompt = `Create a high-quality, professional marketing image. Idea: "${prompt}". IMPORTANT: The generated image must be a single, cohesive scene. It must not be a collage, diptych, or grid. It must not contain any text, words, or letters.`;
+          const apiPrompt = `Create a high-quality, professional marketing image. Idea: "${prompt}". IMPORTANT: The generated image must be a single, cohesive scene. It must not be a collage, diptych, triptych, or grid of multiple images. The image must not contain any text, words, or letters.`;
+          
+          // Upgrade to Imagen 4.0
           const resp = await ai.models.generateImages({
             model: "imagen-4.0-generate-001",
             prompt: apiPrompt,
@@ -1325,6 +1269,7 @@ export const gemini = onCall(
           if (logo && logo.data && logo.mimeType) {
             parts.push({ inlineData: { data: logo.data, mimeType: logo.mimeType } });
           }
+          // Keep Flash Image for editing
           const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-image",
             contents: { parts },
@@ -1354,8 +1299,8 @@ export const gemini = onCall(
           const businessDescription = params.businessDescription;
 
           const prompt =
-            `Du är expert på kampanjer för digitala skyltar för "${organizationName}".\n` +
-            `Verksamhetstyp: ${Array.isArray(businessType) ? businessType.join(", ") : businessType || "Ej spec"}\n` +
+            `Du är expert på marknadsföringskampanjer för digitala skyltar för ett företag som heter "${organizationName}". All text måste vara koncis och lättläst på några få sekunder.
+            Verksamhetstyp: ${Array.isArray(businessType) ? businessType.join(", ") : businessType || "Ej spec"}\n` +
             `Beskrivning: "${businessDescription || "Ej spec"}".\n` +
             `Mål: "${userPrompt}".\n` +
             `Svara med en JSON-array med ${postCount} objekt: ` +
@@ -1367,8 +1312,9 @@ export const gemini = onCall(
             if (m && m.data && m.mimeType) parts.push({ inlineData: { mimeType: m.mimeType, data: m.data } });
           });
 
+          // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: { parts },
             config: {
               responseMimeType: "application/json",
@@ -1399,8 +1345,9 @@ export const gemini = onCall(
         case "generateCampaignIdeasForEvent": {
           const eventName = params.eventName;
           const prompt = `You are a creative marketing expert. Generate headline+body ideas for "${eventName}".`;
+          // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
