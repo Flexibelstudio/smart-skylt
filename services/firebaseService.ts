@@ -62,7 +62,10 @@ function isNotificationType(type: any): type is AppNotification['type'] {
 // ---------------------------------------------------------------------------
 // Mock Backend Implementation
 // ---------------------------------------------------------------------------
-// All offline/mock logic is isolated here to keep the main functions clean.
+
+// Registry for mock listeners to simulate realtime updates
+const mockOrgListeners: Record<string, ((snap: any) => void)[]> = {};
+
 const MockBackend = {
   // --- Auth ---
   onAuthChange: (cb: (user: firebase.User | null) => void) => {
@@ -90,22 +93,41 @@ const MockBackend = {
   // --- Organizations ---
   getOrganizations: () => Promise.resolve([...MOCK_ORGANIZATIONS]),
   getOrganizationById: (id: string) => Promise.resolve(MOCK_ORGANIZATIONS.find(o => o.id === id) || null),
+  
   listenToOrganizationChanges: (id: string, onUpdate: (snap: any) => void) => {
-      // Simulate a snapshot object for the UI
+      if (!mockOrgListeners[id]) mockOrgListeners[id] = [];
+      mockOrgListeners[id].push(onUpdate);
+
+      // Simulate a snapshot object for the UI immediately
       const org = MOCK_ORGANIZATIONS.find(o => o.id === id);
-      setTimeout(() => onUpdate({ exists: !!org, data: () => org, metadata: { hasPendingWrites: false } }), 0);
-      return () => {};
+      // Clone object to simulate a fresh snapshot
+      const snapshotData = org ? JSON.parse(JSON.stringify(org)) : null;
+      setTimeout(() => onUpdate({ exists: !!org, data: () => snapshotData, id, metadata: { hasPendingWrites: false } }), 0);
+      
+      return () => {
+          mockOrgListeners[id] = mockOrgListeners[id].filter(l => l !== onUpdate);
+      };
   },
+  
   createOrganization: (data: any) => {
       const newOrg = { id: `offline_org_${Date.now()}`, ...data, subdomain: `offline-${Date.now()}`, customPages: [], mediaLibrary: [] };
       MOCK_ORGANIZATIONS.push(newOrg);
       return Promise.resolve(newOrg);
   },
+  
   updateOrganization: (id: string, data: any) => {
       const org = MOCK_ORGANIZATIONS.find(o => o.id === id);
-      if (org) Object.assign(org, sanitizeData(data));
+      if (org) {
+          Object.assign(org, sanitizeData(data));
+          // Notify listeners
+          if (mockOrgListeners[id]) {
+              const snapshotData = JSON.parse(JSON.stringify(org));
+              mockOrgListeners[id].forEach(cb => cb({ exists: true, data: () => snapshotData, id, metadata: { hasPendingWrites: false } }));
+          }
+      }
       return Promise.resolve();
   },
+  
   deleteOrganization: (id: string) => {
       const idx = MOCK_ORGANIZATIONS.findIndex(o => o.id === id);
       if (idx > -1) MOCK_ORGANIZATIONS.splice(idx, 1);
@@ -150,17 +172,52 @@ const MockBackend = {
       return () => {};
   },
   
-  // --- Pairing ---
-  createPairingCode: () => Promise.resolve('ABC123'),
+  // --- Pairing (Updated to use localStorage for tab-to-tab communication) ---
+  createPairingCode: () => {
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const existingCodes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+      existingCodes.push({ 
+          code, 
+          status: 'pending', 
+          createdAt: new Date().toISOString() 
+      });
+      localStorage.setItem('mock_pairing_codes', JSON.stringify(existingCodes));
+      return Promise.resolve(code);
+  },
   listenToPairingCode: (code: string, onUpdate: (data: ScreenPairingCode) => void) => {
-       // Simulate finding a code
-       const mockCode: ScreenPairingCode = { code, status: 'pending', createdAt: new Date() };
-       setTimeout(() => onUpdate(mockCode), 500);
-       return () => {};
+       // Poll localStorage to detect changes from other tabs
+       const check = () => {
+           const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+           const found = codes.find((c: any) => c.code === code);
+           if (found) onUpdate(found);
+       };
+       check();
+       const interval = setInterval(check, 1000);
+       return () => clearInterval(interval);
+  },
+  getPairingCode: (code: string) => {
+      const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+      const found = codes.find((c: any) => c.code === code);
+      // Fallback to static mock data if not found in LS
+      const staticFound = MOCK_PAIRING_CODES.find(c => c.code === code);
+      return Promise.resolve(found || staticFound || null);
   },
   pairScreen: (code: string, orgId: string, uid: string, details: any) => {
+       const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+       const idx = codes.findIndex((c: any) => c.code === code);
+       const pairedDeviceId = `phys_mock_${Date.now()}`;
+       
+       if (idx > -1) {
+           codes[idx].status = 'paired';
+           codes[idx].organizationId = orgId;
+           codes[idx].assignedDisplayScreenId = details.displayScreenId;
+           codes[idx].pairedDeviceId = pairedDeviceId;
+           codes[idx].pairedAt = new Date().toISOString();
+           localStorage.setItem('mock_pairing_codes', JSON.stringify(codes));
+       }
+       
        return Promise.resolve({
-           id: `phys_mock_${Date.now()}`,
+           id: pairedDeviceId,
            name: details.name,
            organizationId: orgId,
            displayScreenId: details.displayScreenId,
@@ -282,7 +339,6 @@ export const deleteDisplayScreen = async (orgId: string, screenId: string) => {
 };
 
 // --- Specific Updates (Syntactic Sugar) ---
-// These just wrap updateOrganization for specific fields, keeping the API clean
 export const updateOrganizationLogos = (id: string, logos: any) => updateOrganization(id, { logoUrlLight: logos.light, logoUrlDark: logos.dark });
 export const updateOrganizationTags = (id: string, tags: Tag[]) => updateOrganization(id, { tags });
 export const updateOrganizationPostTemplates = (id: string, tpls: PostTemplate[]) => updateOrganization(id, { postTemplates: tpls });
@@ -407,11 +463,18 @@ export const markAllUserNotificationsAsRead = async (uid: string, nids: string[]
 };
 
 // --- Pairing ---
-export const createPairingCode = () => isOffline ? MockBackend.createPairingCode() : db!.collection('screenPairingCodes').add({
-    code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-    status: 'pending',
-    createdAt: firebaseApp.firestore.FieldValue.serverTimestamp()
-}).then(doc => doc.get().then(s => s.data()?.code));
+export const createPairingCode = async () => {
+    if (isOffline) return MockBackend.createPairingCode();
+
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    // Use .set() on a doc with the ID equal to the code, so we can find it easily by code later.
+    await db!.collection('screenPairingCodes').doc(code).set({
+        code,
+        status: 'pending',
+        createdAt: firebaseApp.firestore.FieldValue.serverTimestamp()
+    });
+    return code;
+};
 
 export const listenToPairingCode = (code: string, cb: (data: ScreenPairingCode) => void) => {
     if (isOffline) return MockBackend.listenToPairingCode(code, cb);
@@ -420,9 +483,20 @@ export const listenToPairingCode = (code: string, cb: (data: ScreenPairingCode) 
 
 export const listenToPairingCodeByDeviceId = (deviceId: string, cb: (data: ScreenPairingCode | null) => void) => {
     if (isOffline) { 
-        const found = MOCK_PAIRING_CODES.find((c: any) => c.pairedDeviceId === deviceId);
-        setTimeout(() => cb(found as any), 0);
-        return () => {};
+        // Offline mode needs to check LS, similar to getPairingCode logic but purely read-only here.
+        // Actually, pairAndActivate updates the code in LS, so we can just check if any code has this pairedDeviceId
+        const check = () => {
+             const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+             const found = codes.find((c: any) => c.pairedDeviceId === deviceId);
+             if (found) cb(found);
+             else cb(null);
+        };
+        check();
+        // Normally we'd poll, but for this specific use case (screen detecting it is paired),
+        // the screen usually starts in 'pairing' mode and waits. 
+        // For simplicity, we can just rely on initial check or implement polling if needed.
+        const interval = setInterval(check, 2000);
+        return () => clearInterval(interval);
     }
     return db!.collection('screenPairingCodes').where('pairedDeviceId', '==', deviceId).limit(1).onSnapshot(
         s => cb(s.empty ? null : s.docs[0].data() as ScreenPairingCode)
@@ -430,7 +504,7 @@ export const listenToPairingCodeByDeviceId = (deviceId: string, cb: (data: Scree
 };
 
 export const getPairingCode = async (code: string): Promise<ScreenPairingCode | null> => {
-    if (isOffline) return MOCK_PAIRING_CODES.find(c => c.code === code) || null;
+    if (isOffline) return MockBackend.getPairingCode(code);
     const snap = await db!.collection('screenPairingCodes').doc(code).get();
     return snap.exists ? snap.data() as ScreenPairingCode : null;
 };
@@ -449,6 +523,7 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
     };
 
     const batch = db!.batch();
+    // Update the pairing code doc. It is keyed by 'code'.
     batch.update(db!.collection('screenPairingCodes').doc(code), {
         status: 'paired', organizationId: orgId, assignedDisplayScreenId: details.displayScreenId,
         pairedByUid: uid, pairedAt: firebaseApp.firestore.FieldValue.serverTimestamp(), pairedDeviceId: deviceId
