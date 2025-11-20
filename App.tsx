@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, Suspense } from 'react';
 import { getAppMode } from './utils/appMode';
 import { useLocation } from './context/StudioContext';
