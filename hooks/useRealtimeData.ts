@@ -1,5 +1,4 @@
-// hooks/useRealtimeData.ts
-import { useEffect, useState, useRef } from 'react';
+import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen, ScreenPairingCode } from '../types';
 import { 
@@ -28,7 +27,7 @@ export function useOrganizationDetails(orgId: string | undefined) {
   // Initial fetch via useQuery
   const queryResult = useQuery({
     queryKey: ['organization', orgId],
-    queryFn: () => (orgId ? getOrganizationById(orgId) : Promise.resolve(null)),
+    queryFn: () => orgId ? getOrganizationById(orgId) : Promise.resolve(null),
     enabled: !!orgId,
   });
 
@@ -37,13 +36,15 @@ export function useOrganizationDetails(orgId: string | undefined) {
     if (!orgId) return;
 
     const unsubscribe = listenToOrganizationChanges(orgId, (snapshot: any) => {
-      let data: Organization | null = null;
-
-      if (snapshot?.exists) {
-        const raw = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
-        if (raw) {
-          data = { ...raw, id: snapshot.id } as Organization;
-        }
+      // Handle both Firestore snapshot structure and potential mock structure
+      let data = null;
+      
+      if (snapshot.exists) {
+          // Check if snapshot.data is a function (Firestore) or object (Mock)
+          data = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
+          if (data) {
+              data = { ...data, id: snapshot.id };
+          }
       }
 
       queryClient.setQueryData(['organization', orgId], data);
@@ -60,9 +61,12 @@ export function useOrganizationDetails(orgId: string | undefined) {
 export function useOrganizationScreens(orgId: string | undefined) {
   const queryClient = useQueryClient();
 
+  // We use a query to manage the state, but the initial fetch is handled by the listener mostly,
+  // or we could fetch once. For simplicity in this hybrid model, we rely on the listener to populate this.
+  // But providing a queryFn makes it robust if the listener takes time or fails.
   const queryResult = useQuery({
     queryKey: ['screens', orgId],
-    queryFn: () => Promise.resolve([] as DisplayScreen[]),
+    queryFn: () => Promise.resolve([] as DisplayScreen[]), // Initial empty state or could call getDisplayScreens if we had it
     enabled: !!orgId,
   });
 
@@ -94,7 +98,7 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
     if (!isScreenMode || !deviceId) return;
 
     const unsubscribe = listenToPairingCodeByDeviceId(deviceId, (data) => {
-      queryClient.setQueryData(['pairingCode', deviceId], data);
+       queryClient.setQueryData(['pairingCode', deviceId], data);
     });
 
     return () => unsubscribe();
@@ -105,77 +109,17 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
 
 // --- Session ---
 
-export function useScreenSessionListener(
-  deviceId: string | null,
-  isScreenMode: boolean,
-  onForceDisconnect: () => void
-) {
-  // Grace period: ge tid för session-dokumentet att dyka upp.
-  const [isGracePeriod, setIsGracePeriod] = useState(true);
+export function useScreenSessionListener(deviceId: string | null, isScreenMode: boolean, onForceDisconnect: () => void) {
+    useEffect(() => {
+        if (!isScreenMode || !deviceId) return;
 
-  // Har vi någonsin sett en giltig session?
-  // Om ja → ignorera tillfälliga "null"-snapshots, så vi inte kastar ut skärmen i onödan.
-  const hasSeenValidSessionRef = useRef(false);
+        const unsubscribe = listenToScreenSession(deviceId, (doc) => {
+            if (!doc || doc.forceDisconnect) {
+                console.log('[Session] forceDisconnect eller saknas → reset');
+                onForceDisconnect();
+            }
+        });
 
-  useEffect(() => {
-    if (!isScreenMode) return;
-
-    // Ny session-start → nollställ state
-    hasSeenValidSessionRef.current = false;
-    setIsGracePeriod(true);
-
-    const timer = setTimeout(() => {
-      setIsGracePeriod(false);
-    }, 30000); // 30 sek grace
-
-    return () => clearTimeout(timer);
-  }, [isScreenMode, deviceId]);
-
-  useEffect(() => {
-    if (!isScreenMode || !deviceId) return;
-
-    const unsubscribe = listenToScreenSession(deviceId, (doc) => {
-      console.log('[Session] snapshot', {
-        doc,
-        isGracePeriod,
-        hasSeenValid: hasSeenValidSessionRef.current,
-      });
-
-      // 1. Giltig session, ingen forceDisconnect → allt är bra
-      if (doc && !doc.forceDisconnect) {
-        if (!hasSeenValidSessionRef.current) {
-          console.log('[Session] First valid session seen → keep screen connected');
-        }
-        hasSeenValidSessionRef.current = true;
-        return;
-      }
-
-      // 2. Explicit forceDisconnect → alltid koppla ner direkt
-      if (doc && doc.forceDisconnect) {
-        console.log('[Session] forceDisconnect flag set → reset to pairing');
-        hasSeenValidSessionRef.current = false;
-        onForceDisconnect();
-        return;
-      }
-
-      // 3. doc saknas (null)
-      if (!doc) {
-        // Om vi aldrig sett en giltig session och grace-perioden är slut → antag att sessionen inte finns
-        if (!isGracePeriod && !hasSeenValidSessionRef.current) {
-          console.log(
-            '[Session] No session doc after grace & never had a valid one → reset to pairing'
-          );
-          onForceDisconnect();
-        } else {
-          // Antingen är vi fortfarande i grace, eller så har vi redan haft en giltig session.
-          // I båda fallen ignorerar vi detta för att undvika onödiga disconnects.
-          console.log(
-            '[Session] No doc, but in grace or had valid session before → ignoring transient state'
-          );
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [deviceId, isScreenMode, isGracePeriod, onForceDisconnect]);
+        return () => unsubscribe();
+    }, [deviceId, isScreenMode, onForceDisconnect]);
 }

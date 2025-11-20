@@ -46,11 +46,6 @@ export const PairingScreen: React.FC = () => {
 
   useEffect(() => {
     mountedRef.current = true;
-    
-    // Wait for authentication to be ready before generating a code.
-    // This ensures we can link the session to the correct anonymous user ID.
-    if (!currentUser) return;
-
     let unsubscribe: (() => void) | null = null;
 
     const setupPairing = async () => {
@@ -80,26 +75,22 @@ export const PairingScreen: React.FC = () => {
               allOrganizations.find(o => o.id === pairingData.organizationId) || undefined;
 
             if (!org) {
-              // Fallback fetch if not in loaded list
               const fetched = await getOrganizationById(pairingData.organizationId!);
               if (fetched) org = fetched;
             }
-            
-            if (org) {
-                 // 1. Select the organization to trigger data loading
-                selectOrganization(org);
-    
-                // 2. Set a pending state with the screen ID
-                setPendingScreenId(pairingData.assignedDisplayScreenId!);
-                
-                // 3. FAILSAFE: Force reload after a safe delay to ensure clean permission state
-                // Increased to 5000ms to allow backend propagation.
-                setTimeout(() => {
-                    window.location.reload();
-                }, 5000);
-            } else {
-               setError('Organisationen kunde inte hittas. Kontakta support.');
+            if (!org) {
+              setError('Organisationen kunde inte hittas. Kontakta support.');
+              return;
             }
+
+            // --- REFACTORED LOGIC ---
+            // 1. Select the organization in the context. This will trigger the context to
+            //    fetch the `displayScreens` from the subcollection.
+            selectOrganization(org);
+
+            // 2. Set a pending state with the screen ID we need to select.
+            setPendingScreenId(pairingData.assignedDisplayScreenId!);
+            // The new useEffect above will now handle selecting the screen once it's loaded.
 
             if (unsubscribe) {
               unsubscribe();
@@ -126,21 +117,7 @@ export const PairingScreen: React.FC = () => {
       mountedRef.current = false;
       if (unsubscribe) unsubscribe();
     };
-  }, [allOrganizations, selectOrganization, currentUser]); // Added currentUser to dependency array
-
-  if (!currentUser) {
-    return (
-      <div className="w-full h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
-        <div className="flex items-center gap-4 text-2xl">
-            <svg className="animate-spin h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            <span>Ansluter till servern...</span>
-        </div>
-      </div>
-    );
-  }
+  }, [allOrganizations, selectOrganization, currentUser?.uid]);
 
   return (
     <div className="w-full h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
@@ -178,7 +155,6 @@ export const PairingScreen: React.FC = () => {
           </div>
         )}
         {error && <p className="text-red-400 mt-4">{error}</p>}
-        {pendingScreenId && !error && <p className="text-green-400 mt-4 text-lg animate-bounce">Ansluter... Skärmen startar strax om.</p>}
       </div>
 
       <p className="text-gray-500 mt-16 text-sm">Skärmen uppdateras automatiskt när den har anslutits.</p>
