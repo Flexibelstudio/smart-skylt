@@ -78,9 +78,20 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // 2. Manage Selected Organization ID
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  
+  // 2b. Immediate Org State (Optimistic) - Fixes "Double Click" issue
+  // Stores the full object immediately when clicked, serving as a fallback while the hook loads.
+  const [immediateOrg, setImmediateOrg] = useState<Organization | null>(null);
 
   // 3. Fetch Selected Organization Details (Realtime via Hook)
-  const { data: selectedOrganization, isLoading: detailsLoading } = useOrganizationDetails(selectedOrgId || undefined);
+  const { data: fetchedOrg, isLoading: detailsLoading } = useOrganizationDetails(selectedOrgId || undefined);
+
+  // Derived Selected Organization: Prefer the live hook data, fall back to immediate local state if ID matches.
+  const selectedOrganization = useMemo(() => {
+      if (fetchedOrg) return fetchedOrg;
+      if (immediateOrg && immediateOrg.id === selectedOrgId) return immediateOrg;
+      return null;
+  }, [fetchedOrg, immediateOrg, selectedOrgId]);
 
   // 4. Fetch Screens for Selected Organization (Realtime via Hook)
   const { data: displayScreens = [], isLoading: screensLoading } = useOrganizationScreens(selectedOrgId || undefined);
@@ -89,7 +100,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
 
   // Combined Loading State
-  const locationLoading = orgsLoading || (!!selectedOrgId && (detailsLoading || screensLoading));
+  const locationLoading = orgsLoading || (!!selectedOrgId && (detailsLoading || screensLoading) && !selectedOrganization);
 
   // Update selectedDisplayScreen when data changes in the list
   useEffect(() => {
@@ -117,6 +128,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   const clearSelection = useCallback(() => {
     setSelectedDisplayScreen(null);
     setSelectedOrgId(null);
+    setImmediateOrg(null);
     if (currentUser && isScreenMode) {
       localStorage.removeItem(getLocalStorageDisplayScreenKey(currentUser.uid));
       removeDeviceId(currentUser.uid);
@@ -127,12 +139,13 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const selectOrganization = useCallback((organization: Organization | null) => {
       if (organization) {
-        // Pre-seed the React Query cache with the organization data we already have.
-        // This ensures useOrganizationDetails returns data immediately, preventing UI flicker/bounce
-        // and fixing the "double click" issue.
+        // Pre-seed the React Query cache
         queryClient.setQueryData(['organization', organization.id], organization);
-
+        
+        // Set immediate state to allow synchronous UI updates (prevents flicker/double-click need)
+        setImmediateOrg(organization);
         setSelectedOrgId(organization.id);
+        
         localStorage.setItem(LOCAL_STORAGE_ORG_KEY, JSON.stringify({ id: organization.id, name: organization.name }));
         
         if (isScreenMode && currentUser) {
@@ -144,6 +157,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
         setSelectedDisplayScreen(null);
       } else {
           setSelectedOrgId(null);
+          setImmediateOrg(null);
           localStorage.removeItem(LOCAL_STORAGE_ORG_KEY);
           setSelectedDisplayScreen(null);
       }
