@@ -5,9 +5,8 @@ import { Type } from '@google/genai';
 
 // Helper for robust string fields.
 // Accepts string, null, or undefined. ALWAYS returns a string (empty if null/undefined).
-// This prevents UI crashes when AI returns explicit 'null' which Zod's .default() doesn't catch.
-const RobustString = z.union([z.string(), z.null(), z.undefined()])
-  .transform(val => val ?? '');
+// Using preprocess ensures the input is handled before Zod validation, guaranteeing a string output.
+const RobustString = z.preprocess((val) => val === null || val === undefined ? "" : String(val), z.string());
 
 export const VisualSuggestionSchema = z.object({
   imageIdea: RobustString,

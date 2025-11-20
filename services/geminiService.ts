@@ -334,7 +334,7 @@ export const generateDisplayPostContent = (
         },
       },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
 
 export const generateAutomationPrompt = (inputs: {
@@ -369,7 +369,7 @@ export const generateSkyltIdeas = (
         responseSchema: Schemas.GenAiSkyltIdeSuggestionArray,
       },
     });
-    return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema);
+    return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
   });
 
 export const generateCampaignIdeasForEvent = (
@@ -388,7 +388,7 @@ export const generateCampaignIdeasForEvent = (
         responseSchema: Schemas.GenAiCampaignIdeasResponse,
       },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as { ideas: CampaignIdea[]; followUpSuggestion?: { question: string; eventName: string } | null };
   });
 
 export const generateSeasonalCampaignIdeas = (
@@ -406,7 +406,7 @@ export const generateSeasonalCampaignIdeas = (
         responseSchema: Schemas.GenAiCampaignIdeasResponse, // Reuse same schema
       },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as { ideas: CampaignIdea[] };
   });
 
 export const generateCompletePost = (
@@ -442,12 +442,12 @@ export const generateCompletePost = (
       }
     });
 
-    const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as z.infer<typeof Schemas.CompletePostResponseSchema>;
+    const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
 
-    if (postData.layout !== "text-only" && postData.imagePrompt) {
+    if (postData.layout !== "text-only" && (postData as any).imagePrompt) {
       const imageResponse = await ai.models.generateImages({
         model: "imagen-4.0-generate-001", // Explicitly use Imagen 3/4
-        prompt: postData.imagePrompt,
+        prompt: (postData as any).imagePrompt,
         config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
       });
 
@@ -484,12 +484,12 @@ export const generateFollowUpPost = (
       },
     });
 
-    const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as z.infer<typeof Schemas.CompletePostResponseSchema>;
+    const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
 
-    if (postData.layout !== "text-only" && postData.imagePrompt) {
+    if (postData.layout !== "text-only" && (postData as any).imagePrompt) {
       const imageResponse = await ai.models.generateImages({
         model: "imagen-4.0-generate-001",
-        prompt: postData.imagePrompt,
+        prompt: (postData as any).imagePrompt,
         config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
       });
 
@@ -594,7 +594,7 @@ export const refineDisplayPostContent = (
         },
       },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
 
 export const refineTextWithCustomPrompt = (
@@ -620,7 +620,7 @@ export const refineTextWithCustomPrompt = (
         },
       },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
 
 export const generateDisplayPostImage = (
@@ -775,7 +775,7 @@ export const generateEventReminderText = (
           },
         },
       });
-      return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema);
+      return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
     })
   );
 };
@@ -820,7 +820,7 @@ export const updateStyleProfileSummary = (
         },
       },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
   });
 
 export const generateRhythmReminderText = (
@@ -853,7 +853,7 @@ export const generateRhythmReminderText = (
           },
         },
       });
-      return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema);
+      return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
     })
   );
 };
@@ -913,7 +913,7 @@ export const getSeasonalSuggestion = (
           },
         },
       });
-      return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema);
+      return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
     })
   );
 };
@@ -1018,7 +1018,11 @@ export const analyzePostDiff = (
       },
     });
 
-    return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema);
+    return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as {
+      ändringar: string[];
+      tolkning: string;
+      förslagFörFramtiden: string;
+    };
   });
 
 export async function summarizeLearnLogForOrg(orgId: string) {

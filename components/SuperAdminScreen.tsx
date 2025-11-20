@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Organization, UserRole, DisplayScreen, DisplayPost, Tag, SystemSettings, PostTemplate, PhysicalScreen } from '../types';
 import { getSystemSettings, pairAndActivateScreen, getPairingCode } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +18,7 @@ import { SkyltfonsterTab } from './admin/SkyltfonsterTab';
 import { AdminTab } from './admin/AdminTab';
 import { AiAutomationTab } from './admin/AiAutomationTab';
 import { OrganisationTab } from './OrganisationTab';
+import { MediaGalleryTab } from './admin/MediaGalleryTab';
 
 // Import Modals (We can move these too later, but let's keep them here for now to minimize file explosion in one step)
 // or assume they are internal to this file for simplicity if they weren't extracted.
@@ -466,18 +467,6 @@ const BrandingSetupGuide: React.FC<{ onGoToBranding: () => void; onDismiss: () =
     );
 };
 
-// --- MediaGalleryManager Placeholder ---
-// This can be moved to its own file later if it grows
-const MediaGalleryManager: React.FC<SuperAdminScreenProps> = () => {
-    return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Galleri</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Hantera dina uppladdade bilder och videos.</p>
-            <p className="text-slate-500 dark:text-slate-400">Gallerifunktionen är under utveckling.</p>
-        </div>
-    );
-};
-
 
 // --- Main Component ---
 
@@ -524,6 +513,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
     const [screenToShare, setScreenToShare] = useState<DisplayScreen | null>(null);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isAiGuideModalOpen, setIsAiGuideModalOpen] = useState(false);
+    const ignoreProfileCheck = useRef(false);
     
     const [isBrandingGuideVisible, setIsBrandingGuideVisible] = useState(false);
     const brandingGuideDismissedKey = `smart-skylt-branding-guide-dismissed-${organization.id}`;
@@ -564,15 +554,25 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
     }, []);
     
      useEffect(() => {
-        // Check if essential information is missing
-        if (organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson)) {
+        // Check if essential information is missing. 
+        // We use ignoreProfileCheck to prevent re-opening immediately after saving but before data sync.
+        if (!ignoreProfileCheck.current && organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson)) {
             setIsProfileModalOpen(true);
         } else {
-            setIsProfileModalOpen(false);
+            // If data is present, ensure modal is closed and reset the ignore flag for future
+            if (organization && organization.address && organization.phone && organization.orgNumber && organization.contactPerson) {
+                setIsProfileModalOpen(false);
+                ignoreProfileCheck.current = false;
+            }
         }
     }, [organization]);
 
     const handleSaveProfile = async (data: Partial<Organization>) => {
+        // Set the flag to ignore checks temporarily to allow optimistic UI update
+        ignoreProfileCheck.current = true;
+        // Close modal immediately for better UX
+        setIsProfileModalOpen(false);
+        // Perform the update
         await onUpdateOrganization(organization.id, data);
     };
 
@@ -640,7 +640,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                     />
                 )}
                 {activeTab === 'organisation' && <OrganisationTab {...props} />}
-                {activeTab === 'galleri' && <MediaGalleryManager {...props} />}
+                {activeTab === 'galleri' && <MediaGalleryTab {...props} />}
                 {activeTab === 'automation' && <AiAutomationTab {...props} />}
                 {activeTab === 'admin' && <AdminTab {...props} />}
             </div>
