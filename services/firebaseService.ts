@@ -1,4 +1,3 @@
-
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
 import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, InstagramStory, VideoOperation, PostTemplate, Tag, DisplayPost } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
@@ -440,7 +439,7 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
         // Delete the session (disconnects the screen)
         transaction.delete(sessionRef);
 
-        // Delete the pairing code(s) associated with this device so it's no longer "paired"
+        // Delete the pairing code document completely
         codeQuery.forEach(doc => {
             transaction.delete(doc.ref);
         });
