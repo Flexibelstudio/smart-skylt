@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen, ScreenPairingCode } from '../types';
 import { 
@@ -110,16 +110,45 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
 // --- Session ---
 
 export function useScreenSessionListener(deviceId: string | null, isScreenMode: boolean, onForceDisconnect: () => void) {
+    // Grace period state: true initially, turns false after 5 seconds.
+    // This prevents the app from kicking the user out immediately if the session doc takes a moment to load.
+    const [isGracePeriod, setIsGracePeriod] = useState(true);
+
+    useEffect(() => {
+        if (!isScreenMode) return;
+        
+        const timer = setTimeout(() => {
+            setIsGracePeriod(false);
+        }, 5000); // 5 seconds grace period
+
+        return () => clearTimeout(timer);
+    }, [isScreenMode]);
+
     useEffect(() => {
         if (!isScreenMode || !deviceId) return;
 
         const unsubscribe = listenToScreenSession(deviceId, (doc) => {
-            if (!doc || doc.forceDisconnect) {
-                console.log('[Session] forceDisconnect eller saknas → reset');
+            // If document exists, everything is fine.
+            if (doc && !doc.forceDisconnect) {
+                return;
+            }
+
+            // If document is missing or forceDisconnect is true:
+            
+            // 1. If it's an explicit force disconnect, act immediately.
+            if (doc && doc.forceDisconnect) {
+                console.log('[Session] forceDisconnect received → reset');
                 onForceDisconnect();
+                return;
+            }
+
+            // 2. If document is MISSING, only act if grace period is over.
+            if (!doc && !isGracePeriod) {
+                 console.log('[Session] Session document missing after grace period → reset');
+                 onForceDisconnect();
             }
         });
 
         return () => unsubscribe();
-    }, [deviceId, isScreenMode, onForceDisconnect]);
+    }, [deviceId, isScreenMode, isGracePeriod, onForceDisconnect]);
 }

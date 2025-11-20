@@ -91,19 +91,47 @@ const MockBackend = {
 
   // --- Organizations ---
   getOrganizations: () => Promise.resolve([...MOCK_ORGANIZATIONS]),
-  getOrganizationById: (id: string) => Promise.resolve(MOCK_ORGANIZATIONS.find(o => o.id === id) || null),
+  getOrganizationById: (id: string) => {
+      // Check localStorage first for potential multi-tab sync in mock mode
+      const storedOrgs = localStorage.getItem('mock_organizations');
+      if (storedOrgs) {
+          const parsedOrgs = JSON.parse(storedOrgs);
+          const org = parsedOrgs.find((o: any) => o.id === id);
+          if (org) return Promise.resolve(org);
+      }
+      return Promise.resolve(MOCK_ORGANIZATIONS.find(o => o.id === id) || null);
+  },
   
   listenToOrganizationChanges: (id: string, onUpdate: (snap: any) => void) => {
       if (!mockOrgListeners[id]) mockOrgListeners[id] = [];
       mockOrgListeners[id].push(onUpdate);
 
+      const getOrgData = () => {
+           const storedOrgs = localStorage.getItem('mock_organizations');
+           if (storedOrgs) {
+                return JSON.parse(storedOrgs).find((o: any) => o.id === id);
+           }
+           return MOCK_ORGANIZATIONS.find(o => o.id === id);
+      }
+
       // Simulate a snapshot object for the UI immediately
-      const org = MOCK_ORGANIZATIONS.find(o => o.id === id);
+      const org = getOrgData();
       // Clone object to simulate a fresh snapshot
       const snapshotData = org ? JSON.parse(JSON.stringify(org)) : null;
       setTimeout(() => onUpdate({ exists: !!org, data: () => snapshotData, id, metadata: { hasPendingWrites: false } }), 0);
       
+      // Poll localStorage for changes in offline mode
+      const interval = setInterval(() => {
+           const currentOrg = getOrgData();
+           if (currentOrg) {
+               // In a real app we'd diff, but here we just send updates occasionally
+               const snap = JSON.parse(JSON.stringify(currentOrg));
+               onUpdate({ exists: true, data: () => snap, id, metadata: { hasPendingWrites: false } });
+           }
+      }, 1000);
+
       return () => {
+          clearInterval(interval);
           mockOrgListeners[id] = mockOrgListeners[id].filter(l => l !== onUpdate);
       };
   },
@@ -118,6 +146,9 @@ const MockBackend = {
       const org = MOCK_ORGANIZATIONS.find(o => o.id === id);
       if (org) {
           Object.assign(org, sanitizeData(data));
+          // Sync to localstorage for cross-tab visibility
+          localStorage.setItem('mock_organizations', JSON.stringify(MOCK_ORGANIZATIONS));
+
           // Notify listeners
           if (mockOrgListeners[id]) {
               const snapshotData = JSON.parse(JSON.stringify(org));
@@ -203,12 +234,13 @@ const MockBackend = {
   },
   pairScreen: (code: string, orgId: string, uid: string, details: any) => {
        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+       // Ensure we match case insensitive or stripped, but for mock exact match is fine if generated correctly
        const idx = codes.findIndex((c: any) => c.code === code);
        const pairedDeviceId = `phys_mock_${Date.now()}`;
        
-       // Also sync organization to localstorage to ensure the other tab sees it
-       const currentOrgs = MOCK_ORGANIZATIONS;
-       const targetOrg = currentOrgs.find(o => o.id === orgId);
+       // Sync organization to localstorage so the other tab sees the new physical screen
+       // In mock mode, MOCK_ORGANIZATIONS is the source of truth
+       const targetOrg = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
        if (targetOrg) {
             const newScreen: PhysicalScreen = {
                 id: pairedDeviceId,
@@ -219,7 +251,7 @@ const MockBackend = {
                 pairedByUid: uid,
             };
             targetOrg.physicalScreens = [...(targetOrg.physicalScreens || []), newScreen];
-            // In a full implementation, we'd save MOCK_ORGANIZATIONS to localStorage here too
+            localStorage.setItem('mock_organizations', JSON.stringify(MOCK_ORGANIZATIONS));
        }
 
        if (idx > -1) {
