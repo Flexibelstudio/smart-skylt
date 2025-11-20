@@ -1,504 +1,401 @@
 
-// services/firebaseService.ts
-import type firebase from 'firebase/compat/app';
-import { auth, db, storage, functions, firebase as firebaseApp, isOffline } from './firebaseInit';
+import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
+import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, InstagramStory, VideoOperation, PostTemplate, Tag, DisplayPost } from '../types';
+import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
 
-import {
-  Organization,
-  CustomPage,
-  UserData,
-  Workout,
-  InfoCarousel,
-  DisplayScreen,
-  Tag,
-  SystemSettings,
-  ScreenPairingCode,
-  PostTemplate,
-  PhysicalScreen,
-  AppNotification,
-  MediaItem,
-  InstagramStory,
-  SuggestedPost,
-  VideoOperation,
-} from '../types';
-
-import {
-  MOCK_ORGANIZATIONS,
-  MOCK_SYSTEM_OWNER,
-  MOCK_ORG_ADMIN,
-  MOCK_SYSTEM_SETTINGS,
-  MOCK_PAIRING_CODES,
-} from '../data/mockData';
-
-// Export isOffline for use in components (though they should prefer Context/Hooks)
+// Re-export isOffline for use in other components
 export { isOffline };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Strips undefined values to prevent Firestore errors
-function sanitizeData<T>(data: T): T {
-  if (data === undefined || data === null) return data;
-  try {
-    return JSON.parse(JSON.stringify(data));
-  } catch (e) {
-    console.error("Failed to sanitize data:", e);
-    return data;
-  }
-}
-
-// Log warning for offline actions that don't persist
-const offlineWarning = (op: string) => {
-  console.warn(`OFFLINE MODE: "${op}" simulerades men sparas inte permanent.`);
-  return Promise.resolve();
+const offlineWarning = (action: string) => {
+    console.warn(`[OFFLINE] ${action} performed locally (not persisted to cloud).`);
+    return Promise.resolve();
 };
 
-// Type guard
-function isNotificationType(type: any): type is AppNotification['type'] {
-  return ['info', 'warning', 'success', 'suggestion', 'error'].includes(type);
-}
+// --- AUTH ---
 
-// ---------------------------------------------------------------------------
-// Mock Backend Implementation
-// ---------------------------------------------------------------------------
-
-// Registry for mock listeners to simulate realtime updates
-const mockOrgListeners: Record<string, ((snap: any) => void)[]> = {};
-
-const MockBackend = {
-  // --- Auth ---
-  onAuthChange: (cb: (user: firebase.User | null) => void) => {
-     // Simulate a user being logged in immediately in offline mode
-     const mockUser = { uid: 'offline_owner_uid', isAnonymous: false, email: MOCK_SYSTEM_OWNER.email } as firebase.User;
-     cb(mockUser);
-     return () => {};
-  },
-  signIn: (email: string, _password: string) => {
-     if (email === MOCK_SYSTEM_OWNER.email) return Promise.resolve({ uid: MOCK_SYSTEM_OWNER.uid, isAnonymous: false } as firebase.User);
-     if (email === MOCK_ORG_ADMIN.email) return Promise.resolve({ uid: MOCK_ORG_ADMIN.uid, isAnonymous: false } as firebase.User);
-     return Promise.reject(new Error('Offline mode: User not found in mock data.'));
-  },
-  signInAsScreen: () => Promise.resolve({ uid: 'offline_studio_uid', isAnonymous: true } as firebase.User),
-  signOut: () => Promise.resolve(),
-  requestPasswordReset: (email: string) => { console.log(`(Offline) Reset for ${email}`); return Promise.resolve(); },
-  verifyPasswordResetToken: () => Promise.resolve(MOCK_ORG_ADMIN.email),
-  confirmPasswordReset: () => Promise.resolve(),
-  getUserData: (uid: string) => {
-      if (uid === MOCK_SYSTEM_OWNER.uid) return Promise.resolve(MOCK_SYSTEM_OWNER);
-      if (uid === MOCK_ORG_ADMIN.uid) return Promise.resolve(MOCK_ORG_ADMIN);
-      return Promise.resolve(null);
-  },
-
-  // --- Organizations ---
-  getOrganizations: () => Promise.resolve([...MOCK_ORGANIZATIONS]),
-  getOrganizationById: (id: string) => Promise.resolve(MOCK_ORGANIZATIONS.find(o => o.id === id) || null),
-  
-  listenToOrganizationChanges: (id: string, onUpdate: (snap: any) => void) => {
-      if (!mockOrgListeners[id]) mockOrgListeners[id] = [];
-      mockOrgListeners[id].push(onUpdate);
-
-      // Simulate a snapshot object for the UI immediately
-      const org = MOCK_ORGANIZATIONS.find(o => o.id === id);
-      // Clone object to simulate a fresh snapshot
-      const snapshotData = org ? JSON.parse(JSON.stringify(org)) : null;
-      setTimeout(() => onUpdate({ exists: !!org, data: () => snapshotData, id, metadata: { hasPendingWrites: false } }), 0);
-      
-      return () => {
-          mockOrgListeners[id] = mockOrgListeners[id].filter(l => l !== onUpdate);
-      };
-  },
-  
-  createOrganization: (data: any) => {
-      const newOrg = { id: `offline_org_${Date.now()}`, ...data, subdomain: `offline-${Date.now()}`, customPages: [], mediaLibrary: [] };
-      MOCK_ORGANIZATIONS.push(newOrg);
-      return Promise.resolve(newOrg);
-  },
-  
-  updateOrganization: (id: string, data: any) => {
-      const org = MOCK_ORGANIZATIONS.find(o => o.id === id);
-      if (org) {
-          Object.assign(org, sanitizeData(data));
-          // Notify listeners
-          if (mockOrgListeners[id]) {
-              const snapshotData = JSON.parse(JSON.stringify(org));
-              mockOrgListeners[id].forEach(cb => cb({ exists: true, data: () => snapshotData, id, metadata: { hasPendingWrites: false } }));
-          }
-      }
-      return Promise.resolve();
-  },
-  
-  deleteOrganization: (id: string) => {
-      const idx = MOCK_ORGANIZATIONS.findIndex(o => o.id === id);
-      if (idx > -1) MOCK_ORGANIZATIONS.splice(idx, 1);
-      return Promise.resolve();
-  },
-  
-  // --- Screens & Content ---
-  listenToDisplayScreens: (orgId: string, onUpdate: (screens: DisplayScreen[]) => void) => {
-      const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
-      setTimeout(() => onUpdate(org?.displayScreens || []), 0);
-      return () => {};
-  },
-  addDisplayScreen: (orgId: string, screen: DisplayScreen) => {
-      const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
-      if (org) {
-          org.displayScreens = [...(org.displayScreens || []), screen];
-      }
-      return Promise.resolve();
-  },
-  updateDisplayScreen: (orgId: string, screenId: string, data: Partial<DisplayScreen>) => {
-       const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
-       const screen = org?.displayScreens?.find(s => s.id === screenId);
-       if (screen) Object.assign(screen, sanitizeData(data));
-       return Promise.resolve();
-  },
-  deleteDisplayScreen: (orgId: string, screenId: string) => {
-      const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
-      if (org) org.displayScreens = (org.displayScreens || []).filter(s => s.id !== screenId);
-      return Promise.resolve();
-  },
-
-  // --- Media/Storage ---
-  uploadMedia: (file: File) => new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(file);
-  }),
-
-  // --- AI & Automation ---
-  listenToSuggestedPosts: (_orgId: string, onUpdate: (posts: SuggestedPost[]) => void) => {
-      setTimeout(() => onUpdate([]), 0); // Empty mock for now
-      return () => {};
-  },
-  
-  // --- Pairing ---
-  createPairingCode: () => Promise.resolve('ABC123'),
-  listenToPairingCode: (code: string, onUpdate: (data: ScreenPairingCode) => void) => {
-       // Simulate finding a code
-       const mockCode: ScreenPairingCode = { code, status: 'pending', createdAt: new Date() };
-       setTimeout(() => onUpdate(mockCode), 500);
-       return () => {};
-  },
-  pairScreen: (code: string, orgId: string, uid: string, details: any) => {
-       return Promise.resolve({
-           id: `phys_mock_${Date.now()}`,
-           name: details.name,
-           organizationId: orgId,
-           displayScreenId: details.displayScreenId,
-           pairedAt: new Date().toISOString(),
-           pairedByUid: uid
-       });
-  }
+export const onAuthChange = (callback: (user: firebase.User | null) => void) => {
+    if (isOffline || !auth) {
+        // Offline auth handled in AuthContext via simulation
+        return () => {};
+    }
+    return auth.onAuthStateChanged(callback);
 };
 
-// ---------------------------------------------------------------------------
-// Main Service Exports (The "Traffic Controller")
-// ---------------------------------------------------------------------------
+export const signIn = async (email: string, password: string) => {
+    if (isOffline || !auth) {
+        console.log(`[OFFLINE] Signing in as ${email}`);
+        // AuthContext handles the state simulation
+        return Promise.resolve();
+    }
+    await auth.signInWithEmailAndPassword(email, password);
+};
 
-// --- Auth ---
-export const onAuthChange = (cb: (user: firebase.User | null) => void) => 
-    isOffline ? MockBackend.onAuthChange(cb) : auth!.onAuthStateChanged(cb);
+export const signInAsScreen = async () => {
+    if (isOffline || !auth) return Promise.resolve();
+    await auth.signInAnonymously();
+};
 
-export const signIn = (e: string, p: string) => 
-    isOffline ? MockBackend.signIn(e, p) : auth!.signInWithEmailAndPassword(e, p).then(c => c.user as firebase.User);
-
-export const signInAsScreen = () => 
-    isOffline ? MockBackend.signInAsScreen() : auth!.signInAnonymously().then(c => c.user as firebase.User);
-
-export const signOut = () => 
-    isOffline ? MockBackend.signOut() : auth!.signOut();
-
-export const requestPasswordReset = (e: string) => 
-    isOffline ? MockBackend.requestPasswordReset(e) : auth!.sendPasswordResetEmail(e);
-
-export const verifyPasswordResetToken = (t: string) => 
-    isOffline ? MockBackend.verifyPasswordResetToken() : auth!.verifyPasswordResetCode(t);
-
-export const confirmPasswordReset = (t: string, p: string) => 
-    isOffline ? MockBackend.confirmPasswordReset() : auth!.confirmPasswordReset(t, p);
+export const signOut = async () => {
+    if (isOffline || !auth) return Promise.resolve();
+    await auth.signOut();
+};
 
 export const getUserData = async (uid: string): Promise<UserData | null> => {
-    if (isOffline) return MockBackend.getUserData(uid);
-    const snap = await db!.collection('users').doc(uid).get();
-    return snap.exists ? ({ uid, ...snap.data() } as UserData) : null;
+    if (isOffline) {
+        if (uid === MOCK_SYSTEM_OWNER.uid) return MOCK_SYSTEM_OWNER;
+        if (uid === MOCK_ORG_ADMIN.uid) return MOCK_ORG_ADMIN;
+        return null;
+    }
+    if (!db) return null;
+    const doc = await db.collection('users').doc(uid).get();
+    return doc.exists ? (doc.data() as UserData) : null;
 };
 
-// --- Organizations ---
+export const requestPasswordReset = async (email: string) => {
+    if (isOffline || !auth) return offlineWarning('requestPasswordReset');
+    await auth.sendPasswordResetEmail(email);
+};
+
+export const verifyPasswordResetToken = async (oobCode: string): Promise<string> => {
+    if (isOffline || !auth) return 'offline@test.com';
+    return await auth.verifyPasswordResetCode(oobCode);
+};
+
+export const confirmPasswordReset = async (oobCode: string, newPassword: string) => {
+    if (isOffline || !auth) return offlineWarning('confirmPasswordReset');
+    await auth.confirmPasswordReset(oobCode, newPassword);
+};
+
+// --- ORGANIZATIONS ---
+
 export const getOrganizations = async (): Promise<Organization[]> => {
-    if (isOffline) return MockBackend.getOrganizations();
-    const qs = await db!.collection('organizations').get();
-    return qs.docs.map(d => d.data() as Organization);
+    if (isOffline) return MOCK_ORGANIZATIONS;
+    if (!db) return [];
+    const snapshot = await db.collection('organizations').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Organization));
 };
 
-export const getOrganizationById = async (id: string): Promise<Organization | null> => {
-    if (isOffline) return MockBackend.getOrganizationById(id);
-    const snap = await db!.collection('organizations').doc(id).get();
-    return snap.exists ? (snap.data() as Organization) : null;
+export const getOrganizationById = async (orgId: string): Promise<Organization | null> => {
+    if (isOffline) return MOCK_ORGANIZATIONS.find(o => o.id === orgId) || null;
+    if (!db) return null;
+    const doc = await db.collection('organizations').doc(orgId).get();
+    if (!doc.exists) return null;
+    const data = doc.data() as Organization;
+    return { ...data, id: doc.id };
 };
 
-export const listenToOrganizationChanges = (id: string, onUpdate: (snap: any) => void) => {
-    if (isOffline) return MockBackend.listenToOrganizationChanges(id, onUpdate);
-    return db!.collection('organizations').doc(id).onSnapshot(
-        { includeMetadataChanges: true },
-        s => s.exists && onUpdate(s),
-        e => console.error(`Org listener error:`, e)
-    );
+export const createOrganization = async (orgData: Pick<Organization, 'name' | 'email'>): Promise<Organization> => {
+    if (isOffline) {
+        const newOrg: Organization = {
+            id: `org_${Date.now()}`,
+            ...orgData,
+            subdomain: orgData.name.toLowerCase().replace(/\s+/g, '-'),
+            displayScreens: [],
+            mediaLibrary: [],
+            tags: [],
+            postTemplates: [],
+        };
+        MOCK_ORGANIZATIONS.push(newOrg);
+        return newOrg;
+    }
+    if (!db) throw new Error("DB not initialized");
+    const ref = await db.collection('organizations').add({
+        ...orgData,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    return { id: ref.id, ...orgData } as Organization;
 };
 
-export const createOrganization = async (data: Pick<Organization, 'name' | 'email'>): Promise<Organization> => {
-    if (isOffline) return MockBackend.createOrganization(data);
-    
-    const sanitized = data.name.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    const subdomain = `${sanitized}-${Date.now()}`;
-    
-    // Check for uniqueness (online only)
-    const q = db!.collection('organizations').where('subdomain', '==', subdomain);
-    if (!(await q.get()).empty) throw new Error('Kunde inte skapa unik subdomän, försök igen.');
-
-    const newOrg: Organization = {
-        id: `org_${subdomain}`,
-        name: data.name,
-        subdomain,
-        customPages: [],
-        email: data.email,
-        mediaLibrary: [],
-    };
-    await db!.collection('organizations').doc(newOrg.id).set(sanitizeData(newOrg));
-    return newOrg;
+export const updateOrganization = async (orgId: string, data: Partial<Organization>) => {
+    if (isOffline) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org) Object.assign(org, data);
+        // Simulerar event listener
+        const listener = (window as any).mockBackendListener;
+        if (listener && listener.id === orgId) {
+             listener.callback({ exists: true, data: () => org, id: orgId });
+        }
+        return offlineWarning('updateOrganization');
+    }
+    if (!db) return;
+    await db.collection('organizations').doc(orgId).update(data);
 };
 
-export const updateOrganization = async (id: string, data: Partial<Organization>) => {
-    if (isOffline) return MockBackend.updateOrganization(id, data);
-    await db!.collection('organizations').doc(id).update(sanitizeData(data));
+export const deleteOrganization = async (organizationId: string) => {
+    if (isOffline) {
+        const idx = MOCK_ORGANIZATIONS.findIndex(o => o.id === organizationId);
+        if (idx > -1) MOCK_ORGANIZATIONS.splice(idx, 1);
+        return offlineWarning('deleteOrganization');
+    }
+    // Call cloud function or perform complex delete
+    if (!functions) return;
+    const deleteFn = functions.httpsCallable('deleteOrganization');
+    await deleteFn({ organizationId });
 };
 
-export const deleteOrganization = async (organizationId: string): Promise<void> => {
-    if (isOffline) return MockBackend.deleteOrganization(organizationId);
-    const deleteOrgFn = functions!.httpsCallable('deleteOrganization');
-    await deleteOrgFn({ organizationId });
+export const listenToOrganizationChanges = (orgId: string, callback: (snapshot: any) => void) => {
+    if (isOffline) {
+        // Mock simulation of realtime update
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        callback({ exists: !!org, data: () => org, id: orgId });
+        
+        // Store listener globally for mock updates
+        (window as any).mockBackendListener = { id: orgId, callback };
+        
+        return () => {
+             if ((window as any).mockBackendListener?.id === orgId) {
+                 (window as any).mockBackendListener = null;
+             }
+        };
+    }
+    if (!db) return () => {};
+    return db.collection('organizations').doc(orgId).onSnapshot(callback);
 };
 
-// --- Display Screens ---
-export const listenToDisplayScreens = (orgId: string, onUpdate: (screens: DisplayScreen[]) => void) => {
-    if (isOffline) return MockBackend.listenToDisplayScreens(orgId, onUpdate);
-    return db!.collection('organizations').doc(orgId).collection('displayScreens').onSnapshot(
-        snap => onUpdate(snap.docs.map(d => d.data() as DisplayScreen)),
-        err => { console.error("Screens listener error:", err); onUpdate([]); }
-    );
+export const updateOrganizationLogos = async (orgId: string, logos: { light: string; dark: string }) => {
+    await updateOrganization(orgId, { logoUrlLight: logos.light, logoUrlDark: logos.dark });
+};
+
+export const updateOrganizationTags = async (orgId: string, tags: Tag[]) => {
+    await updateOrganization(orgId, { tags });
+};
+
+export const updateOrganizationPostTemplates = async (orgId: string, templates: PostTemplate[]) => {
+    await updateOrganization(orgId, { postTemplates: templates });
+};
+
+// --- DISPLAY SCREENS (SUBCOLLECTION) ---
+
+export const listenToDisplayScreens = (orgId: string, callback: (screens: DisplayScreen[]) => void) => {
+    if (isOffline) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        callback(org?.displayScreens || []);
+        return () => {};
+    }
+    if (!db) return () => {};
+    // Listen to subcollection
+    return db.collection('organizations').doc(orgId).collection('displayScreens').onSnapshot(snapshot => {
+        const screens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DisplayScreen));
+        callback(screens);
+    });
 };
 
 export const addDisplayScreen = async (orgId: string, screen: DisplayScreen) => {
-    if (isOffline) return MockBackend.addDisplayScreen(orgId, screen);
-    await db!.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(sanitizeData(screen));
+    if (isOffline) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org) {
+             if (!org.displayScreens) org.displayScreens = [];
+             org.displayScreens.push(screen);
+        }
+        return offlineWarning('addDisplayScreen');
+    }
+    if (!db) return;
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(screen);
 };
 
 export const updateDisplayScreen = async (orgId: string, screenId: string, data: Partial<DisplayScreen>) => {
-    if (isOffline) return MockBackend.updateDisplayScreen(orgId, screenId, data);
-    await db!.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(sanitizeData(data));
+    if (isOffline) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        const screen = org?.displayScreens?.find(s => s.id === screenId);
+        if (screen) Object.assign(screen, data);
+        return offlineWarning('updateDisplayScreen');
+    }
+    if (!db) return;
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(data);
 };
 
 export const deleteDisplayScreen = async (orgId: string, screenId: string) => {
-    if (isOffline) return MockBackend.deleteDisplayScreen(orgId, screenId);
-    await db!.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).delete();
-};
-
-// --- Specific Updates (Syntactic Sugar) ---
-// These just wrap updateOrganization for specific fields, keeping the API clean
-export const updateOrganizationLogos = (id: string, logos: any) => updateOrganization(id, { logoUrlLight: logos.light, logoUrlDark: logos.dark });
-export const updateOrganizationTags = (id: string, tags: Tag[]) => updateOrganization(id, { tags });
-export const updateOrganizationPostTemplates = (id: string, tpls: PostTemplate[]) => updateOrganization(id, { postTemplates: tpls });
-export const updateOrganizationMediaLibrary = (id: string, lib: MediaItem[]) => updateOrganization(id, { mediaLibrary: lib });
-
-// --- Media Upload ---
-const uploadFileGeneric = (orgId: string, file: File, pathStart: string, onProgress: (n: number) => void): Promise<string> => {
     if (isOffline) {
-        onProgress(100);
-        return MockBackend.uploadMedia(file);
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org && org.displayScreens) {
+            org.displayScreens = org.displayScreens.filter(s => s.id !== screenId);
+        }
+        return offlineWarning('deleteDisplayScreen');
     }
-    return new Promise((resolve, reject) => {
-        const path = `organizations/${orgId}/${pathStart}/${Date.now()}-${file.name}`;
-        const task = storage!.ref(path).put(file);
-        task.on('state_changed', 
-            s => onProgress((s.bytesTransferred / s.totalBytes) * 100),
-            e => reject(e),
-            () => task.snapshot.ref.getDownloadURL().then(resolve).catch(reject)
-        );
-    });
+    if (!db) return;
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).delete();
 };
 
-export const uploadVideo = (orgId: string, file: File, onP: (n: number) => void) => uploadFileGeneric(orgId, file, 'videos', onP);
-export const uploadPostAsset = (orgId: string, postId: string, file: File, onP: (n: number) => void) => uploadFileGeneric(orgId, file, `post_assets/${postId}`, onP);
 
-export const uploadMediaForGallery = (orgId: string, file: File, onP: (n: number) => void) => {
-    const type = file.type.startsWith('video/') ? 'videos' : 'images';
-    return uploadFileGeneric(orgId, file, type, onP).then(url => ({
-        url, type: type === 'videos' ? 'video' : 'image', size: file.size
-    } as const));
-};
+// --- SYSTEM SETTINGS ---
 
-export const deleteMediaFromStorage = async (url: string) => {
-    if (isOffline || !url.includes('firebasestorage')) return offlineWarning('deleteMedia');
-    try { await storage!.refFromURL(url).delete(); } 
-    catch (e: any) { if (e.code !== 'storage/object-not-found') throw e; }
-};
-
-// --- Suggested Posts (AI) ---
-export const listenToSuggestedPosts = (orgId: string, onUpdate: (posts: SuggestedPost[]) => void) => {
-    if (isOffline) return MockBackend.listenToSuggestedPosts(orgId, onUpdate);
-    return db!.collection('organizations').doc(orgId).collection('suggestedPosts')
-        .orderBy('createdAt', 'desc').limit(50)
-        .onSnapshot(
-            s => onUpdate(s.docs.map(d => d.data() as SuggestedPost)),
-            e => { console.error("Suggestions listener error:", e); onUpdate([]); }
-        );
-};
-
-export const getSuggestedPostById = async (orgId: string, suggId: string): Promise<SuggestedPost | null> => {
-    if (isOffline) return null;
-    const snap = await db!.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggId).get();
-    return snap.exists ? (snap.data() as SuggestedPost) : null;
-};
-
-export const updateSuggestedPost = async (orgId: string, suggId: string, data: Partial<SuggestedPost>) => {
-    if (isOffline) return offlineWarning('updateSuggestedPost');
-    await db!.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggId).update(sanitizeData(data));
-};
-
-export const deleteSuggestedPost = async (orgId: string, suggId: string) => {
-    if (isOffline) return offlineWarning('deleteSuggestedPost');
-    await db!.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggId).delete();
-};
-
-// --- System Settings ---
-export const getSystemSettings = async (): Promise<SystemSettings> => {
+export const getSystemSettings = async (): Promise<SystemSettings | null> => {
     if (isOffline) return MOCK_SYSTEM_SETTINGS;
-    const snap = await db!.collection('system_settings').doc('main').get();
-    return snap.exists ? (snap.data() as SystemSettings) : { id: 'main' };
+    if (!db) return null;
+    const doc = await db.collection('system').doc('settings').get();
+    return doc.exists ? (doc.data() as SystemSettings) : null;
 };
 
-export const updateSystemSettings = async (data: Partial<SystemSettings>) => {
-    if (isOffline) { Object.assign(MOCK_SYSTEM_SETTINGS, data); return; }
-    await db!.collection('system_settings').doc('main').set(sanitizeData(data), { merge: true });
+export const updateSystemSettings = async (settings: SystemSettings) => {
+    if (isOffline) {
+        Object.assign(MOCK_SYSTEM_SETTINGS, settings);
+        return offlineWarning('updateSystemSettings');
+    }
+    if (!db) return;
+    await db.collection('system').doc('settings').set(settings, { merge: true });
 };
 
-// --- Notifications ---
-export const createSystemAnnouncement = async (title: string, message: string) => {
-    if (isOffline) return offlineWarning('createAnnouncement');
-    await db!.collection('systemAnnouncements').add({
-        title, message, type: 'info', createdAt: firebaseApp.firestore.FieldValue.serverTimestamp()
-    });
-};
+// --- PAIRING ---
 
-export const listenToSystemAnnouncements = (onUpdate: (items: AppNotification[]) => void) => {
-    if (isOffline) { setTimeout(() => onUpdate([]), 0); return () => {}; }
-    return db!.collection('systemAnnouncements').orderBy('createdAt', 'desc').limit(20).onSnapshot(
-        s => onUpdate(s.docs.map(d => ({ id: `sys-${d.id}`, ...d.data() } as any))),
-        () => onUpdate([])
-    );
-};
-
-export const updateSystemAnnouncement = async (id: string, data: any) => {
-    if (isOffline) return offlineWarning('updateAnnouncement');
-    await db!.collection('systemAnnouncements').doc(id.replace('sys-', '')).update(data);
-};
-
-export const deleteSystemAnnouncement = async (id: string) => {
-    if (isOffline) return offlineWarning('deleteAnnouncement');
-    await db!.collection('systemAnnouncements').doc(id.replace('sys-', '')).delete();
-};
-
-export const listenToUserNotifications = (uid: string, onUpdate: (items: AppNotification[]) => void) => {
-    if (isOffline) { setTimeout(() => onUpdate([]), 0); return () => {}; }
-    return db!.collection('users').doc(uid).collection('notifications').orderBy('createdAt', 'desc').limit(20).onSnapshot(
-        s => onUpdate(s.docs.map(d => ({ id: d.id, ...d.data() } as any))),
-        () => onUpdate([])
-    );
-};
-
-export const markUserNotificationAsRead = async (uid: string, nid: string) => {
-    if (isOffline) return;
-    await db!.collection('users').doc(uid).collection('notifications').doc(nid).update({ isRead: true });
-};
-
-export const markAllUserNotificationsAsRead = async (uid: string, nids: string[]) => {
-    if (isOffline) return;
-    const batch = db!.batch();
-    nids.forEach(id => batch.update(db!.collection('users').doc(uid).collection('notifications').doc(id), { isRead: true }));
-    await batch.commit();
-};
-
-// --- Pairing ---
-export const createPairingCode = async () => {
-    if (isOffline) return MockBackend.createPairingCode();
+export const createPairingCode = async (createdByUid?: string): Promise<string> => {
+    if (isOffline) {
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const existingCodes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        existingCodes.push({
+            code,
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+            createdByUid
+        });
+        localStorage.setItem('mock_pairing_codes', JSON.stringify(existingCodes));
+        return code;
+    }
+    if (!db) throw new Error("DB not initialized");
     
-    const currentUser = auth?.currentUser;
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    await db!.collection('screenPairingCodes').doc(code).set({
+    // Use code as doc ID for easier lookup
+    await db.collection('screenPairingCodes').doc(code).set({
         code,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         status: 'pending',
-        createdAt: firebaseApp.firestore.FieldValue.serverTimestamp(),
-        createdByUid: currentUser ? currentUser.uid : 'anonymous'
+        createdByUid: createdByUid || null
     });
     return code;
 };
 
-export const listenToPairingCode = (code: string, cb: (data: ScreenPairingCode) => void) => {
-    if (isOffline) return MockBackend.listenToPairingCode(code, cb);
-    return db!.collection('screenPairingCodes').doc(code).onSnapshot(s => s.exists && cb(s.data() as ScreenPairingCode));
-};
-
-export const listenToPairingCodeByDeviceId = (deviceId: string, cb: (data: ScreenPairingCode | null) => void) => {
-    if (isOffline) { 
-        const found = MOCK_PAIRING_CODES.find((c: any) => c.pairedDeviceId === deviceId);
-        setTimeout(() => cb(found as any), 0);
-        return () => {};
-    }
-    return db!.collection('screenPairingCodes').where('pairedDeviceId', '==', deviceId).limit(1).onSnapshot(
-        s => cb(s.empty ? null : s.docs[0].data() as ScreenPairingCode)
-    );
-};
-
 export const getPairingCode = async (code: string): Promise<ScreenPairingCode | null> => {
-    if (isOffline) return MOCK_PAIRING_CODES.find(c => c.code === code) || null;
-    const snap = await db!.collection('screenPairingCodes').doc(code).get();
-    return snap.exists ? snap.data() as ScreenPairingCode : null;
+    if (isOffline) {
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        return codes.find((c: any) => c.code === code) || null;
+    }
+    if (!db) return null;
+    const doc = await db.collection('screenPairingCodes').doc(code).get();
+    return doc.exists ? (doc.data() as ScreenPairingCode) : null;
 };
 
-export const pairAndActivateScreen = async (code: string, orgId: string, uid: string, details: {name: string, displayScreenId: string}) => {
-    if (isOffline) return MockBackend.pairScreen(code, orgId, uid, details);
+export const listenToPairingCode = (code: string, callback: (data: ScreenPairingCode) => void) => {
+    if (isOffline) {
+         // Poll localStorage to detect changes from other tabs
+       const check = () => {
+           const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+           const found = codes.find((c: any) => c.code === code);
+           if (found) callback(found);
+       };
+       check();
+       const interval = setInterval(check, 1000);
+       return () => clearInterval(interval);
+    }
+    if (!db) return () => {};
+    return db.collection('screenPairingCodes').doc(code).onSnapshot(doc => {
+        if (doc.exists) callback(doc.data() as ScreenPairingCode);
+    });
+};
+
+export const listenToPairingCodeByDeviceId = (deviceId: string, callback: (data: ScreenPairingCode | null) => void) => {
+    if (isOffline) {
+        // Mock implementation for listening by deviceId
+        const check = () => {
+           const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+           const found = codes.find((c: any) => c.pairedDeviceId === deviceId);
+           callback(found || null);
+       };
+       check();
+       const interval = setInterval(check, 1000);
+       return () => clearInterval(interval);
+    }
+
+    if (!db) return () => {};
+    const query = db.collection('screenPairingCodes').where('pairedDeviceId', '==', deviceId).limit(1);
+    return query.onSnapshot(snapshot => {
+        if (!snapshot.empty) callback(snapshot.docs[0].data() as ScreenPairingCode);
+        else callback(null);
+    });
+};
+
+export const pairAndActivateScreen = async (code: string, orgId: string, uid: string, screenDetails: { name: string, displayScreenId: string }) => {
+    const deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+
+    if (isOffline) {
+        const mockScreen: PhysicalScreen = {
+            id: deviceId,
+            organizationId: orgId,
+            displayScreenId: screenDetails.displayScreenId,
+            name: screenDetails.name,
+            pairedAt: new Date().toISOString(),
+            pairedByUid: uid
+        };
+        
+        // Update Mock Pairing Code in LocalStorage
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        const idx = codes.findIndex((c: any) => c.code === code);
+        if (idx > -1) {
+            codes[idx] = {
+                ...codes[idx],
+                status: 'paired',
+                organizationId: orgId,
+                pairedByUid: uid,
+                pairedAt: new Date().toISOString(),
+                assignedDisplayScreenId: screenDetails.displayScreenId,
+                pairedDeviceId: deviceId
+            };
+            localStorage.setItem('mock_pairing_codes', JSON.stringify(codes));
+        }
+
+        // Update Mock Org
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org) {
+            if (!org.physicalScreens) org.physicalScreens = [];
+            org.physicalScreens.push(mockScreen);
+        }
+        return mockScreen;
+    }
+
+    if (!db) throw new Error("DB not initialized");
     
-    const codeDoc = await db!.collection('screenPairingCodes').doc(code).get();
+    // Get the pairing code first to get createdByUid (the screen's anonymous UID)
+    const codeRef = db.collection('screenPairingCodes').doc(code);
+    const codeDoc = await codeRef.get();
+    if (!codeDoc.exists) throw new Error("Pairing code not found");
+    
     const codeData = codeDoc.data();
     const screenUid = codeData?.createdByUid;
 
-    const deviceId = `phys_${Date.now()}`;
+    const batch = db.batch();
+    
+    // 1. Update Pairing Code
+    batch.update(codeRef, {
+        status: 'paired',
+        organizationId: orgId,
+        pairedByUid: uid,
+        pairedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        assignedDisplayScreenId: screenDetails.displayScreenId,
+        pairedDeviceId: deviceId
+    });
+    
+    // 2. Create Physical Screen (returned for UI, actually saved via org update usually, but here we simulate return)
     const newScreen: PhysicalScreen = {
         id: deviceId,
-        name: details.name,
         organizationId: orgId,
-        displayScreenId: details.displayScreenId,
+        displayScreenId: screenDetails.displayScreenId,
+        name: screenDetails.name,
         pairedAt: new Date().toISOString(),
-        pairedByUid: uid,
+        pairedByUid: uid
     };
+    
+    // 3. Create Session
+    const sessionRef = db.collection('screenSessions').doc(deviceId);
+    const sessionData: any = {
+        organizationId: orgId,
+        displayScreenId: screenDetails.displayScreenId,
+        lastHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+        status: 'online'
+    };
+    // IMPORTANT: Link the session to the screen's anonymous UID so security rules allow reading
+    if (screenUid) {
+        sessionData.screenUid = screenUid;
+    }
 
-    const batch = db!.batch();
-    batch.update(db!.collection('screenPairingCodes').doc(code), {
-        status: 'paired', organizationId: orgId, assignedDisplayScreenId: details.displayScreenId,
-        pairedByUid: uid, pairedAt: firebaseApp.firestore.FieldValue.serverTimestamp(), pairedDeviceId: deviceId
-    });
-    batch.update(db!.collection('organizations').doc(orgId), {
-        physicalScreens: firebaseApp.firestore.FieldValue.arrayUnion(sanitizeData(newScreen))
-    });
-    batch.set(db!.collection('screenSessions').doc(deviceId), {
-        deviceId, 
-        organizationId: orgId, 
-        displayScreenId: details.displayScreenId, 
-        forceDisconnect: false, 
-        updatedAt: firebaseApp.firestore.FieldValue.serverTimestamp(),
-        screenUid: screenUid // Important for security rules
-    }, { merge: true });
+    batch.set(sessionRef, sessionData);
 
     await batch.commit();
     return newScreen;
@@ -507,75 +404,221 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
 export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
     if (isOffline) {
         const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
-        if (org) org.physicalScreens = (org.physicalScreens || []).filter(s => s.id !== screenId);
-        return offlineWarning('unpairScreen');
+        if (org && org.physicalScreens) {
+            org.physicalScreens = org.physicalScreens.filter(s => s.id !== screenId);
+        }
+        return offlineWarning('unpairPhysicalScreen');
     }
-    // Complex transaction logic omitted for brevity in this refactor step, relying on Cloud Function or simple batch in real app
-    // For now, simple remove from org array
-    await db!.collection('organizations').doc(orgId).update({
-        physicalScreens: firebaseApp.firestore.FieldValue.arrayRemove({ id: screenId } as any) // Simplified, usually needs full object match or read-modify-write
+    if (!db) return;
+
+    // 1. Find the pairing code document associated with this screen/device
+    const codeQuery = await db.collection('screenPairingCodes')
+        .where('pairedDeviceId', '==', screenId)
+        .get();
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const sessionRef = db.collection('screenSessions').doc(screenId);
+
+    await db.runTransaction(async (transaction) => {
+        const orgDoc = await transaction.get(orgRef);
+        if (!orgDoc.exists) throw new Error("Organization not found");
+
+        const orgData = orgDoc.data() as Organization;
+        const currentScreens = orgData.physicalScreens || [];
+        const updatedScreens = currentScreens.filter(s => s.id !== screenId);
+
+        // Only update if there was actually a change to save writes
+        if (currentScreens.length !== updatedScreens.length) {
+            transaction.update(orgRef, { physicalScreens: updatedScreens });
+        }
+
+        // Delete the session (disconnects the screen)
+        transaction.delete(sessionRef);
+
+        // Delete the pairing code(s) associated with this device so it's no longer "paired"
+        codeQuery.forEach(doc => {
+            transaction.delete(doc.ref);
+        });
     });
-    await db!.collection('screenSessions').doc(screenId).delete();
 };
 
-export const listenToScreenSession = (deviceId: string, cb: (doc: any) => void) => {
-    if (isOffline) { setTimeout(() => cb({ deviceId }), 0); return () => {}; }
-    return db!.collection('screenSessions').doc(deviceId).onSnapshot(
-        s => cb(s.exists ? s.data() : null),
+export const listenToScreenSession = (deviceId: string, callback: (data: any) => void) => {
+    if (isOffline || !db) return () => {};
+    return db.collection('screenSessions').doc(deviceId).onSnapshot(
+        doc => {
+            callback(doc.exists ? doc.data() : null);
+        },
         error => {
             console.error("Session listener error:", error);
             if (error.code === 'permission-denied') {
-                console.error("Permission denied for screen session. Check createdByUid linkage.");
+                console.error("Permission denied reading session. Check Firestore rules and screenUid linking.");
             }
-            cb(null);
+            callback(null);
         }
     );
 };
 
-// --- Cloud Functions Wrappers ---
-export const callTestFunction = async () => {
-    if (isOffline) return { message: 'Offline test response' };
-    return (await functions!.httpsCallable('testFunction')()).data;
+// --- ANNOUNCEMENTS & NOTIFICATIONS ---
+
+export const listenToSystemAnnouncements = (callback: (announcements: AppNotification[]) => void) => {
+    if (isOffline) return () => {}; // Mock if needed
+    if (!db) return () => {};
+    return db.collection('systemAnnouncements').orderBy('createdAt', 'desc').onSnapshot(snap => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification));
+        callback(data);
+    });
 };
 
-export const getVoiceServerConfig = async () => {
+export const createSystemAnnouncement = async (title: string, message: string) => {
+    if (isOffline) return offlineWarning('createAnnouncement');
+    if (!db) return;
+    await db.collection('systemAnnouncements').add({
+        title,
+        message,
+        type: 'info',
+        createdAt: new Date().toISOString(),
+        isRead: false
+    });
+};
+
+export const updateSystemAnnouncement = async (id: string, data: { title: string; message: string }) => {
+    if (isOffline) return offlineWarning('updateAnnouncement');
+    if (!db) return;
+    await db.collection('systemAnnouncements').doc(id).update(data);
+};
+
+export const deleteSystemAnnouncement = async (id: string) => {
+    if (isOffline) return offlineWarning('deleteAnnouncement');
+    if (!db) return;
+    await db.collection('systemAnnouncements').doc(id).delete();
+};
+
+export const listenToUserNotifications = (uid: string, callback: (notifications: AppNotification[]) => void) => {
+    if (isOffline || !db) return () => {};
+    return db.collection('users').doc(uid).collection('notifications').orderBy('createdAt', 'desc').onSnapshot(snap => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification));
+        callback(data);
+    });
+};
+
+export const markUserNotificationAsRead = async (uid: string, notificationId: string) => {
+    if (isOffline || !db) return;
+    await db.collection('users').doc(uid).collection('notifications').doc(notificationId).update({ isRead: true });
+};
+
+export const markAllUserNotificationsAsRead = async (uid: string, notificationIds: string[]) => {
+    if (isOffline || !db) return;
+    const batch = db.batch();
+    notificationIds.forEach(id => {
+        const ref = db.collection('users').doc(uid).collection('notifications').doc(id);
+        batch.update(ref, { isRead: true });
+    });
+    await batch.commit();
+};
+
+// --- ASSETS & MEDIA ---
+
+export const uploadPostAsset = async (orgId: string, postId: string, file: File, onProgress: (p: number) => void): Promise<string> => {
+    if (isOffline) return URL.createObjectURL(file);
+    if (!storage) throw new Error("Storage not initialized");
+    
+    const ref = storage.ref().child(`organizations/${orgId}/post_assets/${postId}/${file.name}`);
+    const uploadTask = ref.put(file);
+    
+    return new Promise((resolve, reject) => {
+        uploadTask.on('state_changed', 
+            (snapshot) => onProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
+            (error) => reject(error),
+            async () => {
+                const url = await uploadTask.snapshot.ref.getDownloadURL();
+                resolve(url);
+            }
+        );
+    });
+};
+
+export const uploadMediaForGallery = async (orgId: string, file: File, onProgress: (p: number) => void): Promise<{ url: string }> => {
+    if (isOffline) return { url: URL.createObjectURL(file) };
+    if (!storage) throw new Error("Storage not initialized");
+
+    const ref = storage.ref().child(`organizations/${orgId}/gallery/${Date.now()}_${file.name}`);
+    const uploadTask = ref.put(file);
+    
+    return new Promise((resolve, reject) => {
+        uploadTask.on('state_changed', 
+            (snapshot) => onProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
+            (error) => reject(error),
+            async () => {
+                const url = await uploadTask.snapshot.ref.getDownloadURL();
+                resolve({ url });
+            }
+        );
+    });
+};
+
+// --- SUGGESTIONS & AI ---
+
+export const listenToSuggestedPosts = (orgId: string, callback: (posts: SuggestedPost[]) => void) => {
+    if (isOffline) return () => {}; // Mock if needed
+    if (!db) return () => {};
+    return db.collection('organizations').doc(orgId).collection('suggestedPosts').onSnapshot(snap => {
+        const posts = snap.docs.map(d => ({ id: d.id, ...d.data() } as SuggestedPost));
+        callback(posts);
+    });
+};
+
+export const getSuggestedPostById = async (orgId: string, suggestionId: string): Promise<SuggestedPost | null> => {
+    if (isOffline || !db) return null;
+    const doc = await db.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggestionId).get();
+    return doc.exists ? ({ id: doc.id, ...doc.data() } as SuggestedPost) : null;
+};
+
+export const updateSuggestedPost = async (orgId: string, suggestionId: string, data: Partial<SuggestedPost>) => {
+    if (isOffline) return offlineWarning('updateSuggestedPost');
+    if (!db) return;
+    await db.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggestionId).update(data);
+};
+
+export const listenToInstagramStories = (orgId: string, callback: (stories: InstagramStory[]) => void) => {
+    if (isOffline) return () => {};
+    if (!db) return () => {};
+    return db.collection('organizations').doc(orgId).collection('instagramStories').orderBy('timestamp', 'desc').onSnapshot(snap => {
+         const stories = snap.docs.map(d => ({ id: d.id, ...d.data() } as InstagramStory));
+         callback(stories);
+    });
+};
+
+export const listenToVideoOperationForPost = (orgId: string, postId: string, callback: (op: VideoOperation | null) => void) => {
+    if (isOffline || !db) return () => {};
+    return db.collection('videoOperations').where('orgId', '==', orgId).where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1)
+        .onSnapshot(snap => {
+            if (!snap.empty) callback({ id: snap.docs[0].id, ...snap.docs[0].data() } as VideoOperation);
+            else callback(null);
+        });
+};
+
+// --- CLOUD FUNCTIONS ---
+
+export const getVoiceServerConfig = async (): Promise<{ url: string }> => {
     if (isOffline) return { url: 'ws://localhost:8080' };
-    return (await functions!.httpsCallable('getVoiceServerConfig')()).data as { url: string };
+    if (!functions) throw new Error("Functions not initialized");
+    const fn = functions.httpsCallable('getVoiceServerConfig');
+    const result = await fn();
+    return result.data as { url: string };
+};
+
+export const callTestFunction = async (): Promise<any> => {
+    if (isOffline) return { message: 'Offline test' };
+    if (!functions) return;
+    const fn = functions.httpsCallable('testFunction');
+    const result = await fn();
+    return result.data;
 };
 
 export const runOrgCollectionsMigration = async (payload: any) => {
-    if (isOffline) return { message: 'Offline migration simulated.' };
-    return (await functions!.httpsCallable('migrateOrgCollections')(payload)).data;
-};
-
-export const inviteUser = async (orgId: string, email: string) => {
-    if (isOffline) return { success: true, message: 'Offline invite simulated.' };
-    return (await functions!.httpsCallable('inviteUser')({ organizationId: orgId, email })).data as any;
-};
-
-export const listenToVideoOperationForPost = (orgId: string, postId: string, onUpdate: (op: VideoOperation | null) => void) => {
-    if (isOffline) return () => {};
-    return db!.collection('videoOperations')
-        .where('orgId', '==', orgId).where('postId', '==', postId)
-        .orderBy('createdAt', 'desc').limit(1)
-        .onSnapshot(s => onUpdate(s.empty ? null : { id: s.docs[0].id, ...s.docs[0].data() } as VideoOperation));
-};
-
-// --- Misc ---
-export const listenToInstagramStories = (orgId: string, onUpdate: (stories: InstagramStory[]) => void) => {
-    if (isOffline) { setTimeout(() => onUpdate([]), 0); return () => {}; }
-    return db!.collection('organizations').doc(orgId).collection('instagramStories').orderBy('timestamp', 'desc').onSnapshot(
-        s => onUpdate(s.docs.map(d => d.data() as InstagramStory))
-    );
-};
-
-export const getAdminsForOrganization = async (orgId: string): Promise<UserData[]> => {
-    if (isOffline) return [MOCK_ORG_ADMIN];
-    const qs = await db!.collection('users').where('organizationId', '==', orgId).where('role', '==', 'organizationadmin').get();
-    return qs.docs.map(d => ({ uid: d.id, ...d.data() } as UserData));
-};
-
-export const setAdminRole = async (uid: string, role: 'superadmin' | 'admin') => {
-    if (isOffline) return offlineWarning('setAdminRole');
-    await db!.collection('users').doc(uid).update({ adminRole: role });
+    if (isOffline) return { message: 'Offline migration simulated' };
+    if (!functions) return;
+    const fn = functions.httpsCallable('migrateOrgCollections');
+    const result = await fn(payload);
+    return result.data;
 };
