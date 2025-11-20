@@ -611,7 +611,15 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
 
 export const listenToScreenSession = (deviceId: string, cb: (doc: any) => void) => {
     if (isOffline) { setTimeout(() => cb({ deviceId }), 0); return () => {}; }
-    return db!.collection('screenSessions').doc(deviceId).onSnapshot(s => cb(s.exists ? s.data() : null));
+    return db!.collection('screenSessions').doc(deviceId).onSnapshot(
+        s => cb(s.exists ? s.data() : null),
+        e => { 
+            console.error("Session listener error:", e); 
+            // In case of permission denied or other errors, we usually don't want to instantly disconnect
+            // unless we are sure. However, the lack of callback might hang the loading state.
+            // For safety, we log it. The consumer hook handles the 'grace period'.
+        }
+    );
 };
 
 // --- Cloud Functions Wrappers ---

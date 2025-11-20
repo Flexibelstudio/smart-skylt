@@ -110,8 +110,9 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
 // --- Session ---
 
 export function useScreenSessionListener(deviceId: string | null, isScreenMode: boolean, onForceDisconnect: () => void) {
-    // Grace period state: true initially, turns false after 5 seconds.
+    // Grace period state: true initially, turns false after 30 seconds.
     // This prevents the app from kicking the user out immediately if the session doc takes a moment to load.
+    // Extended to 30s to be extra safe against slow permission propagation or network lag.
     const [isGracePeriod, setIsGracePeriod] = useState(true);
 
     useEffect(() => {
@@ -119,7 +120,7 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
         
         const timer = setTimeout(() => {
             setIsGracePeriod(false);
-        }, 5000); // 5 seconds grace period
+        }, 30000); // 30 seconds grace period
 
         return () => clearTimeout(timer);
     }, [isScreenMode]);
