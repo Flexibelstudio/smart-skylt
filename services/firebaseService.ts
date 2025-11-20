@@ -429,11 +429,20 @@ export const markAllUserNotificationsAsRead = async (uid: string, nids: string[]
 };
 
 // --- Pairing ---
-export const createPairingCode = () => isOffline ? MockBackend.createPairingCode() : db!.collection('screenPairingCodes').add({
-    code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-    status: 'pending',
-    createdAt: firebaseApp.firestore.FieldValue.serverTimestamp()
-}).then(doc => doc.get().then(s => s.data()?.code));
+export const createPairingCode = async () => {
+    if (isOffline) return MockBackend.createPairingCode();
+    
+    const currentUser = auth?.currentUser;
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    await db!.collection('screenPairingCodes').doc(code).set({
+        code,
+        status: 'pending',
+        createdAt: firebaseApp.firestore.FieldValue.serverTimestamp(),
+        createdByUid: currentUser ? currentUser.uid : 'anonymous'
+    });
+    return code;
+};
 
 export const listenToPairingCode = (code: string, cb: (data: ScreenPairingCode) => void) => {
     if (isOffline) return MockBackend.listenToPairingCode(code, cb);
@@ -460,6 +469,10 @@ export const getPairingCode = async (code: string): Promise<ScreenPairingCode | 
 export const pairAndActivateScreen = async (code: string, orgId: string, uid: string, details: {name: string, displayScreenId: string}) => {
     if (isOffline) return MockBackend.pairScreen(code, orgId, uid, details);
     
+    const codeDoc = await db!.collection('screenPairingCodes').doc(code).get();
+    const codeData = codeDoc.data();
+    const screenUid = codeData?.createdByUid;
+
     const deviceId = `phys_${Date.now()}`;
     const newScreen: PhysicalScreen = {
         id: deviceId,
@@ -479,7 +492,12 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
         physicalScreens: firebaseApp.firestore.FieldValue.arrayUnion(sanitizeData(newScreen))
     });
     batch.set(db!.collection('screenSessions').doc(deviceId), {
-        deviceId, organizationId: orgId, displayScreenId: details.displayScreenId, forceDisconnect: false, updatedAt: firebaseApp.firestore.FieldValue.serverTimestamp()
+        deviceId, 
+        organizationId: orgId, 
+        displayScreenId: details.displayScreenId, 
+        forceDisconnect: false, 
+        updatedAt: firebaseApp.firestore.FieldValue.serverTimestamp(),
+        screenUid: screenUid // Important for security rules
     }, { merge: true });
 
     await batch.commit();
@@ -502,7 +520,16 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
 
 export const listenToScreenSession = (deviceId: string, cb: (doc: any) => void) => {
     if (isOffline) { setTimeout(() => cb({ deviceId }), 0); return () => {}; }
-    return db!.collection('screenSessions').doc(deviceId).onSnapshot(s => cb(s.exists ? s.data() : null));
+    return db!.collection('screenSessions').doc(deviceId).onSnapshot(
+        s => cb(s.exists ? s.data() : null),
+        error => {
+            console.error("Session listener error:", error);
+            if (error.code === 'permission-denied') {
+                console.error("Permission denied for screen session. Check createdByUid linkage.");
+            }
+            cb(null);
+        }
+    );
 };
 
 // --- Cloud Functions Wrappers ---

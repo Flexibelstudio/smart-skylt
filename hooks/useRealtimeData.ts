@@ -113,13 +113,45 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
     useEffect(() => {
         if (!isScreenMode || !deviceId) return;
 
-        const unsubscribe = listenToScreenSession(deviceId, (doc) => {
-            if (!doc || doc.forceDisconnect) {
-                console.log('[Session] forceDisconnect eller saknas → reset');
+        let gracePeriodActive = true;
+        let currentDoc: any = undefined; // undefined = haven't heard from DB yet
+
+        // Check if we should disconnect based on current state
+        const checkDisconnect = () => {
+            // 1. If we have a doc and it explicitly says disconnect
+            if (currentDoc && currentDoc.forceDisconnect) {
+                console.log('[Session] Force disconnect signal received.');
+                onForceDisconnect();
+                return;
+            }
+            
+            // 2. If we have received data (currentDoc is null or object), 
+            // but it is null (missing), AND grace period is over.
+            if (currentDoc === null && !gracePeriodActive) {
+                console.log('[Session] Session missing after grace period. Resetting.');
                 onForceDisconnect();
             }
+        };
+
+        // Give the system 30 seconds to sync permissions/data before killing the session
+        const graceTimer = setTimeout(() => {
+            console.log('[Session] Grace period ended.');
+            gracePeriodActive = false;
+            checkDisconnect();
+        }, 30000);
+
+        const unsubscribe = listenToScreenSession(deviceId, (doc) => {
+            currentDoc = doc;
+            // If doc is missing, we only log for now if grace period is active
+            if (!doc && gracePeriodActive) {
+                console.log('[Session] Session document missing, waiting (grace period active)...');
+            }
+            checkDisconnect();
         });
 
-        return () => unsubscribe();
+        return () => {
+            clearTimeout(graceTimer);
+            unsubscribe();
+        };
     }, [deviceId, isScreenMode, onForceDisconnect]);
 }
