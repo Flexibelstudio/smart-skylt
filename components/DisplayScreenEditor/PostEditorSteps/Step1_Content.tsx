@@ -206,7 +206,14 @@ export const Step1_Content: React.FC<{
             ...newState,
             internalTitle: idea.headline || 'AI-förslag',
             aiImagePrompt: idea.visual.imageIdea,
-            structuredImagePrompt: idea.visual,
+            structuredImagePrompt: {
+                subject: idea.visual.imageIdea,
+                style: idea.visual.style,
+                colorTone: idea.visual.colorPalette,
+                mood: idea.visual.mood,
+                composition: idea.visual.composition,
+                lighting: idea.visual.lighting,
+            },
         });
         updateHistory(newState);
         showToast({ message: "Text uppdaterad med AI-förslag.", type: 'info' });
