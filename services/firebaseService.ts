@@ -222,8 +222,13 @@ export const deleteDisplayScreen = async (orgId: string, screenId: string) => {
 export const getSystemSettings = async (): Promise<SystemSettings | null> => {
     if (isOffline) return MOCK_SYSTEM_SETTINGS;
     if (!db) return null;
-    const doc = await db.collection('system').doc('settings').get();
-    return doc.exists ? (doc.data() as SystemSettings) : null;
+    try {
+        const doc = await db.collection('system').doc('settings').get();
+        return doc.exists ? (doc.data() as SystemSettings) : null;
+    } catch (error) {
+        console.warn("Failed to fetch system settings (permissions?), using default fallback.", error);
+        return MOCK_SYSTEM_SETTINGS;
+    }
 };
 
 export const updateSystemSettings = async (settings: SystemSettings) => {
