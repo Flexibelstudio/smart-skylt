@@ -219,8 +219,14 @@ async function getCachedAIResponse<T>(
 async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
+    
+    // Handle 429 Resource Exhausted specifically
+    if (error.status === 429 || (error.message && error.message.includes('429'))) {
+        throw new Error("AI-tjänsten har högt tryck just nu. Vänta en liten stund och försök igen.");
+    }
+
     const errorString =
       error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
     if (errorString.includes("safety")) {
@@ -272,7 +278,7 @@ export async function initializeMarketingCoachChat(
   };
 
   const chat = ai.chats.create({
-    model: "gemini-3-pro-preview", // Keep Pro for the chat/coach, it needs reasoning.
+    model: "gemini-1.5-pro", // Downgrade to stable 1.5 Pro to avoid 429s
     config: {
       systemInstruction,
       tools: [{ functionDeclarations: [createDisplayPost] }],
@@ -304,9 +310,9 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
   handleAIError(async () => {
     const ai = ensureAiInitialized();
     const prompt = Prompts.getGeneratePageContentPrompt(userPrompt);
-    // Pro is good for generating long content
+    // Stable Pro
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro",
       contents: prompt,
     });
     return response.text ?? "";
@@ -320,7 +326,7 @@ export const generateDisplayPostContent = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getDisplayPostContentPrompt(userPrompt, organizationName);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -362,7 +368,7 @@ export const generateSkyltIdeas = (
     const ai = ensureAiInitialized();
     const fullPrompt = Prompts.getSkyltIdeasPrompt(prompt, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Changed to Flash for speed in the interactive UI
+      model: "gemini-2.5-flash", 
       contents: fullPrompt,
       config: {
         responseMimeType: "application/json",
@@ -381,7 +387,7 @@ export const generateCampaignIdeasForEvent = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getCampaignIdeasForEventPrompt(eventName, daysUntil, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro for strategic campaign planning
+      model: "gemini-1.5-pro", // Stable Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -399,7 +405,7 @@ export const generateSeasonalCampaignIdeas = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getSeasonalCampaignIdeasPrompt(organization, planningContext);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro for strategic campaign planning
+      model: "gemini-1.5-pro", // Stable Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -434,7 +440,7 @@ export const generateCompletePost = (
     }
 
     const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro here for good Art Direction prompts
+      model: "gemini-1.5-pro", // Stable Pro
       contents: { parts },
       config: {
         responseMimeType: "application/json",
@@ -476,7 +482,7 @@ export const generateFollowUpPost = (
     const prompt = Prompts.getFollowUpPostPrompt(originalPost, organization);
 
     const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro for context awareness
+      model: "gemini-1.5-pro", // Stable Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -718,6 +724,7 @@ export const generateVideoFromPrompt = (
     const model = "veo-3.1-fast-generate-preview";
     const apiPrompt = Prompts.getGenerateVideoPrompt(prompt);
 
+    // 1. Start the generation on the client to get the operation name quickly
     let operation = await ai.models.generateVideos({
       model,
       prompt: apiPrompt,
@@ -725,12 +732,14 @@ export const generateVideoFromPrompt = (
       config: { numberOfVideos: 1 },
     });
     
-    const operationId = operation.name.split('/').pop();
+    // 2. Extract the operation ID
+    const operationName = operation.name; // e.g., "operations/12345..."
+    const operationId = operationName.split('/').pop();
     if (!operationId) {
       throw new Error("Kunde inte hämta operation ID från Gemini.");
     }
     
-    // Log operation to backend via Cloud Function
+    // 3. Log operation to backend via Cloud Function for polling and processing
     const logFn = functions.httpsCallable('logVideoGeneration');
     await logFn({
         operationId,
@@ -761,7 +770,7 @@ export const generateEventReminderText = (
       const prompt = Prompts.getEventReminderPrompt(event, daysUntil, organization, hasExistingCampaign);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview", // Keep Pro for clever copy
+        model: "gemini-1.5-pro", // Stable Pro
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -807,7 +816,7 @@ export const updateStyleProfileSummary = (
     const prompt = Prompts.getStyleProfileSummaryPrompt(organization, postSummaries);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Pro for analysis
+      model: "gemini-1.5-pro", // Pro for analysis
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -839,7 +848,7 @@ export const generateRhythmReminderText = (
       const prompt = Prompts.getRhythmReminderPrompt(organization, analysis.context);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-1.5-pro",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -898,7 +907,7 @@ export const getSeasonalSuggestion = (
       const prompt = Prompts.getSeasonalSuggestionPrompt(organization, relevantPosts, now.toLocaleDateString("sv-SE"));
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-1.5-pro",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -926,7 +935,7 @@ export const generateDnaAnalysis = (
     const prompt = Prompts.getDnaAnalysisPrompt(organization);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1002,7 +1011,7 @@ export const analyzePostDiff = (
     const prompt = Prompts.getPostDiffPrompt(suggestionSummary, finalSummary);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1040,7 +1049,7 @@ export async function summarizeLearnLogForOrg(orgId: string) {
   const prompt = Prompts.getRollupPrompt(learnLog, org.styleProfile?.summary);
   const ai = ensureAiInitialized();
   const result = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: "gemini-1.5-pro",
     contents: prompt,
   });
 
