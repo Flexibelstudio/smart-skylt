@@ -167,7 +167,8 @@ function safeParseJSON<T>(text: string, schema: ZodSchema<T>): T {
     }
     
     const parsed = JSON.parse(jsonString);
-    return schema.parse(parsed);
+    // Explicitly cast the result of schema.parse to T to satisfy TypeScript
+    return schema.parse(parsed) as T;
   } catch (error) {
     console.error("JSON Parsing/Validation Failed:", error);
     console.error("Raw Text:", text);
@@ -223,6 +224,12 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
     console.error("Gemini API Error:", error);
     const errorString =
       error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
+    
+    // Hantera Rate Limiting (429 Resource Exhausted)
+    if (errorString.includes("429") || errorString.includes("resource_exhausted")) {
+      throw new Error("AI-tjänsten har högt tryck just nu. Vänta en liten stund och försök igen.");
+    }
+
     if (errorString.includes("safety")) {
       throw new Error("Försöket blockerades av säkerhetsskäl. Prova en annan text.");
     }
@@ -272,7 +279,7 @@ export async function initializeMarketingCoachChat(
   };
 
   const chat = ai.chats.create({
-    model: "gemini-3-pro-preview", // Keep Pro for the chat/coach, it needs reasoning.
+    model: "gemini-1.5-pro", // Switched to 1.5 Pro for stability
     config: {
       systemInstruction,
       tools: [{ functionDeclarations: [createDisplayPost] }],
@@ -304,9 +311,8 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
   handleAIError(async () => {
     const ai = ensureAiInitialized();
     const prompt = Prompts.getGeneratePageContentPrompt(userPrompt);
-    // Pro is good for generating long content
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
     });
     return response.text ?? "";
@@ -320,7 +326,7 @@ export const generateDisplayPostContent = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getDisplayPostContentPrompt(userPrompt, organizationName);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -362,7 +368,7 @@ export const generateSkyltIdeas = (
     const ai = ensureAiInitialized();
     const fullPrompt = Prompts.getSkyltIdeasPrompt(prompt, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Changed to Flash for speed in the interactive UI
+      model: "gemini-2.5-flash", // Keep Flash for speed in interactive UI
       contents: fullPrompt,
       config: {
         responseMimeType: "application/json",
@@ -381,7 +387,7 @@ export const generateCampaignIdeasForEvent = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getCampaignIdeasForEventPrompt(eventName, daysUntil, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro for strategic campaign planning
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -399,7 +405,7 @@ export const generateSeasonalCampaignIdeas = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getSeasonalCampaignIdeasPrompt(organization, planningContext);
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro for strategic campaign planning
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -434,7 +440,7 @@ export const generateCompletePost = (
     }
 
     const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro here for good Art Direction prompts
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: { parts },
       config: {
         responseMimeType: "application/json",
@@ -446,7 +452,7 @@ export const generateCompletePost = (
 
     if (postData.layout !== "text-only" && (postData as any).imagePrompt) {
       const imageResponse = await ai.models.generateImages({
-        model: "imagen-4.0-generate-001", // Explicitly use Imagen 3/4
+        model: "imagen-4.0-generate-001", // Keep Imagen 4
         prompt: (postData as any).imagePrompt,
         config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
       });
@@ -476,7 +482,7 @@ export const generateFollowUpPost = (
     const prompt = Prompts.getFollowUpPostPrompt(originalPost, organization);
 
     const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro for context awareness
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -514,7 +520,7 @@ export const generateHeadlineSuggestions = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getHeadlineSuggestionsPrompt(body, existingHeadlines);
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Changed to Flash for speed
+      model: "gemini-2.5-flash", // Keep Flash
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -537,7 +543,7 @@ export const generateBodySuggestions = (
     const ai = ensureAiInitialized();
     const prompt = Prompts.getBodySuggestionsPrompt(headline, existingBodies);
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Changed to Flash for speed
+      model: "gemini-2.5-flash", // Keep Flash
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -580,7 +586,7 @@ export const refineDisplayPostContent = (
     const prompt = Prompts.getRefineContentPrompt(content, commandDescription);
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Changed to Flash for speed
+      model: "gemini-2.5-flash", // Keep Flash
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -606,7 +612,7 @@ export const refineTextWithCustomPrompt = (
     const prompt = Prompts.getRefineWithCustomPromptPrompt(content, customPrompt);
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Changed to Flash for speed
+      model: "gemini-2.5-flash", // Keep Flash
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -631,7 +637,7 @@ export const generateDisplayPostImage = (
     const ai = ensureAiInitialized();
     const apiPrompt = Prompts.getGenerateImagePrompt(prompt);
     const response = await ai.models.generateImages({
-      model: "imagen-4.0-generate-001", // Keep Imagen 4 for high quality
+      model: "imagen-4.0-generate-001", // Keep Imagen 4
       prompt: apiPrompt,
       config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
     });
@@ -761,7 +767,7 @@ export const generateEventReminderText = (
       const prompt = Prompts.getEventReminderPrompt(event, daysUntil, organization, hasExistingCampaign);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview", // Keep Pro for clever copy
+        model: "gemini-1.5-pro", // Switched to 1.5 Pro
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -807,7 +813,7 @@ export const updateStyleProfileSummary = (
     const prompt = Prompts.getStyleProfileSummaryPrompt(organization, postSummaries);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Pro for analysis
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -839,7 +845,7 @@ export const generateRhythmReminderText = (
       const prompt = Prompts.getRhythmReminderPrompt(organization, analysis.context);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-1.5-pro", // Switched to 1.5 Pro
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -898,7 +904,7 @@ export const getSeasonalSuggestion = (
       const prompt = Prompts.getSeasonalSuggestionPrompt(organization, relevantPosts, now.toLocaleDateString("sv-SE"));
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-1.5-pro", // Switched to 1.5 Pro
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -926,7 +932,7 @@ export const generateDnaAnalysis = (
     const prompt = Prompts.getDnaAnalysisPrompt(organization);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1002,7 +1008,7 @@ export const analyzePostDiff = (
     const prompt = Prompts.getPostDiffPrompt(suggestionSummary, finalSummary);
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-pro", // Switched to 1.5 Pro
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1040,7 +1046,7 @@ export async function summarizeLearnLogForOrg(orgId: string) {
   const prompt = Prompts.getRollupPrompt(learnLog, org.styleProfile?.summary);
   const ai = ensureAiInitialized();
   const result = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: "gemini-1.5-pro", // Switched to 1.5 Pro
     contents: prompt,
   });
 
