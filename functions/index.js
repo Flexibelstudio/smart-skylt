@@ -314,20 +314,23 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
     const opName = docData.fullOperationName || `operations/${operationId}`;
     console.log(`Polling operation with name: ${opName}`);
 
-    // IMPORTANT: The SDK expects the request object to contain the name.
-    // We must recreate the request object on every loop iteration.
-    // Re-using a response object as a request object can cause issues with some SDK versions.
-    let operation = { name: opName };
+    // Use aggressive polling (2s) to catch completion quickly.
+    const POLL_INTERVAL = 2000; 
+    const MAX_RETRIES = 450; // 450 * 2s = 900s = 15 minutes
     
-    const maxRetries = 30; // 30 * 10s = 5 minutes
     let retries = 0;
     
-    while (retries < maxRetries) {
+    while (retries < MAX_RETRIES) {
         try {
             // Always pass a fresh request object with the name
-            operation = await ai.operations.getVideosOperation({ operation: { name: opName } });
+            let operation = await ai.operations.getVideosOperation({ operation: { name: opName } });
             
             if (operation.done) {
+                // Check for API-level errors even if done is true
+                if (operation.error) {
+                    throw new Error(`Video generation failed with API error: ${JSON.stringify(operation.error)}`);
+                }
+
                 const video = operation.response?.generatedVideos?.[0]?.video;
                 if (video?.uri) {
                     console.log(`Operation ${operationId} is done. Fetching video from ${video.uri}`);
@@ -378,31 +381,41 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
             }
         } catch (error) {
             console.error(`Error polling operation ${operationId}:`, error);
-            // Don't fail immediately on transient network errors, just retry
-            // But if it's a fatal API error (like 404), we should stop.
-            if (String(error).includes("404") || String(error).includes("NOT_FOUND")) {
-                 await docRef.update({ status: 'error', errorMessage: `Operation not found: ${error.message}`, completedAt: FieldValue.serverTimestamp() });
+            
+            // Handle transient network errors vs fatal errors
+            const isFatal = String(error).includes("404") || 
+                            String(error).includes("NOT_FOUND") || 
+                            String(error).includes("Video generation failed");
+
+            if (isFatal || retries > 5) { // If it fails consistently or is fatal
+                 await docRef.update({ 
+                     status: 'error', 
+                     errorMessage: error.message || 'Unknown error during video polling', 
+                     completedAt: FieldValue.serverTimestamp() 
+                 });
                  return;
             }
         }
         
         retries++;
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
     }
 
-    if (retries >= maxRetries) {
-        console.error(`Operation ${operationId} timed out after ${maxRetries * 10} seconds.`);
-        await docRef.update({ status: 'error', errorMessage: 'Video generation timed out.', completedAt: FieldValue.serverTimestamp() });
-    }
+    console.error(`Operation ${operationId} timed out after ${MAX_RETRIES * POLL_INTERVAL / 1000} seconds.`);
+    await docRef.update({ status: 'error', errorMessage: 'Video generation timed out.', completedAt: FieldValue.serverTimestamp() });
 }
 
 // FIX: Per @google/genai guidelines, the API key secret must be named API_KEY.
-export const onVideoOperationCreated = onDocumentCreated({ document: "videoOperations/{operationId}", secrets: ["API_KEY"] }, async (event) => {
+// Increased memory to 1GiB to handle video buffer.
+export const onVideoOperationCreated = onDocumentCreated({ 
+    document: "videoOperations/{operationId}", 
+    secrets: ["API_KEY"], 
+    timeoutSeconds: 540,
+    memory: "1GiB"
+}, async (event) => {
     const { operationId } = event.params;
     const docRef = event.data.ref;
     console.log(`New video operation created: ${operationId}. Starting polling process.`);
-    // We don't await this because we want the trigger function to return quickly.
-    // The polling will happen in the background. Cloud Functions will manage its lifecycle.
     pollAndFinalizeVideoOperation(operationId, docRef);
 });
 
@@ -697,7 +710,7 @@ async function runAutomationsOnce(orgIdFilter) {
           `The JSON object must contain:\n` +
           `1. 'headline' (SWEDISH)\n` +
           `2. 'body' (SWEDISH)\n` +
-          `3. 'imagePrompt' (ENGLISH, for a single cohesive image, not a collage/grid, no text)\n` +
+          `3. 'imagePrompt' (ENGLISH, for a single cohesive image, not a collage/grid, NO TEXT, NO WORDS, NO LETTERS in image)\n` +
           `4. 'layout' in ['text-only','image-fullscreen','image-left','image-right']\n` +
           `5. 'backgroundColor'\n` +
           `6. 'textColor'\n` +
@@ -1396,8 +1409,9 @@ export const gemini = onCall(
 
           // Enkel polling - denna kommer sannolikt ersättas av polling-funktionen ovan
           // men vi behåller den som fallback eller om den anropas direkt.
+          // INCREASED POLLING SPEED FOR DIRECT CALLS TOO
           while (!operation.done) {
-            await new Promise((r) => setTimeout(r, 10000));
+            await new Promise((r) => setTimeout(r, 2000)); // 2s
             operation = await ai.operations.getVideosOperation({ operation: { name: operation.name } });
           }
           const downloadLink =
