@@ -380,7 +380,7 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
 }
 
 // FIX: Per @google/genai guidelines, the API key secret must be named API_KEY.
-export const onVideoOperationCreated = onDocumentCreated({ document: "videoOperations/{operationId}", secrets: ["API_KEY"], timeoutSeconds: 540, memory: "512MiB" }, async (event) => {
+export const onVideoOperationCreated = onDocumentCreated({ document: "videoOperations/{operationId}", secrets: ["API_KEY"] }, async (event) => {
     const { operationId } = event.params;
     const docRef = event.data.ref;
     console.log(`New video operation created: ${operationId}. Starting polling process.`);
@@ -688,9 +688,9 @@ async function runAutomationsOnce(orgIdFilter) {
           `8. 'textAlign'\n` +
           `9. 'textAnimation'`;
 
-        // Upgrade to Gemini 1.5 Pro for backend automation logic (Stable)
+        // Upgrade to Gemini 3.0 Pro for backend automation logic
         const textGen = await ai.models.generateContent({
-          model: "gemini-1.5-pro",
+          model: "gemini-3-pro-preview",
           contents: prompt,
         });
 
@@ -902,9 +902,9 @@ Svara ENDAST med ett JSON-objekt i ett markdown-kodblock (\`\`\`json ... \`\`\`)
   "förslagFörFramtiden": "En kort instruktion till AI:n för hur den ska agera i framtiden, t.ex. 'Använd en mer avslappnad ton och kortare rubriker.'."
 }`;
 
-  // Upgrade backend learning to Gemini 1.5 Pro (Stable)
+  // Upgrade backend learning to Gemini 3.0 Pro
   const response = await ai.models.generateContent({
-    model: "gemini-1.5-pro",
+    model: "gemini-3-pro-preview",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -1122,7 +1122,7 @@ export const gemini = onCall(
           const userPrompt = params.userPrompt;
           const prompt = `You are a world-class digital content designer... The user's idea/prompt is: --- ${userPrompt} ---`;
           // Upgrade to Pro
-          const response = await ai.models.generateContent({ model: "gemini-1.5-pro", contents: prompt });
+          const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt });
           return (response && response.text) || "";
         }
 
@@ -1132,7 +1132,7 @@ export const gemini = onCall(
           const prompt = `You are an expert copywriter for "${organizationName}". The user's idea is: --- ${userPrompt} ---`;
           // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1152,7 +1152,7 @@ export const gemini = onCall(
           const aspectRatio = params.aspectRatio;
           // Upgrade to Pro
           const textGen = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-3-pro-preview",
             contents:
               `Du är en expert på marknadsföring och copywriting för "${organizationName}". ` +
               `Idé: "${userPrompt}". Svara med JSON {headline, body, imagePrompt (ENGELSKA, för en enda bild, ej collage, ingen text)}.`,
@@ -1195,7 +1195,7 @@ export const gemini = onCall(
             (existingHeadlines.length ? `Avoid these: "${existingHeadlines.join('", "')}".` : "");
           // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1227,7 +1227,7 @@ export const gemini = onCall(
 
           // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1314,7 +1314,7 @@ export const gemini = onCall(
 
           // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-3-pro-preview",
             contents: { parts },
             config: {
               responseMimeType: "application/json",
@@ -1347,7 +1347,7 @@ export const gemini = onCall(
           const prompt = `You are a creative marketing expert. Generate headline+body ideas for "${eventName}".`;
           // Upgrade to Pro
           const response = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
