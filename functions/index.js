@@ -274,7 +274,7 @@ export const logVideoGeneration = onCall({ secrets: ["API_KEY"] }, async (reques
     }
 
     const uid = request.auth.uid;
-    const { operationId, orgId, screenId, postId, prompt, model } = request.data;
+    const { operationId, orgId, screenId, postId, prompt, model, fullOperationName } = request.data;
     if (!operationId || !orgId || !screenId || !postId || !prompt || !model) {
         throw new HttpsError("invalid-argument", "Missing required parameters for logging video generation.");
     }
@@ -283,6 +283,7 @@ export const logVideoGeneration = onCall({ secrets: ["API_KEY"] }, async (reques
     
     await operationRef.set({
         id: operationId,
+        fullOperationName: fullOperationName || `operations/${operationId}`, // Save full name or fallback
         orgId,
         screenId,
         postId,
@@ -306,13 +307,26 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
         return;
     }
     const ai = new GoogleGenAI({ apiKey: API_KEY });
-    let operation = { name: `operations/${operationId}` }; // Initial operation object for polling
+    const docSnap = await docRef.get();
+    const docData = docSnap.data();
+    
+    // Use the full operation name if available, otherwise construct default
+    const opName = docData.fullOperationName || `operations/${operationId}`;
+    console.log(`Polling operation with name: ${opName}`);
+
+    // IMPORTANT: The SDK expects the request object to contain the name.
+    // We must recreate the request object on every loop iteration.
+    // Re-using a response object as a request object can cause issues with some SDK versions.
+    let operation = { name: opName };
+    
     const maxRetries = 30; // 30 * 10s = 5 minutes
     let retries = 0;
     
     while (retries < maxRetries) {
         try {
-            operation = await ai.operations.getVideosOperation({ operation });
+            // Always pass a fresh request object with the name
+            operation = await ai.operations.getVideosOperation({ operation: { name: opName } });
+            
             if (operation.done) {
                 const video = operation.response?.generatedVideos?.[0]?.video;
                 if (video?.uri) {
@@ -325,7 +339,6 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
                     }
                     const videoBuffer = await videoResponse.arrayBuffer();
 
-                    const docData = (await docRef.get()).data();
                     const bucket = getStorage().bucket();
                     const fileName = `organizations/${docData.orgId}/post_assets/${docData.postId}/ai-video-${Date.now()}.mp4`;
                     const file = bucket.file(fileName);
@@ -360,13 +373,17 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
                     console.log(`Successfully processed and saved video for operation ${operationId}.`);
                     return; 
                 } else {
-                    throw new Error("Operation done but no video URI found.");
+                    throw new Error("Operation done but no video URI found. It might have failed on the server side without throwing.");
                 }
             }
         } catch (error) {
             console.error(`Error polling operation ${operationId}:`, error);
-            await docRef.update({ status: 'error', errorMessage: error.message, completedAt: FieldValue.serverTimestamp() });
-            return;
+            // Don't fail immediately on transient network errors, just retry
+            // But if it's a fatal API error (like 404), we should stop.
+            if (String(error).includes("404") || String(error).includes("NOT_FOUND")) {
+                 await docRef.update({ status: 'error', errorMessage: `Operation not found: ${error.message}`, completedAt: FieldValue.serverTimestamp() });
+                 return;
+            }
         }
         
         retries++;
@@ -1377,10 +1394,11 @@ export const gemini = onCall(
             config: { numberOfVideos: 1 },
           });
 
-          // Enkel polling
+          // Enkel polling - denna kommer sannolikt ersättas av polling-funktionen ovan
+          // men vi behåller den som fallback eller om den anropas direkt.
           while (!operation.done) {
             await new Promise((r) => setTimeout(r, 10000));
-            operation = await ai.operations.getVideosOperation({ operation });
+            operation = await ai.operations.getVideosOperation({ operation: { name: operation.name } });
           }
           const downloadLink =
             operation.response &&

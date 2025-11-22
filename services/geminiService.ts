@@ -730,7 +730,9 @@ export const generateVideoFromPrompt = (
     });
     
     const operationId = operation.name.split('/').pop();
-    if (!operationId) {
+    const fullOperationName = operation.name;
+
+    if (!operationId || !fullOperationName) {
       throw new Error("Kunde inte hämta operation ID från Gemini.");
     }
     
@@ -738,6 +740,7 @@ export const generateVideoFromPrompt = (
     const logFn = functions.httpsCallable('logVideoGeneration');
     await logFn({
         operationId,
+        fullOperationName, // <--- Passing the full name
         orgId: organizationId,
         screenId,
         postId,
