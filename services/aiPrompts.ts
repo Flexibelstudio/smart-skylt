@@ -210,8 +210,9 @@ User Request: "${userPrompt}"
 
 **Instructions:**
 1. **Copywriting (Swedish):** Write a headline that grabs attention in 1 second. Write body text that persuades in 3 seconds. Be concise.
-2. **Art Direction (English):** Design an image prompt for a world-class AI image generator (Imagen). The image should be photorealistic, high-resolution, and commercial grade.
-   - **CRITICAL:** The image MUST NOT contain any text, words, logos, or letters. Pure visual imagery only.
+2. **Art Direction (English):** Design an image prompt for a world-class AI image generator (Imagen). The image should be hyper-realistic, 8k resolution, and commercial grade.
+   - **CRITICAL - NO TEXT:** The generated image MUST NOT contain any visible text, letters, characters, words, signage, or numbers. Even if the concept involves a sign, generate the sign blank. Pure visual imagery only.
+   - **Quality:** Focus on clean backgrounds, sharp focus, and professional lighting.
    - **Composition:** Ensure the subject doesn't clash with text overlays if the layout requires it.
 3. **Layout:** ${layoutInstruction}
 
@@ -224,7 +225,7 @@ Respond ONLY with a JSON object inside a markdown block.
 Fields:
 - 'headline' (Swedish)
 - 'body' (Swedish)
-- 'imagePrompt' (English, detailed, NO TEXT in image, max 50 words)
+- 'imagePrompt' (English, detailed, NO TEXT/LETTERS in image, max 50 words)
 - 'layout'
 - 'backgroundColor'
 - 'textColor'
@@ -240,7 +241,7 @@ Body: "${originalPost.body}"
 
 Goal: Create a new variation or next step in the campaign. Do not repeat the exact same text. Keep the brand voice consistent.
 
-Respond with a JSON object for the new post (headline, body, imagePrompt, layout, colors, etc). All text in Swedish. Image prompt in English (NO TEXT in image, max 50 words).`;
+Respond with a JSON object for the new post (headline, body, imagePrompt, layout, colors, etc). All text in Swedish. Image prompt in English (NO TEXT/LETTERS in image, max 50 words).`;
 };
 
 export const getDisplayPostCampaignPrompt = (userPrompt: string, postCount: number, organizationName: string, hasUserMedia: boolean, businessType?: string[], businessDescription?: string): string => `
@@ -277,13 +278,13 @@ Instruktion: "${customPrompt}".
 Skriv om texten enligt instruktionen. Svara med JSON { "headline": "...", "body": "..." }`;
 
 export const getGenerateImagePrompt = (prompt: string): string => `
-A high-quality, professional, commercial marketing image.
+A hyper-realistic, high-quality, professional commercial image.
 Concept: "${prompt}".
 Requirements:
-1. Photorealistic (unless specified otherwise).
-2. High resolution, sharp details.
-3. NO TEXT, NO WORDS, NO LETTERS in the image.
-4. Aesthetic lighting and composition suitable for a digital billboard background.
+1. Photorealistic, 8k resolution, sharp focus.
+2. Clean, uncluttered composition suitable for digital signage.
+3. ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS in the image. The image must be purely visual.
+4. Aesthetic lighting and composition.
 `;
 
 export const getGenerateVideoPrompt = (prompt: string): string => `

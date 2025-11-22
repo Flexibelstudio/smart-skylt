@@ -224,8 +224,12 @@ export const getSystemSettings = async (): Promise<SystemSettings | null> => {
     try {
         const doc = await db.collection('system').doc('settings').get();
         return doc.exists ? (doc.data() as SystemSettings) : null;
-    } catch (error) {
-        console.warn("Failed to fetch system settings (permissions?), using default fallback.", error);
+    } catch (error: any) {
+        // Silent fallback for insufficient permissions, as regular users shouldn't see this warning
+        if (error?.code === 'permission-denied') {
+            return MOCK_SYSTEM_SETTINGS;
+        }
+        console.warn("Failed to fetch system settings, using default fallback.", error);
         return MOCK_SYSTEM_SETTINGS;
     }
 };
