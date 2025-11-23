@@ -316,7 +316,8 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
 
     // Use aggressive polling (2s) to catch completion quickly.
     const POLL_INTERVAL = 2000; 
-    const MAX_RETRIES = 450; // 450 * 2s = 900s = 15 minutes
+    // Increase retries to match 60min timeout: 1500 * 2s = 3000s = 50 minutes
+    const MAX_RETRIES = 1500; 
     
     let retries = 0;
     
@@ -387,7 +388,7 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
                             String(error).includes("NOT_FOUND") || 
                             String(error).includes("Video generation failed");
 
-            if (isFatal || retries > 5) { // If it fails consistently or is fatal
+            if (isFatal || retries > 20) { // If it fails consistently or is fatal
                  await docRef.update({ 
                      status: 'error', 
                      errorMessage: error.message || 'Unknown error during video polling', 
@@ -407,10 +408,11 @@ async function pollAndFinalizeVideoOperation(operationId, docRef) {
 
 // FIX: Per @google/genai guidelines, the API key secret must be named API_KEY.
 // Increased memory to 1GiB to handle video buffer.
+// Increased timeout to 3600s (60 minutes) to prevent early termination
 export const onVideoOperationCreated = onDocumentCreated({ 
     document: "videoOperations/{operationId}", 
     secrets: ["API_KEY"], 
-    timeoutSeconds: 540,
+    timeoutSeconds: 3600,
     memory: "1GiB"
 }, async (event) => {
     const { operationId } = event.params;
@@ -524,6 +526,41 @@ async function runAutomationsOnce(orgIdFilter) {
   const now = new Date();
   const lastCheck = new Date(now.getTime() - 15 * 60 * 1000);
   console.log(`[Scheduler] Running AI Automations check at ${now.toISOString()}`);
+
+  // --- Cleanup Logic Start ---
+  // Clean up "zombie" video operations that have been processing for > 60 minutes
+  try {
+      const cutoff = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+      const processingOps = await db.collection("videoOperations")
+          .where("status", "==", "processing")
+          .get();
+      
+      const batch = db.batch();
+      let cleanupCount = 0;
+
+      processingOps.forEach(doc => {
+          const data = doc.data();
+          // Handle Timestamp or Date object safely
+          const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt || 0);
+          
+          if (createdAt < cutoff) {
+              batch.update(doc.ref, {
+                  status: 'error',
+                  errorMessage: 'Operation timed out (system cleanup)',
+                  completedAt: FieldValue.serverTimestamp()
+              });
+              cleanupCount++;
+          }
+      });
+
+      if (cleanupCount > 0) {
+          await batch.commit();
+          console.log(`[Scheduler] Cleaned up ${cleanupCount} stuck video operations.`);
+      }
+  } catch (e) {
+      console.error("[Scheduler] Error cleaning up video operations:", e);
+  }
+  // --- Cleanup Logic End ---
 
   const orgsSnap = orgIdFilter
     ? [await db.collection("organizations").doc(orgIdFilter).get()]
