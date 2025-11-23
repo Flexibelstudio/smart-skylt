@@ -6,6 +6,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentDeleted, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { GoogleGenAI, Type } from "@google/genai";
+import { randomUUID } from "crypto"; // Native Node module
 
 // --- firebase-admin (modulära imports för ESM) ---
 import { initializeApp } from "firebase-admin/app";
@@ -273,13 +274,12 @@ export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds:
         throw new HttpsError("invalid-argument", "Missing parameters.");
     }
 
-    // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
     const API_KEY = process.env.API_KEY;
     if (!API_KEY) throw new HttpsError("internal", "AI service not configured.");
 
     console.log(`Downloading video from ${videoUri} for post ${postId}`);
 
-    // Correctly construct the download URL with the API key
+    // Construct download URL
     const separator = videoUri.includes("?") ? "&" : "?";
     const downloadUrl = `${videoUri}${separator}key=${API_KEY}`;
 
@@ -293,14 +293,27 @@ export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds:
         }
         const buffer = await response.arrayBuffer();
 
-        // Save to storage using the initialized storage instance
+        // Save to Storage using a download token (works with Uniform Bucket Access)
         const bucket = storage.bucket();
         const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
         const file = bucket.file(fileName);
         
-        await file.save(Buffer.from(buffer), { metadata: { contentType: "video/mp4" } });
-        await file.makePublic();
-        const publicUrl = file.publicUrl();
+        // Create a download token
+        const token = randomUUID();
+
+        await file.save(Buffer.from(buffer), {
+            metadata: {
+                contentType: "video/mp4",
+                metadata: {
+                    firebaseStorageDownloadTokens: token
+                }
+            }
+        });
+
+        // Construct the public URL manually using the token
+        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
+
+        console.log(`Video saved to ${publicUrl}`);
 
         // Update Firestore Post
         const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
@@ -428,7 +441,6 @@ export const deleteOrganization = onCall(async (request) => {
 /* ------------------------------------------------------------------ */
 
 async function runAutomationsOnce(orgIdFilter) {
-  // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const now = new Date();
@@ -799,7 +811,6 @@ export const runAiAutomationsNow = onCall(async (request) => {
 /* ------------------------------------------------------------------ */
 
 async function analyzePostDiff_backend(aiSuggestion, finalPost) {
-  // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const suggestionSummary = `

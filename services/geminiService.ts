@@ -222,6 +222,11 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (error) {
     console.error("Gemini API Error:", error);
+    // Handle specific errors first
+    if (error instanceof Error && error.message && error.message.includes("Cannot update access control")) {
+       throw new Error("Serverfel vid lagring av video (Uniform Bucket Access). Kontakta support.");
+    }
+
     const errorString =
       error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
     if (errorString.includes("safety")) {
@@ -231,8 +236,10 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
       throw new Error("API-nyckeln är ogiltig.");
     }
     if (errorString.includes("404") || errorString.includes("not found")) {
-        // Handle deprecated models error specifically
         throw new Error("AI-modellen hittades inte (404). Kontakta support eller försök igen.");
+    }
+    if (errorString.includes("permission")) {
+        throw new Error("Behörighetsfel vid lagring av filen. Kontakta support.");
     }
     throw new Error(
       error instanceof Error ? error.message : "Ett fel inträffade hos AI-tjänsten."
@@ -734,8 +741,13 @@ export const generateVideoFromPrompt = (
 
     // Client-side Polling Loop
     const POLL_INTERVAL = 2000; // 2 seconds
+    const MAX_WAIT_TIME_MS = 5 * 60 * 1000; // 5 minutes max wait
+    const startTime = Date.now();
     
     while (!operation.done) {
+      if (Date.now() - startTime > MAX_WAIT_TIME_MS) {
+          throw new Error("Videogenereringen tog för lång tid (timeout). Prova igen senare.");
+      }
       await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       onProgress("AI skapar videon... (kan ta någon minut)");
       
