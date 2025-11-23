@@ -736,9 +736,15 @@ export const generateVideoFromPrompt = (
       config: { numberOfVideos: 1 },
     });
     
-    // Client-side Polling Loop
-    const POLL_INTERVAL = 3000; // 3 seconds
-    const MAX_WAIT_TIME_MS = 5 * 60 * 1000; // 5 minutes max wait
+    // --- FIX: Robust Polling Loop ---
+    // 1. Secure the operation ID immediately to avoid losing context
+    const operationName = operation.name;
+    if (!operationName) {
+        throw new Error("Kunde inte starta videogenereringen (inget ID returnerades).");
+    }
+
+    const POLL_INTERVAL = 3000; 
+    const MAX_WAIT_TIME_MS = 10 * 60 * 1000; // 10 minutes max wait for Veo
     const startTime = Date.now();
     
     while (!operation.done) {
@@ -749,17 +755,17 @@ export const generateVideoFromPrompt = (
       onProgress("AI skapar videon... (kan ta någon minut)");
       
       try {
-        // Update status: USE THE OPERATION NAME for robust polling
-        const opName = operation.name;
-        if (!opName) {
-             console.warn("Operation name missing during polling, using object ref.");
-             operation = await ai.operations.getVideosOperation({ operation });
-        } else {
-             operation = await ai.operations.getVideosOperation({ name: opName });
+        // 2. Use the STABLE operationName for every poll
+        // This prevents "Cannot read properties of undefined (reading 'name')" if 'operation' var gets corrupted
+        const updatedOperation = await ai.operations.getVideosOperation({ name: operationName });
+        
+        // 3. Only update the local variable if we got a valid response
+        if (updatedOperation) {
+            operation = updatedOperation;
         }
       } catch (pollError) {
         console.warn("Polling error (retrying):", pollError);
-        // Continue loop to retry
+        // Continue loop to retry - transient errors shouldn't kill the process
       }
     }
 
