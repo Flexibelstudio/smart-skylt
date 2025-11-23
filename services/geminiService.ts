@@ -736,10 +736,8 @@ export const generateVideoFromPrompt = (
       config: { numberOfVideos: 1 },
     });
     
-    const operationName = operation.name; // Full name "projects/.../operations/..."
-
     // Client-side Polling Loop
-    const POLL_INTERVAL = 2000; // 2 seconds
+    const POLL_INTERVAL = 3000; // 3 seconds
     const MAX_WAIT_TIME_MS = 5 * 60 * 1000; // 5 minutes max wait
     const startTime = Date.now();
     
@@ -751,7 +749,14 @@ export const generateVideoFromPrompt = (
       onProgress("AI skapar videon... (kan ta någon minut)");
       
       try {
-        operation = await ai.operations.getVideosOperation({ operation });
+        // Update status: USE THE OPERATION NAME for robust polling
+        const opName = operation.name;
+        if (!opName) {
+             console.warn("Operation name missing during polling, using object ref.");
+             operation = await ai.operations.getVideosOperation({ operation });
+        } else {
+             operation = await ai.operations.getVideosOperation({ name: opName });
+        }
       } catch (pollError) {
         console.warn("Polling error (retrying):", pollError);
         // Continue loop to retry
@@ -762,8 +767,17 @@ export const generateVideoFromPrompt = (
         throw new Error(`Video generation failed: ${JSON.stringify(operation.error)}`);
     }
 
-    const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+    // Try to find the URI in either response or result (handles some SDK variations)
+    // Sometimes it is in operation.response.generatedVideos...
+    // Sometimes in operation.result.generatedVideos...
+    // Sometimes inside metadata...
+    let videoUri = 
+        operation.response?.generatedVideos?.[0]?.video?.uri || 
+        (operation as any).result?.generatedVideos?.[0]?.video?.uri ||
+        (operation as any).metadata?.generatedVideos?.[0]?.video?.uri;
+    
     if (!videoUri) {
+        console.error("Video Generation Failed - Debug Info:", JSON.stringify(operation, null, 2));
         throw new Error("Operation completed but no video URI returned.");
     }
 
