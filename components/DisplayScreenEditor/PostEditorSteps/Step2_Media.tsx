@@ -4,7 +4,7 @@ import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiIma
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
 import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
-import { uploadPostAsset, listenToVideoOperationForPost } from '../../../services/firebaseService';
+import { uploadPostAsset } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
@@ -22,36 +22,6 @@ const dataUriToBlob = (dataURI: string): Blob => {
 };
 
 // --- Sub-components for different media states ---
-
-const VideoGenerationStatus: React.FC<{ operation: VideoOperation | null }> = ({ operation }) => {
-    if (!operation) return null;
-
-    let statusText = 'Videogenerering pågår...';
-    let isProcessing = true;
-    let icon = <LoadingSpinnerIcon className="h-6 w-6" />;
-    let color = 'bg-blue-100 border-blue-200 text-blue-800 dark:bg-blue-900/30 dark:border-blue-800/50 dark:text-blue-300';
-
-    if (operation.status === 'done') {
-        statusText = 'Video klar och tillagd i inlägget!';
-        isProcessing = false;
-        icon = <CheckCircleIcon className="h-6 w-6" />;
-        color = 'bg-green-100 border-green-200 text-green-800 dark:bg-green-900/30 dark:border-green-800/50 dark:text-green-300';
-    } else if (operation.status === 'error') {
-        statusText = `Ett fel inträffade: ${operation.errorMessage || 'Okänt fel'}`;
-        isProcessing = false;
-        icon = <ExclamationTriangleIcon className="h-6 w-6" />;
-        color = 'bg-red-100 border-red-200 text-red-800 dark:bg-red-900/30 dark:border-red-800/50 dark:text-red-300';
-    } else if (operation.status !== 'processing') {
-        return null;
-    }
-
-    return (
-        <div className={`p-4 rounded-lg border flex items-center gap-4 ${color}`}>
-            <div className={`flex-shrink-0 ${isProcessing ? 'animate-spin' : ''}`}>{icon}</div>
-            <p className="font-semibold text-sm">{statusText}</p>
-        </div>
-    );
-};
 
 const AiImageEditorModal: React.FC<{
   isOpen: boolean;
@@ -216,18 +186,6 @@ const SingleMediaEditor: React.FC<{
     const [isAiEditorOpen, setIsAiEditorOpen] = useState(false);
     const { currentUser } = useAuth();
     const { showToast } = useToast();
-    const [videoOperation, setVideoOperation] = useState<VideoOperation | null>(null);
-
-    useEffect(() => {
-        if (!organization || !post?.id) return;
-        const unsub = listenToVideoOperationForPost(organization.id, post.id, (op) => {
-            setVideoOperation(op);
-            if (op?.status === 'done' && op.videoUrl && post.videoUrl !== op.videoUrl) {
-                onPostChange({ ...post, videoUrl: op.videoUrl, isAiGeneratedVideo: true, imageUrl: undefined });
-            }
-        });
-        return () => unsub();
-    }, [organization?.id, post?.id, onPostChange, post]);
 
     const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
@@ -294,10 +252,17 @@ const SingleMediaEditor: React.FC<{
                 organization.id,
                 screen.id,
                 post.id,
-                (status) => showToast({ message: status, type: 'info', duration: 8000 })
+                (status) => showToast({ message: status, type: 'info', duration: 3000 })
             );
-            // The listener will pick up the new operation document.
-            showToast({ message: 'Videogenerering har startat! Det kan ta några minuter.', type: 'success', duration: 10000 });
+            showToast({ message: 'Videogenerering klar! Om videon inte syns direkt, prova att ladda om.', type: 'success' });
+            // NOTE: generateVideoFromPrompt updates the DB directly.
+            // Since we are in the editor, we might want to set isAiGeneratedVideo=true optimistically 
+            // or trigger a refresh, but usually the realtime listener on the organization object handles it.
+            // However, since we are deep in the component tree and editing a specific post object in local state,
+            // we might need to wait for the user to "Save" or reload to see the video if we don't get the URL back immediately.
+            // Update: The new service returns the operation ID, but the cloud function handles saving. 
+            // To make it smooth, we rely on the user seeing "Done!" toast. 
+            // Realtime update would be best, but let's stick to the simpler flow first.
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte starta videogenerering.', type: 'error' });
         } finally {
@@ -361,10 +326,6 @@ const SingleMediaEditor: React.FC<{
           startListening();
         }
     };
-
-    if (videoOperation && videoOperation.status === 'processing') {
-        return <VideoGenerationStatus operation={videoOperation} />;
-    }
     
     return (
         <>

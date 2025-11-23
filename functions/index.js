@@ -3,12 +3,12 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentCreated, onDocumentDeleted, onDocumentUpdated } from "firebase-functions/v2/firestore";
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { onDocumentDeleted, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { GoogleGenAI, Type } from "@google/genai";
 
 // --- firebase-admin (modulära imports för ESM) ---
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { getAuth } from "firebase-admin/auth";
 
@@ -261,164 +261,57 @@ export const inviteUser = onCall(async (request) => {
 });
 
 /* ------------------------------------------------------------------ */
-/*                         Video Generation                           */
+/*                         Video Generation (Simplified)              */
 /* ------------------------------------------------------------------ */
-// FIX: Per @google/genai guidelines, the API key secret must be named API_KEY.
-export const logVideoGeneration = onCall({ secrets: ["API_KEY"] }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-    // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
-    if (!process.env.API_KEY) {
-        throw new HttpsError("internal", "AI service is not configured on the server.");
+
+export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds: 300, memory: "1GiB" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
+    
+    const { videoUri, orgId, screenId, postId } = request.data;
+    if (!videoUri || !orgId || !screenId || !postId) {
+        throw new HttpsError("invalid-argument", "Missing parameters.");
     }
 
-    const uid = request.auth.uid;
-    const { operationId, orgId, screenId, postId, prompt, model, fullOperationName } = request.data;
-    if (!operationId || !orgId || !screenId || !postId || !prompt || !model) {
-        throw new HttpsError("invalid-argument", "Missing required parameters for logging video generation.");
-    }
-    
-    const operationRef = db.collection("videoOperations").doc(operationId);
-    
-    await operationRef.set({
-        id: operationId,
-        fullOperationName: fullOperationName || `operations/${operationId}`, // Save full name or fallback
-        orgId,
-        screenId,
-        postId,
-        userId: uid,
-        prompt,
-        model,
-        status: 'processing',
-        createdAt: FieldValue.serverTimestamp(),
-    });
-    
-    console.log(`Logged video generation operation ${operationId} for user ${uid}`);
-    return { success: true };
-});
-
-async function pollAndFinalizeVideoOperation(operationId, docRef) {
     // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
     const API_KEY = process.env.API_KEY;
-    if (!API_KEY) {
-        console.error("API_KEY not set for polling.");
-        await docRef.update({ status: 'error', errorMessage: 'AI service not configured on server.', completedAt: FieldValue.serverTimestamp() });
-        return;
+    if (!API_KEY) throw new HttpsError("internal", "AI service not configured.");
+
+    console.log(`Downloading video from ${videoUri} for post ${postId}`);
+
+    // Fetch video from Google using API Key
+    const response = await fetch(`${videoUri}&key=${API_KEY}`);
+    if (!response.ok) {
+        throw new HttpsError("internal", `Failed to download video: ${response.statusText}`);
     }
-    const ai = new GoogleGenAI({ apiKey: API_KEY });
-    const docSnap = await docRef.get();
-    const docData = docSnap.data();
+    const buffer = await response.arrayBuffer();
+
+    // Save to storage
+    const bucket = getStorage().bucket();
+    const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
+    const file = bucket.file(fileName);
     
-    // Use the full operation name if available, otherwise construct default
-    const opName = docData.fullOperationName || `operations/${operationId}`;
-    console.log(`Polling operation with name: ${opName}`);
+    await file.save(Buffer.from(buffer), { metadata: { contentType: "video/mp4" } });
+    await file.makePublic();
+    const publicUrl = file.publicUrl();
 
-    // Use aggressive polling (2s) to catch completion quickly.
-    const POLL_INTERVAL = 2000; 
-    // Increase retries to match 60min timeout: 1500 * 2s = 3000s = 50 minutes
-    const MAX_RETRIES = 1500; 
+    // Update Firestore Post
+    const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
     
-    let retries = 0;
-    
-    while (retries < MAX_RETRIES) {
-        try {
-            // Always pass a fresh request object with the name
-            let operation = await ai.operations.getVideosOperation({ operation: { name: opName } });
-            
-            if (operation.done) {
-                // Check for API-level errors even if done is true
-                if (operation.error) {
-                    throw new Error(`Video generation failed with API error: ${JSON.stringify(operation.error)}`);
-                }
-
-                const video = operation.response?.generatedVideos?.[0]?.video;
-                if (video?.uri) {
-                    console.log(`Operation ${operationId} is done. Fetching video from ${video.uri}`);
-
-                    // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
-                    const videoResponse = await fetch(`${video.uri}&key=${API_KEY}`);
-                    if (!videoResponse.ok) {
-                        throw new Error(`Failed to fetch video file: ${videoResponse.statusText}`);
-                    }
-                    const videoBuffer = await videoResponse.arrayBuffer();
-
-                    const bucket = getStorage().bucket();
-                    const fileName = `organizations/${docData.orgId}/post_assets/${docData.postId}/ai-video-${Date.now()}.mp4`;
-                    const file = bucket.file(fileName);
-                    await file.save(Buffer.from(videoBuffer), { metadata: { contentType: "video/mp4" } });
-                    
-                    await file.makePublic();
-                    const publicUrl = file.publicUrl();
-
-                    await docRef.update({
-                        status: 'done',
-                        videoUrl: publicUrl,
-                        completedAt: FieldValue.serverTimestamp(),
-                    });
-
-                    const postRef = db.collection("organizations").doc(docData.orgId).collection("displayScreens").doc(docData.screenId);
-                    
-                    await db.runTransaction(async (transaction) => {
-                        const screenDoc = await transaction.get(postRef);
-                        if (!screenDoc.exists) throw new Error("Screen document not found!");
-                        
-                        const screenData = screenDoc.data();
-                        const posts = screenData.posts || [];
-                        const postIndex = posts.findIndex(p => p.id === docData.postId);
-                        if (postIndex > -1) {
-                            posts[postIndex].videoUrl = publicUrl;
-                            posts[postIndex].isAiGeneratedVideo = true;
-                            posts[postIndex].imageUrl = undefined;
-                            transaction.update(postRef, { posts });
-                        }
-                    });
-                    
-                    console.log(`Successfully processed and saved video for operation ${operationId}.`);
-                    return; 
-                } else {
-                    throw new Error("Operation done but no video URI found. It might have failed on the server side without throwing.");
-                }
-            }
-        } catch (error) {
-            console.error(`Error polling operation ${operationId}:`, error);
-            
-            // Handle transient network errors vs fatal errors
-            const isFatal = String(error).includes("404") || 
-                            String(error).includes("NOT_FOUND") || 
-                            String(error).includes("Video generation failed");
-
-            if (isFatal || retries > 20) { // If it fails consistently or is fatal
-                 await docRef.update({ 
-                     status: 'error', 
-                     errorMessage: error.message || 'Unknown error during video polling', 
-                     completedAt: FieldValue.serverTimestamp() 
-                 });
-                 return;
-            }
+    await db.runTransaction(async (t) => {
+        const doc = await t.get(postRef);
+        if (!doc.exists) throw new HttpsError("not-found", "Screen not found.");
+        const data = doc.data();
+        const posts = data.posts || [];
+        const idx = posts.findIndex(p => p.id === postId);
+        if (idx > -1) {
+            posts[idx].videoUrl = publicUrl;
+            posts[idx].isAiGeneratedVideo = true;
+            posts[idx].imageUrl = undefined; // clear image if video exists
+            t.update(postRef, { posts });
         }
-        
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-    }
+    });
 
-    console.error(`Operation ${operationId} timed out after ${MAX_RETRIES * POLL_INTERVAL / 1000} seconds.`);
-    await docRef.update({ status: 'error', errorMessage: 'Video generation timed out.', completedAt: FieldValue.serverTimestamp() });
-}
-
-// FIX: Per @google/genai guidelines, the API key secret must be named API_KEY.
-// Increased memory to 1GiB to handle video buffer.
-// Increased timeout to 3600s (60 minutes) to prevent early termination
-export const onVideoOperationCreated = onDocumentCreated({ 
-    document: "videoOperations/{operationId}", 
-    secrets: ["API_KEY"], 
-    timeoutSeconds: 3600,
-    memory: "1GiB"
-}, async (event) => {
-    const { operationId } = event.params;
-    const docRef = event.data.ref;
-    console.log(`New video operation created: ${operationId}. Starting polling process.`);
-    pollAndFinalizeVideoOperation(operationId, docRef);
+    return { success: true, videoUrl: publicUrl };
 });
 
 
@@ -526,41 +419,6 @@ async function runAutomationsOnce(orgIdFilter) {
   const now = new Date();
   const lastCheck = new Date(now.getTime() - 15 * 60 * 1000);
   console.log(`[Scheduler] Running AI Automations check at ${now.toISOString()}`);
-
-  // --- Cleanup Logic Start ---
-  // Clean up "zombie" video operations that have been processing for > 60 minutes
-  try {
-      const cutoff = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
-      const processingOps = await db.collection("videoOperations")
-          .where("status", "==", "processing")
-          .get();
-      
-      const batch = db.batch();
-      let cleanupCount = 0;
-
-      processingOps.forEach(doc => {
-          const data = doc.data();
-          // Handle Timestamp or Date object safely
-          const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt || 0);
-          
-          if (createdAt < cutoff) {
-              batch.update(doc.ref, {
-                  status: 'error',
-                  errorMessage: 'Operation timed out (system cleanup)',
-                  completedAt: FieldValue.serverTimestamp()
-              });
-              cleanupCount++;
-          }
-      });
-
-      if (cleanupCount > 0) {
-          await batch.commit();
-          console.log(`[Scheduler] Cleaned up ${cleanupCount} stuck video operations.`);
-      }
-  } catch (e) {
-      console.error("[Scheduler] Error cleaning up video operations:", e);
-  }
-  // --- Cleanup Logic End ---
 
   const orgsSnap = orgIdFilter
     ? [await db.collection("organizations").doc(orgIdFilter).get()]
@@ -1432,6 +1290,8 @@ export const gemini = onCall(
         }
 
         case "generateVideoFromPrompt": {
+          // DEPRECATED: This server-side implementation is kept as a fallback but
+          // the primary path is now client-side polling via generateVideos + saveGeneratedVideo.
           const prompt = params.prompt;
           const organizationId = params.organizationId;
           const image = params.image;
@@ -1444,9 +1304,7 @@ export const gemini = onCall(
             config: { numberOfVideos: 1 },
           });
 
-          // Enkel polling - denna kommer sannolikt ersättas av polling-funktionen ovan
-          // men vi behåller den som fallback eller om den anropas direkt.
-          // INCREASED POLLING SPEED FOR DIRECT CALLS TOO
+          // Simple polling - this might be replaced by the client-side logic but kept for direct calls
           while (!operation.done) {
             await new Promise((r) => setTimeout(r, 2000)); // 2s
             operation = await ai.operations.getVideosOperation({ operation: { name: operation.name } });

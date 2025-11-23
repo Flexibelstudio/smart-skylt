@@ -729,28 +729,47 @@ export const generateVideoFromPrompt = (
       config: { numberOfVideos: 1 },
     });
     
-    const operationId = operation.name.split('/').pop();
-    const fullOperationName = operation.name;
+    const operationName = operation.name; // Full name "projects/.../operations/..."
 
-    if (!operationId || !fullOperationName) {
-      throw new Error("Kunde inte hämta operation ID från Gemini.");
-    }
+    // Client-side Polling Loop
+    const POLL_INTERVAL = 2000; // 2 seconds
     
-    // Log operation to backend via Cloud Function
-    const logFn = functions.httpsCallable('logVideoGeneration');
-    await logFn({
-        operationId,
-        fullOperationName, // <--- Passing the full name
+    while (!operation.done) {
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+      onProgress("AI skapar videon... (kan ta någon minut)");
+      
+      try {
+        operation = await ai.operations.getVideosOperation({ operation });
+      } catch (pollError) {
+        console.warn("Polling error (retrying):", pollError);
+        // Continue loop to retry
+      }
+    }
+
+    if (operation.error) {
+        throw new Error(`Video generation failed: ${JSON.stringify(operation.error)}`);
+    }
+
+    const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!videoUri) {
+        throw new Error("Operation completed but no video URI returned.");
+    }
+
+    onProgress("Laddar ner och sparar video...");
+    
+    // Call backend function to save the video from the URI to Storage
+    const saveFn = functions.httpsCallable('saveGeneratedVideo');
+    const result = await saveFn({
+        videoUri,
         orgId: organizationId,
         screenId,
-        postId,
-        prompt,
-        model,
+        postId
     });
 
-    onProgress("Uppdrag skickat. AI:n arbetar i bakgrunden...");
+    onProgress("Klart!");
     
-    return operationId;
+    // Return empty string or operation ID, legacy signature required string
+    return operationName; 
   });
 
 export const generateEventReminderText = (
