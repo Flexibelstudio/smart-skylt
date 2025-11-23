@@ -736,15 +736,17 @@ export const generateVideoFromPrompt = (
       config: { numberOfVideos: 1 },
     });
     
-    // --- FIX: Robust Polling Loop ---
+    console.log("Video generation started, operation:", operation);
+
     // 1. Secure the operation ID immediately to avoid losing context
-    const operationName = operation.name;
+    const operationName = operation.name || (operation as any).operation?.name;
     if (!operationName) {
+        console.error("Operation missing name:", operation);
         throw new Error("Kunde inte starta videogenereringen (inget ID returnerades).");
     }
 
-    const POLL_INTERVAL = 3000; 
-    const MAX_WAIT_TIME_MS = 10 * 60 * 1000; // 10 minutes max wait for Veo
+    const POLL_INTERVAL = 5000; // 5s
+    const MAX_WAIT_TIME_MS = 15 * 60 * 1000; // 15 minutes max wait for Veo
     const startTime = Date.now();
     
     while (!operation.done) {
@@ -774,9 +776,6 @@ export const generateVideoFromPrompt = (
     }
 
     // Try to find the URI in either response or result (handles some SDK variations)
-    // Sometimes it is in operation.response.generatedVideos...
-    // Sometimes in operation.result.generatedVideos...
-    // Sometimes inside metadata...
     let videoUri = 
         operation.response?.generatedVideos?.[0]?.video?.uri || 
         (operation as any).result?.generatedVideos?.[0]?.video?.uri ||

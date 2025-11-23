@@ -332,6 +332,7 @@ export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds:
                 posts[idx].isAiGeneratedVideo = true;
                 
                 // Clean up image URL if we are replacing it with a video
+                // Use delete operator to remove the fields completely
                 delete posts[idx].imageUrl; 
                 delete posts[idx].isAiGeneratedImage;
 
