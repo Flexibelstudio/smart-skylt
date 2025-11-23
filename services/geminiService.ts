@@ -1,4 +1,3 @@
-
 // services/geminiService.ts
 import {
   GoogleGenAI,
@@ -717,7 +716,7 @@ export const generateVideoFromPrompt = (
   postId: string,
   onProgress: (status: string) => void,
   image?: { mimeType: string; data: string }
-): Promise<string> => // returns operation ID
+): Promise<string> => // returns URL
   handleAIError(async () => {
     const ai = ensureAiInitialized();
     if (!functions) throw new Error("Firebase Functions är inte initialiserat.");
@@ -781,8 +780,8 @@ export const generateVideoFromPrompt = (
 
     onProgress("Klart!");
     
-    // Return empty string or operation ID, legacy signature required string
-    return operationName; 
+    // Return the actual public URL of the video
+    return (result.data as any).videoUrl as string;
   });
 
 export const generateEventReminderText = (

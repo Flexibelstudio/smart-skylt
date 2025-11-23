@@ -247,22 +247,24 @@ const SingleMediaEditor: React.FC<{
         if (!post.aiVideoPrompt || !post.aiVideoPrompt.trim() || !currentUser) return;
         setAiLoading('generate-video');
         try {
-            await generateVideoFromPrompt(
+            // Change: Capture the returned video URL and update state immediately
+            const videoUrl = await generateVideoFromPrompt(
                 post.aiVideoPrompt,
                 organization.id,
                 screen.id,
                 post.id,
                 (status) => showToast({ message: status, type: 'info', duration: 3000 })
             );
+            
+            onPostChange({
+                ...post,
+                videoUrl: videoUrl,
+                imageUrl: undefined, // Clear existing image to prioritize video
+                isAiGeneratedVideo: true,
+                isAiGeneratedImage: false
+            });
+
             showToast({ message: 'Videogenerering klar! Om videon inte syns direkt, prova att ladda om.', type: 'success' });
-            // NOTE: generateVideoFromPrompt updates the DB directly.
-            // Since we are in the editor, we might want to set isAiGeneratedVideo=true optimistically 
-            // or trigger a refresh, but usually the realtime listener on the organization object handles it.
-            // However, since we are deep in the component tree and editing a specific post object in local state,
-            // we might need to wait for the user to "Save" or reload to see the video if we don't get the URL back immediately.
-            // Update: The new service returns the operation ID, but the cloud function handles saving. 
-            // To make it smooth, we rely on the user seeing "Done!" toast. 
-            // Realtime update would be best, but let's stick to the simpler flow first.
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte starta videogenerering.', type: 'error' });
         } finally {
