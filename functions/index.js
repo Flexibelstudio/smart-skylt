@@ -1,3 +1,4 @@
+
 // functions/index.js  (ESM, ren JavaScript)
 // Kräver: package.json med { "type": "module", "engines": { "node": "20" } }
 
@@ -261,7 +262,7 @@ export const inviteUser = onCall(async (request) => {
 });
 
 /* ------------------------------------------------------------------ */
-/*                         Video Generation (Simplified)              */
+/*                         Video Generation (Saved)                   */
 /* ------------------------------------------------------------------ */
 
 export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds: 300, memory: "1GiB" }, async (request) => {
@@ -278,40 +279,54 @@ export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds:
 
     console.log(`Downloading video from ${videoUri} for post ${postId}`);
 
-    // Fetch video from Google using API Key
-    const response = await fetch(`${videoUri}&key=${API_KEY}`);
-    if (!response.ok) {
-        throw new HttpsError("internal", `Failed to download video: ${response.statusText}`);
-    }
-    const buffer = await response.arrayBuffer();
+    // Correctly construct the download URL with the API key
+    const separator = videoUri.includes("?") ? "&" : "?";
+    const downloadUrl = `${videoUri}${separator}key=${API_KEY}`;
 
-    // Save to storage
-    const bucket = getStorage().bucket();
-    const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
-    const file = bucket.file(fileName);
-    
-    await file.save(Buffer.from(buffer), { metadata: { contentType: "video/mp4" } });
-    await file.makePublic();
-    const publicUrl = file.publicUrl();
-
-    // Update Firestore Post
-    const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
-    
-    await db.runTransaction(async (t) => {
-        const doc = await t.get(postRef);
-        if (!doc.exists) throw new HttpsError("not-found", "Screen not found.");
-        const data = doc.data();
-        const posts = data.posts || [];
-        const idx = posts.findIndex(p => p.id === postId);
-        if (idx > -1) {
-            posts[idx].videoUrl = publicUrl;
-            posts[idx].isAiGeneratedVideo = true;
-            posts[idx].imageUrl = undefined; // clear image if video exists
-            t.update(postRef, { posts });
+    try {
+        // Fetch video from Google
+        const response = await fetch(downloadUrl);
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`Failed to download video. Status: ${response.status}, Body: ${text}`);
+            throw new HttpsError("internal", `Failed to download video from Google: ${response.statusText}`);
         }
-    });
+        const buffer = await response.arrayBuffer();
 
-    return { success: true, videoUrl: publicUrl };
+        // Save to storage using the initialized storage instance
+        const bucket = storage.bucket();
+        const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
+        const file = bucket.file(fileName);
+        
+        await file.save(Buffer.from(buffer), { metadata: { contentType: "video/mp4" } });
+        await file.makePublic();
+        const publicUrl = file.publicUrl();
+
+        // Update Firestore Post
+        const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
+        
+        await db.runTransaction(async (t) => {
+            const doc = await t.get(postRef);
+            if (!doc.exists) throw new HttpsError("not-found", "Screen not found.");
+            const data = doc.data();
+            const posts = data.posts || [];
+            const idx = posts.findIndex(p => p.id === postId);
+            if (idx > -1) {
+                posts[idx].videoUrl = publicUrl;
+                posts[idx].isAiGeneratedVideo = true;
+                posts[idx].imageUrl = undefined; // clear image if video exists
+                t.update(postRef, { posts });
+            } else {
+                console.warn(`Post ${postId} not found in screen ${screenId} during video save.`);
+            }
+        });
+
+        return { success: true, videoUrl: publicUrl };
+    } catch (error) {
+        console.error("Error in saveGeneratedVideo:", error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message || "Unknown error saving video.");
+    }
 });
 
 
