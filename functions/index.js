@@ -16,6 +16,9 @@ import { getAuth } from "firebase-admin/auth";
 
 const app = initializeApp();
 const db = getFirestore(app);
+// CRITICAL FIX: Allow undefined values (e.g. optional fields) without throwing errors
+db.settings({ ignoreUndefinedProperties: true });
+
 const storage = getStorage(app);
 const auth = getAuth(app);
 
@@ -327,7 +330,11 @@ export const saveGeneratedVideo = onCall({ secrets: ["API_KEY"], timeoutSeconds:
             if (idx > -1) {
                 posts[idx].videoUrl = publicUrl;
                 posts[idx].isAiGeneratedVideo = true;
-                posts[idx].imageUrl = undefined; // clear image if video exists
+                
+                // Clean up image URL if we are replacing it with a video
+                delete posts[idx].imageUrl; 
+                delete posts[idx].isAiGeneratedImage;
+
                 t.update(postRef, { posts });
             } else {
                 console.warn(`Post ${postId} not found in screen ${screenId} during video save.`);
@@ -773,6 +780,41 @@ async function runAutomationsOnce(orgIdFilter) {
   }); // <-- stänger orgDoc-async för map
 
   await Promise.all(perOrg);
+  
+  // --- NEW: CLEANUP STUCK VIDEO OPERATIONS ---
+  // This runs independently of the automation logic to clean up any "zombie" video generations
+  try {
+      const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+      const cutoff = new Date(now.getTime() - STUCK_THRESHOLD_MS);
+      
+      // Query for operations that are 'processing' and older than 1 hour
+      // Note: This requires a composite index on status + createdAt in Firestore.
+      // If index is missing, this might fail or require a different query strategy.
+      // For simplicity/robustness without index management here, we'll query recent ones and filter in memory if volume is low,
+      // but strictly speaking a query is better.
+      // Let's try a direct query.
+      const stuckOpsSnapshot = await db.collection('videoOperations')
+          .where('status', '==', 'processing')
+          .where('createdAt', '<', cutoff)
+          .get();
+
+      if (!stuckOpsSnapshot.empty) {
+          console.log(`[Scheduler] Found ${stuckOpsSnapshot.size} stuck video operations. Cleaning up...`);
+          const batch = db.batch();
+          stuckOpsSnapshot.forEach(doc => {
+              batch.update(doc.ref, { 
+                  status: 'error', 
+                  errorMessage: 'Operation timed out (cleanup task)',
+                  completedAt: FieldValue.serverTimestamp() 
+              });
+          });
+          await batch.commit();
+          console.log(`[Scheduler] Stuck video operations updated to error status.`);
+      }
+  } catch (cleanupError) {
+      console.error("[Scheduler] Video cleanup failed:", cleanupError);
+  }
+  
   console.log("[Scheduler] AI Automations check finished.");
 }
 
