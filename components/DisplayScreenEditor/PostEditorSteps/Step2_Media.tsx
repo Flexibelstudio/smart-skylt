@@ -4,7 +4,7 @@ import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiIma
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
 import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
-import { uploadPostAsset } from '../../../services/firebaseService';
+import { uploadPostAsset, createVideoOperation, listenToVideoOperationForPost } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
@@ -186,8 +186,31 @@ const SingleMediaEditor: React.FC<{
     const [isAiEditorOpen, setIsAiEditorOpen] = useState(false);
     const { currentUser } = useAuth();
     const { showToast } = useToast();
+    const [currentVideoOperation, setCurrentVideoOperation] = useState<VideoOperation | null>(null);
 
     const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
+
+    useEffect(() => {
+        // Listen to video operation updates if we're in a "processing" state
+        let unsubscribe = () => {};
+        if (post.id && organization.id) {
+            unsubscribe = listenToVideoOperationForPost(organization.id, post.id, (op) => {
+                setCurrentVideoOperation(op);
+                // Automatically update post URL when operation is done
+                if (op?.status === 'done' && op.videoUrl && post.videoUrl !== op.videoUrl) {
+                    onPostChange({
+                        ...post,
+                        videoUrl: op.videoUrl,
+                        isAiGeneratedVideo: true,
+                        isAiGeneratedImage: false,
+                        imageUrl: undefined
+                    });
+                    showToast({ message: "Videogenerering klar! Visar resultat.", type: 'success' });
+                }
+            });
+        }
+        return () => unsubscribe();
+    }, [post.id, organization.id, onPostChange, post.videoUrl]);
 
     useEffect(() => {
         if (transcript) {
@@ -247,24 +270,23 @@ const SingleMediaEditor: React.FC<{
         if (!post.aiVideoPrompt || !post.aiVideoPrompt.trim() || !currentUser) return;
         setAiLoading('generate-video');
         try {
-            // Change: Capture the returned video URL and update state immediately
-            const videoUrl = await generateVideoFromPrompt(
+            // 1. Initiate the job (Fire-and-Forget pattern)
+            const operationName = await generateVideoFromPrompt(
                 post.aiVideoPrompt,
                 organization.id,
                 screen.id,
                 post.id,
-                (status) => showToast({ message: status, type: 'info', duration: 3000 })
+                (status) => console.log(status)
             );
             
-            onPostChange({
-                ...post,
-                videoUrl: videoUrl,
-                imageUrl: undefined, // Clear existing image to prioritize video
-                isAiGeneratedVideo: true,
-                isAiGeneratedImage: false
-            });
+            // 2. Create a tracking document in Firestore
+            await createVideoOperation(organization.id, screen.id, post.id, post.aiVideoPrompt, operationName);
 
-            showToast({ message: 'Videogenerering klar! Om videon inte syns direkt, prova att ladda om.', type: 'success' });
+            showToast({ 
+                message: 'Videogenerering startad! Du kan fortsätta arbeta eller stänga fönstret – videon dyker upp automatiskt när den är klar.', 
+                type: 'success',
+                duration: 8000
+            });
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte starta videogenerering.', type: 'error' });
         } finally {
@@ -329,14 +351,16 @@ const SingleMediaEditor: React.FC<{
         }
     };
     
+    const isVideoProcessing = currentVideoOperation && currentVideoOperation.status === 'processing';
+
     return (
         <>
             <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                    <PrimaryButton onClick={() => document.getElementById('file-upload-step2')?.click()} disabled={!!aiLoading}>
+                    <PrimaryButton onClick={() => document.getElementById('file-upload-step2')?.click()} disabled={!!aiLoading || isVideoProcessing}>
                         <PhotoIcon className="w-5 h-5 mr-2" /> Ladda upp
                     </PrimaryButton>
-                    <SecondaryButton onClick={() => setIsMediaPickerOpen(true)} disabled={!!aiLoading}>
+                    <SecondaryButton onClick={() => setIsMediaPickerOpen(true)} disabled={!!aiLoading || isVideoProcessing}>
                         Välj från galleri
                     </SecondaryButton>
                 </div>
@@ -350,13 +374,13 @@ const SingleMediaEditor: React.FC<{
                     <StructuredAiPromptBuilder 
                         prompt={post.structuredImagePrompt || { subject: post.aiImagePrompt || '' }}
                         onPromptChange={handleStructuredPromptChange}
-                        disabled={!!aiLoading}
+                        disabled={!!aiLoading || isVideoProcessing}
                         showSpeechButton={browserSupportsSpeechRecognition}
                         isListening={isListening}
                         onSpeechClick={handleMicClick}
                     />
                     <div className="flex gap-2 pt-2">
-                        <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-image'} disabled={!post.aiImagePrompt?.trim()} className="bg-purple-600 hover:bg-purple-500">
+                        <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-image'} disabled={!post.aiImagePrompt?.trim() || isVideoProcessing} className="bg-purple-600 hover:bg-purple-500">
                             Generera bild
                         </PrimaryButton>
                     </div>
@@ -367,17 +391,35 @@ const SingleMediaEditor: React.FC<{
                         <VideoCameraIcon className="w-5 h-5"/>
                         Skapa video med AI
                     </label>
-                    <textarea
-                        value={post.aiVideoPrompt || ''}
-                        onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
-                        placeholder="Beskriv en kort video du vill skapa..."
-                        rows={3}
-                        className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
-                        disabled={!!aiLoading}
-                    />
-                    <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim()} className="bg-indigo-600 hover:bg-indigo-500">
-                        Generera video
-                    </PrimaryButton>
+                    {isVideoProcessing ? (
+                        <div className="flex items-center gap-3 p-4 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+                            <LoadingSpinnerIcon className="w-6 h-6 animate-spin" />
+                            <div>
+                                <p className="font-bold">Videogenerering pågår...</p>
+                                <p className="text-xs mt-1">Detta kan ta några minuter. Du kan lämna sidan, videon sparas automatiskt.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <textarea
+                                value={post.aiVideoPrompt || ''}
+                                onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
+                                placeholder="Beskriv en kort video du vill skapa..."
+                                rows={3}
+                                className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+                                disabled={!!aiLoading}
+                            />
+                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim()} className="bg-indigo-600 hover:bg-indigo-500">
+                                Generera video
+                            </PrimaryButton>
+                        </>
+                    )}
+                    {currentVideoOperation?.status === 'error' && (
+                        <div className="flex items-center gap-2 p-3 bg-red-100 dark:bg-red-900/50 rounded-lg text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
+                            <ExclamationTriangleIcon className="w-5 h-5" />
+                            <p className="text-sm">Videogenereringen misslyckades. Försök igen.</p>
+                        </div>
+                    )}
                 </div>
 
                 {uploadProgress !== null && (
@@ -392,13 +434,13 @@ const SingleMediaEditor: React.FC<{
                             {post.imageUrl && <img src={post.imageUrl} className="w-full rounded-md" alt="Post media preview" />}
                             {post.videoUrl && <video src={post.videoUrl} className="w-full rounded-md" autoPlay muted loop playsInline />}
                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md">
-                                <button onClick={() => onPostChange({ ...post, imageUrl: undefined, videoUrl: undefined })} disabled={!!aiLoading} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg">
+                                <button onClick={() => onPostChange({ ...post, imageUrl: undefined, videoUrl: undefined })} disabled={!!aiLoading || isVideoProcessing} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg">
                                     Ta bort
                                 </button>
                             </div>
                         </div>
                         {post.imageUrl && (
-                             <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
+                             <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading || isVideoProcessing}>
                                 <PencilIcon className="h-4 w-4"/> Redigera bild med AI
                             </button>
                         )}

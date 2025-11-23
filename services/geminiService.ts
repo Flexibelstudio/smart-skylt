@@ -716,92 +716,37 @@ export const generateVideoFromPrompt = (
   postId: string,
   onProgress: (status: string) => void,
   image?: { mimeType: string; data: string }
-): Promise<string> => // returns URL
-  handleAIError(async () => {
+): Promise<string> => { // returns Operation Name
+  return handleAIError(async () => {
     const ai = ensureAiInitialized();
-    if (!functions) throw new Error("Firebase Functions är inte initialiserat.");
 
     const imagePart = image
       ? { imageBytes: image.data, mimeType: image.mimeType }
       : undefined;
 
-    onProgress("Startar videogenerering...");
+    onProgress("Beställer video från Google Veo...");
     const model = "veo-3.1-fast-generate-preview";
     const apiPrompt = Prompts.getGenerateVideoPrompt(prompt);
 
-    let operation = await ai.models.generateVideos({
+    // 1. Initiate Video Generation
+    const operation = await ai.models.generateVideos({
       model,
       prompt: apiPrompt,
       image: imagePart,
       config: { numberOfVideos: 1 },
     });
     
-    console.log("Video generation started, operation:", operation);
-
-    // 1. Secure the operation ID immediately to avoid losing context
     const operationName = operation.name || (operation as any).operation?.name;
+    
     if (!operationName) {
         console.error("Operation missing name:", operation);
         throw new Error("Kunde inte starta videogenereringen (inget ID returnerades).");
     }
 
-    const POLL_INTERVAL = 5000; // 5s
-    const MAX_WAIT_TIME_MS = 15 * 60 * 1000; // 15 minutes max wait for Veo
-    const startTime = Date.now();
-    
-    while (!operation.done) {
-      if (Date.now() - startTime > MAX_WAIT_TIME_MS) {
-          throw new Error("Videogenereringen tog för lång tid (timeout). Prova igen senare.");
-      }
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-      onProgress("AI skapar videon... (kan ta någon minut)");
-      
-      try {
-        // 2. Use the STABLE operationName for every poll
-        // This prevents "Cannot read properties of undefined (reading 'name')" if 'operation' var gets corrupted
-        const updatedOperation = await ai.operations.getVideosOperation({ name: operationName });
-        
-        // 3. Only update the local variable if we got a valid response
-        if (updatedOperation) {
-            operation = updatedOperation;
-        }
-      } catch (pollError) {
-        console.warn("Polling error (retrying):", pollError);
-        // Continue loop to retry - transient errors shouldn't kill the process
-      }
-    }
-
-    if (operation.error) {
-        throw new Error(`Video generation failed: ${JSON.stringify(operation.error)}`);
-    }
-
-    // Try to find the URI in either response or result (handles some SDK variations)
-    let videoUri = 
-        operation.response?.generatedVideos?.[0]?.video?.uri || 
-        (operation as any).result?.generatedVideos?.[0]?.video?.uri ||
-        (operation as any).metadata?.generatedVideos?.[0]?.video?.uri;
-    
-    if (!videoUri) {
-        console.error("Video Generation Failed - Debug Info:", JSON.stringify(operation, null, 2));
-        throw new Error("Operation completed but no video URI returned.");
-    }
-
-    onProgress("Laddar ner och sparar video...");
-    
-    // Call backend function to save the video from the URI to Storage
-    const saveFn = functions.httpsCallable('saveGeneratedVideo');
-    const result = await saveFn({
-        videoUri,
-        orgId: organizationId,
-        screenId,
-        postId
-    });
-
-    onProgress("Klart!");
-    
-    // Return the actual public URL of the video
-    return (result.data as any).videoUrl as string;
+    console.log("Video operation started:", operationName);
+    return operationName; // Return the name to the UI, so it can trigger the backend listener.
   });
+};
 
 export const generateEventReminderText = (
   event: { name: string; icon: string },

@@ -605,6 +605,28 @@ export const listenToVideoOperationForPost = (orgId: string, postId: string, cal
         });
 };
 
+export const createVideoOperation = async (orgId: string, screenId: string, postId: string, prompt: string, operationName: string) => {
+    if (isOffline) return 'mock-op-id';
+    if (!db) throw new Error("DB not initialized");
+    if (!auth?.currentUser) throw new Error("User not authenticated");
+
+    const opId = operationName.split('/').pop(); // Extract clean ID if it's a path
+    const docRef = db.collection('videoOperations').doc(opId || `op-${Date.now()}`);
+    
+    await docRef.set({
+        operationName: operationName,
+        orgId,
+        screenId,
+        postId,
+        prompt,
+        userId: auth.currentUser.uid,
+        status: 'processing',
+        model: 'veo-3.1-fast-generate-preview',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return docRef.id;
+};
+
 // --- CLOUD FUNCTIONS ---
 
 export const getVoiceServerConfig = async (): Promise<{ url: string }> => {
