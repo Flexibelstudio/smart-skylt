@@ -266,6 +266,82 @@ export const inviteUser = onCall(async (request) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*                  Video Generation Initiation (Callable)             */
+/* ------------------------------------------------------------------ */
+
+export const initiateVideoGeneration = onCall(
+  {
+    timeoutSeconds: 60, // Sufficient for the API handshake
+    secrets: ["API_KEY"],
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+
+    const { prompt, image, orgId, screenId, postId } = request.data;
+    const API_KEY = process.env.API_KEY;
+
+    if (!API_KEY) {
+      console.error("API_KEY missing.");
+      throw new HttpsError("internal", "Service configuration error.");
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      console.log(`Initiating video generation for user ${request.auth.uid}`);
+
+      const model = "veo-3.1-fast-generate-preview";
+      
+      // Prepare image part if exists
+      let imagePart = undefined;
+      if (image && image.imageBytes && image.mimeType) {
+          imagePart = {
+              imageBytes: image.imageBytes,
+              mimeType: image.mimeType
+          };
+      }
+
+      const operation = await ai.models.generateVideos({
+        model,
+        prompt,
+        image: imagePart,
+        config: { numberOfVideos: 1 },
+      });
+
+      const operationName = operation.name || (operation).operation?.name;
+
+      if (!operationName) {
+        throw new Error("No operation name returned from Google AI.");
+      }
+
+      // Create the database entry here on the server side
+      const opId = operationName.split('/').pop();
+      const docRef = db.collection('videoOperations').doc(opId || `op-${Date.now()}`);
+      
+      await docRef.set({
+          operationName: operationName,
+          orgId,
+          screenId,
+          postId,
+          userId: request.auth.uid,
+          status: 'processing',
+          model: model,
+          prompt: prompt,
+          createdAt: FieldValue.serverTimestamp()
+      });
+
+      return { success: true, operationName };
+
+    } catch (error) {
+      console.error("Video initiation failed:", error);
+      // Pass through the error message if safe, or generic
+      throw new HttpsError("internal", error.message || "Failed to start video generation.");
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ */
 /*                  Video Generation Process (Trigger)                 */
 /* ------------------------------------------------------------------ */
 

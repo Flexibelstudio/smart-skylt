@@ -1,3 +1,4 @@
+
 // services/geminiService.ts
 import {
   GoogleGenAI,
@@ -7,6 +8,7 @@ import {
   FunctionDeclaration,
 } from "@google/genai";
 import { z, ZodSchema } from 'zod';
+import { httpsCallable } from "firebase/functions";
 
 import {
   DisplayPost,
@@ -716,35 +718,39 @@ export const generateVideoFromPrompt = (
   postId: string,
   onProgress: (status: string) => void,
   image?: { mimeType: string; data: string }
-): Promise<string> => { // returns Operation Name
+): Promise<string> => {
   return handleAIError(async () => {
-    const ai = ensureAiInitialized();
+    // Call the Cloud Function instead of the SDK directly to avoid 429/Quota issues on the client.
+    onProgress("Startar video-motor (server)...");
+    
+    if (!functions) throw new Error("Firebase Functions not initialized");
+    const initiateVideoGeneration = httpsCallable(functions, 'initiateVideoGeneration');
 
-    const imagePart = image
-      ? { imageBytes: image.data, mimeType: image.mimeType }
-      : undefined;
+    let imagePayload = null;
+    if (image) {
+        // The Cloud Function expects { imageBytes: string, mimeType: string }
+        imagePayload = {
+            imageBytes: image.data,
+            mimeType: image.mimeType
+        };
+    }
 
-    onProgress("Beställer video från Google Veo...");
-    const model = "veo-3.1-fast-generate-preview";
-    const apiPrompt = Prompts.getGenerateVideoPrompt(prompt);
-
-    // 1. Initiate Video Generation
-    const operation = await ai.models.generateVideos({
-      model,
-      prompt: apiPrompt,
-      image: imagePart,
-      config: { numberOfVideos: 1 },
+    const result = await initiateVideoGeneration({
+        prompt,
+        orgId: organizationId,
+        screenId,
+        postId,
+        image: imagePayload
     });
+
+    const data = result.data as { operationName: string };
     
-    const operationName = operation.name || (operation as any).operation?.name;
-    
-    if (!operationName) {
-        console.error("Operation missing name:", operation);
+    if (!data || !data.operationName) {
         throw new Error("Kunde inte starta videogenereringen (inget ID returnerades).");
     }
 
-    console.log("Video operation started:", operationName);
-    return operationName; // Return the name to the UI, so it can trigger the backend listener.
+    console.log("Video operation started via backend:", data.operationName);
+    return data.operationName; 
   });
 };
 

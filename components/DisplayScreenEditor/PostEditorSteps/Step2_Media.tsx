@@ -1,10 +1,11 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
 import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
-import { uploadPostAsset, createVideoOperation, listenToVideoOperationForPost } from '../../../services/firebaseService';
+import { uploadPostAsset, listenToVideoOperationForPost } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
@@ -270,8 +271,9 @@ const SingleMediaEditor: React.FC<{
         if (!post.aiVideoPrompt || !post.aiVideoPrompt.trim() || !currentUser) return;
         setAiLoading('generate-video');
         try {
-            // 1. Initiate the job (Fire-and-Forget pattern)
-            const operationName = await generateVideoFromPrompt(
+            // 1. Initiate the job (Fire-and-Forget pattern via Backend Callable)
+            // This function now calls the backend to start the job AND write to Firestore.
+            await generateVideoFromPrompt(
                 post.aiVideoPrompt,
                 organization.id,
                 screen.id,
@@ -279,9 +281,6 @@ const SingleMediaEditor: React.FC<{
                 (status) => console.log(status)
             );
             
-            // 2. Create a tracking document in Firestore
-            await createVideoOperation(organization.id, screen.id, post.id, post.aiVideoPrompt, operationName);
-
             showToast({ 
                 message: 'Videogenerering startad! Du kan fortsätta arbeta eller stänga fönstret – videon dyker upp automatiskt när den är klar.', 
                 type: 'success',
