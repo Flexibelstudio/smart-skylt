@@ -471,9 +471,6 @@ export const processVideoOperation = onDocumentCreated(
                 return; // Success!
             }
 
-            // Not done yet, wait
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-
         } catch (error) {
             console.error("Error in polling loop:", error);
             
@@ -495,6 +492,12 @@ export const processVideoOperation = onDocumentCreated(
                 return;
             }
             // For other errors (network glitches), loop continues
+        }
+
+        // Wait before next retry, regardless of success/failure of the current check
+        // This fixes the "spinning loop" bug where errors caused instant retries
+        if (i < MAX_RETRIES - 1) {
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
         }
     }
 
