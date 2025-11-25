@@ -1,3 +1,4 @@
+
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
 import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, InstagramStory, VideoOperation, PostTemplate, Tag, DisplayPost } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
@@ -598,7 +599,9 @@ export const listenToInstagramStories = (orgId: string, callback: (stories: Inst
 
 export const listenToVideoOperationForPost = (orgId: string, postId: string, callback: (op: VideoOperation | null) => void) => {
     if (isOffline || !db) return () => {};
-    return db.collection('videoOperations').where('orgId', '==', orgId).where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1)
+    // Updated to listen to subcollection under organization
+    return db.collection('organizations').doc(orgId).collection('videoOperations')
+        .where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1)
         .onSnapshot(snap => {
             if (!snap.empty) callback({ id: snap.docs[0].id, ...snap.docs[0].data() } as VideoOperation);
             else callback(null);
@@ -611,14 +614,14 @@ export const createVideoOperation = async (orgId: string, screenId: string, post
     if (!auth?.currentUser) throw new Error("User not authenticated");
 
     const opId = operationName.split('/').pop(); // Extract clean ID if it's a path
-    const docRef = db.collection('videoOperations').doc(opId || `op-${Date.now()}`);
+    // Updated to save under organization subcollection
+    const docRef = db.collection('organizations').doc(orgId).collection('videoOperations').doc(opId || `op-${Date.now()}`);
     
     await docRef.set({
         operationName: operationName,
         orgId,
         screenId,
         postId,
-        prompt,
         userId: auth.currentUser.uid,
         status: 'processing',
         model: 'veo-3.1-fast-generate-preview',

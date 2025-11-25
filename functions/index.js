@@ -287,9 +287,13 @@ export const initiateVideoGeneration = onCall(
       throw new HttpsError("internal", "Service configuration error.");
     }
 
+    if (!orgId) {
+        throw new HttpsError("invalid-argument", "Organization ID is required.");
+    }
+
     try {
       const ai = new GoogleGenAI({ apiKey: API_KEY });
-      console.log(`Initiating video generation for user ${request.auth.uid}`);
+      console.log(`Initiating video generation for user ${request.auth.uid} in org ${orgId}`);
 
       const model = "veo-3.1-fast-generate-preview";
       
@@ -315,9 +319,9 @@ export const initiateVideoGeneration = onCall(
         throw new Error("No operation name returned from Google AI.");
       }
 
-      // Create the database entry here on the server side
+      // Create the database entry under the organization's subcollection
       const opId = operationName.split('/').pop();
-      const docRef = db.collection('videoOperations').doc(opId || `op-${Date.now()}`);
+      const docRef = db.collection('organizations').doc(orgId).collection('videoOperations').doc(opId || `op-${Date.now()}`);
       
       await docRef.set({
           operationName: operationName,
@@ -347,7 +351,7 @@ export const initiateVideoGeneration = onCall(
 
 export const processVideoOperation = onDocumentCreated(
   {
-    document: "videoOperations/{operationId}",
+    document: "organizations/{orgId}/videoOperations/{operationId}",
     timeoutSeconds: 540, // 540s (9 mins) is the max for Eventarc triggers
     memory: "1GiB",
     secrets: ["API_KEY"]
@@ -359,11 +363,12 @@ export const processVideoOperation = onDocumentCreated(
       return;
     }
     const data = snap.data();
+    const orgId = event.params.orgId;
     
     // Only process newly created operations that are in 'processing' state
     if (data.status !== 'processing') return;
 
-    const { operationName, orgId, screenId, postId } = data;
+    const { operationName, screenId, postId } = data;
     const API_KEY = process.env.API_KEY;
 
     if (!API_KEY || !operationName || !orgId || !screenId || !postId) {
@@ -505,7 +510,8 @@ export const deleteOrganization = onCall(async (request) => {
     const batch = db.batch();
 
     // 2. Delete subcollections (we must list documents and delete them)
-    const subcollections = ["displayScreens", "suggestedPosts", "instagramStories"];
+    // Added 'videoOperations' to clean up
+    const subcollections = ["displayScreens", "suggestedPosts", "instagramStories", "videoOperations"];
     for (const sub of subcollections) {
         const subcollectionRef = orgRef.collection(sub);
         const snapshot = await subcollectionRef.get();
@@ -906,12 +912,14 @@ async function runAutomationsOnce(orgIdFilter) {
 
   await Promise.all(perOrg);
   
-  // --- CLEANUP STUCK VIDEO OPERATIONS ---
+  // --- CLEANUP STUCK VIDEO OPERATIONS (updated path) ---
   try {
       const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
       const cutoff = new Date(now.getTime() - STUCK_THRESHOLD_MS);
       
-      const stuckOpsSnapshot = await db.collection('videoOperations')
+      // Warning: Collection Group query requires an index. 
+      // If this fails initially, create the index in Firebase Console.
+      const stuckOpsSnapshot = await db.collectionGroup('videoOperations')
           .where('status', '==', 'processing')
           .where('createdAt', '<', cutoff)
           .get();
