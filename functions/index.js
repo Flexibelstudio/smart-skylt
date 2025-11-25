@@ -380,9 +380,9 @@ export const processVideoOperation = onDocumentCreated(
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     console.log(`Starting polling for video operation: ${operationName}`);
 
-    const POLL_INTERVAL = 10000; // 10s
-    // Max retries to fit within 540s timeout. 50 * 10s = 500s.
-    const MAX_RETRIES = 50; 
+    const POLL_INTERVAL = 5000; // 5s
+    // Max retries to fit within 540s timeout. 100 * 5s = 500s.
+    const MAX_RETRIES = 100; 
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         try {
@@ -407,42 +407,60 @@ export const processVideoOperation = onDocumentCreated(
                 const separator = videoUri.includes("?") ? "&" : "?";
                 const downloadUrl = `${videoUri}${separator}key=${API_KEY}`;
                 
-                const response = await fetch(downloadUrl);
-                if (!response.ok) throw new Error(`Download failed: ${response.statusText}`);
-                const buffer = await response.arrayBuffer();
+                let buffer;
+                try {
+                    const response = await fetch(downloadUrl);
+                    if (!response.ok) throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                    buffer = await response.arrayBuffer();
+                } catch (dlError) {
+                    throw new Error(`Failed to download video from Google: ${dlError.message}`);
+                }
 
                 const bucket = storage.bucket();
                 const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
                 const file = bucket.file(fileName);
                 const token = randomUUID();
 
-                await file.save(Buffer.from(buffer), {
-                    metadata: {
-                        contentType: "video/mp4",
-                        metadata: { firebaseStorageDownloadTokens: token }
-                    }
-                });
+                try {
+                    await file.save(Buffer.from(buffer), {
+                        metadata: {
+                            contentType: "video/mp4",
+                            metadata: { firebaseStorageDownloadTokens: token }
+                        }
+                    });
+                } catch (saveError) {
+                    console.error("Storage save error:", saveError);
+                    throw new Error(`Failed to save video to Storage (Permission/Config): ${saveError.message}`);
+                }
 
                 const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
                 console.log(`Video saved to ${publicUrl}`);
 
                 // Update Post in Firestore
                 const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
-                await db.runTransaction(async (t) => {
-                    const doc = await t.get(postRef);
-                    if (!doc.exists) throw new Error("Screen not found");
-                    const postData = doc.data();
-                    const posts = postData.posts || [];
-                    const idx = posts.findIndex(p => p.id === postId);
-                    
-                    if (idx > -1) {
-                        posts[idx].videoUrl = publicUrl;
-                        posts[idx].isAiGeneratedVideo = true;
-                        delete posts[idx].imageUrl;
-                        delete posts[idx].isAiGeneratedImage;
-                        t.update(postRef, { posts });
-                    }
-                });
+                
+                try {
+                    await db.runTransaction(async (t) => {
+                        const doc = await t.get(postRef);
+                        if (!doc.exists) throw new Error("Screen not found");
+                        const postData = doc.data();
+                        const posts = postData.posts || [];
+                        const idx = posts.findIndex(p => p.id === postId);
+                        
+                        if (idx > -1) {
+                            posts[idx].videoUrl = publicUrl;
+                            posts[idx].isAiGeneratedVideo = true;
+                            delete posts[idx].imageUrl;
+                            delete posts[idx].isAiGeneratedImage;
+                            t.update(postRef, { posts });
+                        }
+                    });
+                } catch (dbError) {
+                    console.error("Firestore update error:", dbError);
+                    // Even if this fails, we succeeded in generating/saving. 
+                    // But we should report it.
+                    throw new Error(`Failed to update post with video URL: ${dbError.message}`);
+                }
 
                 // Mark operation as done
                 await snap.ref.update({ 
@@ -458,15 +476,25 @@ export const processVideoOperation = onDocumentCreated(
 
         } catch (error) {
             console.error("Error in polling loop:", error);
-            // Only abort on fatal errors, otherwise retry loop continues
-            if (error.message && (error.message.includes("not found") || error.message.includes("failed"))) {
+            
+            const errMsg = error.message ? error.message.toLowerCase() : "";
+            // Check for fatal errors that shouldn't be retried
+            if (
+                errMsg.includes("not found") || 
+                errMsg.includes("failed") || 
+                errMsg.includes("quota") || 
+                errMsg.includes("429") ||
+                errMsg.includes("403") ||
+                errMsg.includes("permission")
+            ) {
                  await snap.ref.update({ 
                     status: 'error', 
-                    errorMessage: error.message,
+                    errorMessage: error.message || "Unknown fatal error",
                     completedAt: FieldValue.serverTimestamp()
                 });
                 return;
             }
+            // For other errors (network glitches), loop continues
         }
     }
 

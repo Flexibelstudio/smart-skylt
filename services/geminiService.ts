@@ -8,7 +8,6 @@ import {
   FunctionDeclaration,
 } from "@google/genai";
 import { z, ZodSchema } from 'zod';
-import { httpsCallable } from "firebase/functions";
 
 import {
   DisplayPost,
@@ -724,7 +723,7 @@ export const generateVideoFromPrompt = (
     onProgress("Startar video-motor (server)...");
     
     if (!functions) throw new Error("Firebase Functions not initialized");
-    const initiateVideoGeneration = httpsCallable(functions, 'initiateVideoGeneration');
+    const initiateVideoGeneration = functions.httpsCallable('initiateVideoGeneration');
 
     let imagePayload = null;
     if (image) {
