@@ -723,6 +723,7 @@ export const generateVideoFromPrompt = (
     onProgress("Beställer video från Google Veo...");
     
     if (!functions) throw new Error("Firebase Functions not initialized");
+    // Use the compat syntax for calling functions
     const initiateVideoGeneration = functions.httpsCallable('initiateVideoGeneration');
 
     let imagePayload = null;
@@ -762,8 +763,8 @@ export const generateVideoFromPrompt = (
         }
 
         try {
-            // IMPORTANT: Use operationName directly to avoid SDK object bugs
-            const opResult = await ai.operations.getVideosOperation({ operation: operationName });
+            // IMPORTANT: Use name property as required by the SDK
+            const opResult = await ai.operations.getVideosOperation({ name: operationName });
             
             if (opResult.done) {
                 if (opResult.error) {
