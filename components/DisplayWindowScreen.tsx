@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from '../context/StudioContext';
 import { BrandingOptions, DisplayPost, Organization, Tag, DisplayScreen } from '../types';
@@ -255,7 +256,8 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          key={`${(currentPost as any).id}-${cycleCount}`}
+          // FIX: Use stable key for single post playlist to prevent unmounting and black screen
+          key={activePosts.length === 1 ? (currentPost as any).id : `${(currentPost as any).id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={transitionType}

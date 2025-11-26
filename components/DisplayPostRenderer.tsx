@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from 'react';
 import { DisplayPost, Tag, SubImage, SubImageConfig, ContentPosition, TagPositionOverride, CollageItem, Organization, TagColorOverride, DisplayScreen } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
@@ -16,7 +17,8 @@ const ImageWithFallback: React.FC<{ src?: string; alt: string; className: string
     return <img src={imgSrc} onError={handleError} alt={alt} className={`${className} ${imgSrc === PLACEHOLDER_URL ? 'object-contain p-4 bg-slate-200 dark:bg-slate-700' : ''}`} style={style} />;
 };
 
-const VideoWithFallback: React.FC<React.ComponentProps<'video'> & { src?: string }> = ({ src, ...props }) => {
+// Updated VideoWithFallback to support ref forwarding for seamless looping control
+const VideoWithFallback = forwardRef<HTMLVideoElement, React.ComponentProps<'video'> & { src?: string }>(({ src, ...props }, ref) => {
     const [videoSrc, setVideoSrc] = useState(src);
     useEffect(() => { setVideoSrc(src); }, [src]);
     const handleError = () => setVideoSrc(undefined);
@@ -25,8 +27,9 @@ const VideoWithFallback: React.FC<React.ComponentProps<'video'> & { src?: string
         return <img src={PLACEHOLDER_URL} alt="Missing video" className={props.className + ' object-contain p-4 bg-slate-200 dark:bg-slate-700'} style={props.style} />;
     }
 
-    return <video src={videoSrc} onError={handleError} {...props} />;
-};
+    return <video ref={ref} src={videoSrc} onError={handleError} {...props} />;
+});
+VideoWithFallback.displayName = 'VideoWithFallback';
 
 
 declare global {
@@ -1018,6 +1021,19 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
 
+    // --- REWIND LOGIC FOR SEAMLESS LOOP ---
+    // If this component stays mounted (same key in parent) but cycleCount changes, it means we are looping the same post.
+    // We must rewind the video manually because 'key' didn't change to remount the component.
+    useEffect(() => {
+        if (videoRef.current) {
+            // console.log("Cycle changed, rewinding video for seamless loop");
+            videoRef.current.currentTime = 0;
+            videoRef.current.play().catch(e => {
+                // Autoplay might be blocked or video not ready, usually fine in this context
+                // console.warn("Rewind play failed", e); 
+            });
+        }
+    }, [cycleCount]); // Trigger whenever cycleCount increments
 
     useEffect(() => {
         const videoElement = videoRef.current;
