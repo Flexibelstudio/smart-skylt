@@ -101,8 +101,37 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   // 5. Manage Selected Display Screen (Local State)
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
 
+  
+  // --- Screen Mode Specific Logic (Moved up to use variables in loading state) ---
+  
+  // Pairing Logic
+  // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
+  const deviceId = readDeviceId(currentUser?.uid);
+  // Use isDisplayApp (based on domain) so we listen even before auth completes.
+  const { data: pairingData, isLoading: pairingLoading } = usePairingCodeListener(deviceId, isDisplayApp);
+
+  useEffect(() => {
+      if (pairingData && pairingData.status === 'paired' && pairingData.organizationId) {
+          if (selectedOrgId !== pairingData.organizationId) {
+             // If the paired org is different, select it.
+             // The hook will then take over loading the details.
+             setSelectedOrgId(pairingData.organizationId);
+          }
+          
+          // Auto-select the assigned screen if available
+          if (pairingData.assignedDisplayScreenId) {
+              if (!selectedDisplayScreen || selectedDisplayScreen.id !== pairingData.assignedDisplayScreenId) {
+                  selectDisplayScreenById(pairingData.assignedDisplayScreenId);
+              }
+          }
+      }
+  }, [pairingData, selectedOrgId, selectedDisplayScreen]); // selectDisplayScreenById removed from dependency to avoid cycle
+
   // Combined Loading State
-  const locationLoading = orgsLoading || (!!selectedOrgId && (detailsLoading || screensLoading) && !selectedOrganization);
+  // We include pairingLoading ONLY if we have a deviceId, meaning we are trying to reconnect.
+  const locationLoading = orgsLoading || 
+                          (!!selectedOrgId && (detailsLoading || screensLoading) && !selectedOrganization) ||
+                          (!!deviceId && isDisplayApp && pairingLoading);
 
   // Update selectedDisplayScreen when data changes in the list
   useEffect(() => {
@@ -191,9 +220,9 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // --- Screen Mode Specific Logic ---
   
-  // 1. Initial Load / Restoration
+  // 1. Initial Load / Restoration (Admin Mode)
   useEffect(() => {
-      if (!authLoading && isScreenMode && !selectedOrgId) {
+      if (!authLoading && isScreenMode && !selectedOrgId && !isDisplayApp) {
           const storedOrg = localStorage.getItem(LOCAL_STORAGE_ORG_KEY);
           if (storedOrg) {
               try {
@@ -205,30 +234,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
              setSelectedOrgId(allOrganizations[0].id);
           }
       }
-  }, [authLoading, isScreenMode, selectedOrgId, allOrganizations]);
-
-  // 2. Pairing Logic
-  // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
-  const deviceId = readDeviceId(currentUser?.uid);
-  // Use isDisplayApp (based on domain) so we listen even before auth completes.
-  const pairingData = usePairingCodeListener(deviceId, isDisplayApp);
-
-  useEffect(() => {
-      if (pairingData && pairingData.status === 'paired' && pairingData.organizationId) {
-          if (selectedOrgId !== pairingData.organizationId) {
-             // If the paired org is different, select it.
-             // The hook will then take over loading the details.
-             setSelectedOrgId(pairingData.organizationId);
-          }
-          
-          // Auto-select the assigned screen if available
-          if (pairingData.assignedDisplayScreenId) {
-              if (!selectedDisplayScreen || selectedDisplayScreen.id !== pairingData.assignedDisplayScreenId) {
-                  selectDisplayScreenById(pairingData.assignedDisplayScreenId);
-              }
-          }
-      }
-  }, [pairingData, selectedOrgId, selectedDisplayScreen, selectDisplayScreenById]);
+  }, [authLoading, isScreenMode, selectedOrgId, allOrganizations, isDisplayApp]);
 
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);

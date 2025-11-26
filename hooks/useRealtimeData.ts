@@ -104,7 +104,11 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
     return () => unsubscribe();
   }, [deviceId, isScreenMode, queryClient]);
 
-  return queryResult.data;
+  // Return both data and loading state
+  return { 
+    data: queryResult.data, 
+    isLoading: queryResult.isLoading && queryResult.fetchStatus !== 'idle' 
+  };
 }
 
 // --- Session ---
