@@ -1,4 +1,3 @@
-
 import React, {
   createContext,
   useState,
@@ -26,6 +25,7 @@ import {
   usePairingCodeListener, 
   useScreenSessionListener 
 } from '../hooks/useRealtimeData';
+import { getAppMode } from '../utils/appMode';
 
 type SyncStatus = 'synced' | 'syncing' | 'offline';
 
@@ -72,6 +72,8 @@ const removeDeviceId = (uid?: string | null) => {
 export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser, isScreenMode, authLoading } = useAuth();
   const queryClient = useQueryClient();
+  const appMode = getAppMode();
+  const isDisplayApp = appMode === 'display';
 
   // 1. Fetch All Organizations (Initial List)
   const { data: allOrganizations = [], isLoading: orgsLoading } = useAllOrganizations(!authLoading);
@@ -206,8 +208,10 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [authLoading, isScreenMode, selectedOrgId, allOrganizations]);
 
   // 2. Pairing Logic
-  const deviceId = currentUser ? readDeviceId(currentUser.uid) : null;
-  const pairingData = usePairingCodeListener(deviceId, isScreenMode);
+  // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
+  const deviceId = readDeviceId(currentUser?.uid);
+  // Use isDisplayApp (based on domain) so we listen even before auth completes.
+  const pairingData = usePairingCodeListener(deviceId, isDisplayApp);
 
   useEffect(() => {
       if (pairingData && pairingData.status === 'paired' && pairingData.organizationId) {
@@ -216,8 +220,15 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
              // The hook will then take over loading the details.
              setSelectedOrgId(pairingData.organizationId);
           }
+          
+          // Auto-select the assigned screen if available
+          if (pairingData.assignedDisplayScreenId) {
+              if (!selectedDisplayScreen || selectedDisplayScreen.id !== pairingData.assignedDisplayScreenId) {
+                  selectDisplayScreenById(pairingData.assignedDisplayScreenId);
+              }
+          }
       }
-  }, [pairingData, selectedOrgId]);
+  }, [pairingData, selectedOrgId, selectedDisplayScreen, selectDisplayScreenById]);
 
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
