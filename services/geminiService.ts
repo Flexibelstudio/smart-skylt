@@ -719,15 +719,14 @@ export const generateVideoFromPrompt = (
   image?: { mimeType: string; data: string }
 ): Promise<string> => {
   return handleAIError(async () => {
-    // Call the Cloud Function instead of the SDK directly to avoid 429/Quota issues on the client.
-    onProgress("Startar video-motor (server)...");
+    // 1. INITIATE SERVER-SIDE (Avoids 429 Quota Error)
+    onProgress("Beställer video från Google Veo...");
     
     if (!functions) throw new Error("Firebase Functions not initialized");
     const initiateVideoGeneration = functions.httpsCallable('initiateVideoGeneration');
 
     let imagePayload = null;
     if (image) {
-        // The Cloud Function expects { imageBytes: string, mimeType: string }
         imagePayload = {
             imageBytes: image.data,
             mimeType: image.mimeType
@@ -743,13 +742,70 @@ export const generateVideoFromPrompt = (
     });
 
     const data = result.data as { operationName: string };
+    const operationName = data.operationName;
     
-    if (!data || !data.operationName) {
-        throw new Error("Kunde inte starta videogenereringen (inget ID returnerades).");
+    if (!operationName) throw new Error("Kunde inte starta videogenereringen (inget ID returnerades).");
+
+    console.log("Video initiated. Polling for completion client-side...", operationName);
+    
+    // 2. POLL CLIENT-SIDE (Avoids 540s Timeout Error)
+    const ai = ensureAiInitialized();
+    const POLLING_INTERVAL = 5000; // 5s
+    const MAX_POLLING_TIME = 1000 * 60 * 15; // 15 minutes
+    const startTime = Date.now();
+
+    let videoUri: string | null = null;
+
+    while (!videoUri) {
+        if (Date.now() - startTime > MAX_POLLING_TIME) {
+            throw new Error("Videogenereringen tog för lång tid (klient-timeout).");
+        }
+
+        try {
+            // IMPORTANT: Use operationName directly to avoid SDK object bugs
+            const opResult = await ai.operations.getVideosOperation({ operation: operationName });
+            
+            if (opResult.done) {
+                if (opResult.error) {
+                    throw new Error(`Google Veo fel: ${JSON.stringify(opResult.error)}`);
+                }
+
+                // Robustly find the URI
+                videoUri = 
+                    opResult.response?.generatedVideos?.[0]?.video?.uri ||
+                    (opResult as any).result?.generatedVideos?.[0]?.video?.uri ||
+                    (opResult as any).metadata?.generatedVideos?.[0]?.video?.uri;
+
+                if (!videoUri) {
+                    console.warn("Operation marked done but no URI found. Full response:", opResult);
+                    throw new Error("Operation completed but no video URI returned.");
+                }
+            } else {
+                // Still processing
+                onProgress("Väntar på att videon ska bli klar...");
+                await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
+            }
+        } catch (pollErr: any) {
+            // Ignore transient network errors during polling, but throw fatal ones
+            console.warn("Polling error (retrying):", pollErr);
+            if (pollErr.message && pollErr.message.includes("not found")) throw pollErr;
+            await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
+        }
     }
 
-    console.log("Video operation started via backend:", data.operationName);
-    return data.operationName; 
+    // 3. SAVE SERVER-SIDE (Securely stores file)
+    onProgress("Sparar video...");
+    const saveGeneratedVideo = functions.httpsCallable('saveGeneratedVideo');
+    
+    await saveGeneratedVideo({
+        videoUri,
+        orgId: organizationId,
+        screenId,
+        postId
+    });
+
+    onProgress("Klar!");
+    return "done";
   });
 };
 
