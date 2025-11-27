@@ -101,48 +101,8 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   // 5. Manage Selected Display Screen (Local State)
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
 
-  
-  // --- Screen Mode Specific Logic (Moved up to use variables in loading state) ---
-  
-  // Pairing Logic
-  // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
-  const deviceId = readDeviceId(currentUser?.uid);
-  // Use isDisplayApp (based on domain) so we listen even before auth completes.
-  const { data: pairingData, isLoading: pairingLoading } = usePairingCodeListener(deviceId, isDisplayApp);
-
-  useEffect(() => {
-      if (pairingData && pairingData.status === 'paired' && pairingData.organizationId) {
-          if (selectedOrgId !== pairingData.organizationId) {
-             // If the paired org is different, select it.
-             // The hook will then take over loading the details.
-             setSelectedOrgId(pairingData.organizationId);
-          }
-          
-          // Auto-select the assigned screen if available
-          if (pairingData.assignedDisplayScreenId) {
-              if (!selectedDisplayScreen || selectedDisplayScreen.id !== pairingData.assignedDisplayScreenId) {
-                  selectDisplayScreenById(pairingData.assignedDisplayScreenId);
-              }
-          }
-      }
-  }, [pairingData, selectedOrgId, selectedDisplayScreen]); // selectDisplayScreenById removed from dependency to avoid cycle
-
-  // Combined Loading State
-  // We include pairingLoading ONLY if we have a deviceId, meaning we are trying to reconnect.
-  const locationLoading = orgsLoading || 
-                          (!!selectedOrgId && (detailsLoading || screensLoading) && !selectedOrganization) ||
-                          (!!deviceId && isDisplayApp && pairingLoading);
-
-  // Update selectedDisplayScreen when data changes in the list
-  useEffect(() => {
-      if (selectedDisplayScreen) {
-          const updated = displayScreens.find(s => s.id === selectedDisplayScreen.id);
-          if (updated && JSON.stringify(updated) !== JSON.stringify(selectedDisplayScreen)) {
-              setSelectedDisplayScreen(updated);
-          }
-      }
-  }, [displayScreens, selectedDisplayScreen]);
-
+  // 6. Pending Screen ID (for race condition handling during pairing)
+  const [pendingScreenId, setPendingScreenId] = useState<string | null>(null);
 
   // --- Actions ---
 
@@ -216,6 +176,60 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
           await fbUpdateOrganization(selectedOrgId, data);
       }
   }, [selectedOrgId]);
+
+  
+  // --- Screen Mode Specific Logic (Moved up to use variables in loading state) ---
+  
+  // Pairing Logic
+  // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
+  const deviceId = readDeviceId(currentUser?.uid);
+  // Use isDisplayApp (based on domain) so we listen even before auth completes.
+  const { data: pairingData, isLoading: pairingLoading } = usePairingCodeListener(deviceId, isDisplayApp);
+
+  useEffect(() => {
+      if (pairingData && pairingData.status === 'paired' && pairingData.organizationId) {
+          if (selectedOrgId !== pairingData.organizationId) {
+             // If the paired org is different, select it.
+             // The hook will then take over loading the details.
+             setSelectedOrgId(pairingData.organizationId);
+          }
+          
+          // Auto-select the assigned screen if available
+          if (pairingData.assignedDisplayScreenId) {
+              if (!selectedDisplayScreen || selectedDisplayScreen.id !== pairingData.assignedDisplayScreenId) {
+                  // Set as pending to wait for screens to load if not immediately available
+                  setPendingScreenId(pairingData.assignedDisplayScreenId);
+              }
+          }
+      }
+  }, [pairingData, selectedOrgId, selectedDisplayScreen]);
+
+  // New Effect: Resolve pending screen selection once data is loaded
+  useEffect(() => {
+      if (pendingScreenId && displayScreens.length > 0) {
+          const screen = displayScreens.find(s => s.id === pendingScreenId);
+          if (screen) {
+              selectDisplayScreen(screen);
+              setPendingScreenId(null);
+          }
+      }
+  }, [pendingScreenId, displayScreens, selectDisplayScreen]);
+
+  // Combined Loading State
+  const locationLoading = orgsLoading || 
+                          (!!selectedOrgId && (detailsLoading || screensLoading) && !selectedOrganization) ||
+                          (!!deviceId && isDisplayApp && pairingLoading) ||
+                          !!pendingScreenId;
+
+  // Update selectedDisplayScreen when data changes in the list
+  useEffect(() => {
+      if (selectedDisplayScreen) {
+          const updated = displayScreens.find(s => s.id === selectedDisplayScreen.id);
+          if (updated && JSON.stringify(updated) !== JSON.stringify(selectedDisplayScreen)) {
+              setSelectedDisplayScreen(updated);
+          }
+      }
+  }, [displayScreens, selectedDisplayScreen]);
 
 
   // --- Screen Mode Specific Logic ---
