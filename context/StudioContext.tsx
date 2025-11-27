@@ -234,9 +234,12 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // --- Screen Mode Specific Logic ---
   
-  // 1. Initial Load / Restoration (Admin Mode)
+  // 1. Initial Load / Restoration
   useEffect(() => {
-      if (!authLoading && isScreenMode && !selectedOrgId && !isDisplayApp) {
+      if (authLoading) return;
+
+      // Admin Mode Restoration (Org only)
+      if (isScreenMode && !isDisplayApp && !selectedOrgId) {
           const storedOrg = localStorage.getItem(LOCAL_STORAGE_ORG_KEY);
           if (storedOrg) {
               try {
@@ -248,7 +251,35 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
              setSelectedOrgId(allOrganizations[0].id);
           }
       }
-  }, [authLoading, isScreenMode, selectedOrgId, allOrganizations, isDisplayApp]);
+
+      // Display App Restoration (Screen & Org persistence)
+      if (isDisplayApp && currentUser) {
+          // Restore Org if missing (failsafe)
+          if (!selectedOrgId) {
+              const storedOrg = localStorage.getItem(LOCAL_STORAGE_ORG_KEY);
+              if (storedOrg) {
+                  try {
+                      const parsed = JSON.parse(storedOrg);
+                      if (parsed.id) setSelectedOrgId(parsed.id);
+                  } catch (e) {}
+              }
+          }
+
+          // Restore Screen if missing
+          if (!selectedDisplayScreen) {
+              const storedScreenKey = getLocalStorageDisplayScreenKey(currentUser.uid);
+              const storedScreenJson = localStorage.getItem(storedScreenKey);
+              if (storedScreenJson) {
+                  try {
+                      const parsedScreen = JSON.parse(storedScreenJson);
+                      if (parsedScreen && parsedScreen.id) {
+                          setSelectedDisplayScreen(parsedScreen);
+                      }
+                  } catch (e) { console.error("Failed to parse stored display screen", e); }
+              }
+          }
+      }
+  }, [authLoading, isScreenMode, selectedOrgId, allOrganizations, isDisplayApp, currentUser, selectedDisplayScreen]);
 
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
