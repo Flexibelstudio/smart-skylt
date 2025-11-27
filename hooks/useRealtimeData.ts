@@ -118,39 +118,36 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
         if (!isScreenMode || !deviceId) return;
 
         let gracePeriodActive = true;
-        let currentDoc: any = undefined; // undefined = haven't heard from DB yet
+        let hasReceivedInitialData = false;
 
-        // Check if we should disconnect based on current state
-        const checkDisconnect = () => {
-            // 1. If we have a doc and it explicitly says disconnect
-            if (currentDoc && currentDoc.forceDisconnect) {
+        // Give the system 10 seconds to sync permissions/data before enabling the kill switch
+        const graceTimer = setTimeout(() => {
+            // console.log('[Session] Grace period ended.');
+            gracePeriodActive = false;
+            
+            // Late check: If we never received data and grace period ends -> Kill
+            if (!hasReceivedInitialData) {
+                 // console.log('[Session] No session data received within grace period. Resetting.');
+                 onForceDisconnect();
+            }
+        }, 10000);
+
+        const unsubscribe = listenToScreenSession(deviceId, (doc) => {
+            hasReceivedInitialData = true;
+
+            // 1. Explicit kill command from backend
+            if (doc && doc.forceDisconnect) {
                 console.log('[Session] Force disconnect signal received.');
                 onForceDisconnect();
                 return;
             }
             
-            // 2. If we have received data (currentDoc is null or object), 
-            // but it is null (missing), AND grace period is over.
-            if (currentDoc === null && !gracePeriodActive) {
-                console.log('[Session] Session missing after grace period. Resetting.');
+            // 2. Session deleted/missing (Kill Switch)
+            // Only trigger if grace period is over to avoid race conditions on initial load
+            if (!doc && !gracePeriodActive) {
+                console.log('[Session] Session document deleted/missing. Resetting.');
                 onForceDisconnect();
             }
-        };
-
-        // Give the system 30 seconds to sync permissions/data before killing the session
-        const graceTimer = setTimeout(() => {
-            console.log('[Session] Grace period ended.');
-            gracePeriodActive = false;
-            checkDisconnect();
-        }, 30000);
-
-        const unsubscribe = listenToScreenSession(deviceId, (doc) => {
-            currentDoc = doc;
-            // If doc is missing, we only log for now if grace period is active
-            if (!doc && gracePeriodActive) {
-                console.log('[Session] Session document missing, waiting (grace period active)...');
-            }
-            checkDisconnect();
         });
 
         return () => {
