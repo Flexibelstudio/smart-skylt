@@ -271,7 +271,7 @@ export const inviteUser = onCall(async (request) => {
 
 export const initiateVideoGeneration = onCall(
   {
-    timeoutSeconds: 60, // Sufficient for the API handshake
+    timeoutSeconds: 60,
     secrets: ["API_KEY"],
   },
   async (request) => {
@@ -279,7 +279,7 @@ export const initiateVideoGeneration = onCall(
       throw new HttpsError("unauthenticated", "You must be logged in.");
     }
 
-    const { prompt, image, orgId, screenId, postId } = request.data;
+    const { prompt, image, orgId } = request.data;
     const API_KEY = process.env.API_KEY;
 
     if (!API_KEY) {
@@ -287,17 +287,12 @@ export const initiateVideoGeneration = onCall(
       throw new HttpsError("internal", "Service configuration error.");
     }
 
-    if (!orgId) {
-        throw new HttpsError("invalid-argument", "Organization ID is required.");
-    }
-
     try {
       const ai = new GoogleGenAI({ apiKey: API_KEY });
-      console.log(`Initiating video generation for user ${request.auth.uid} in org ${orgId}`);
+      console.log(`Initiating video generation for user ${request.auth.uid}`);
 
       const model = "veo-3.1-fast-generate-preview";
       
-      // Prepare image part if exists
       let imagePart = undefined;
       if (image && image.imageBytes && image.mimeType) {
           imagePart = {
@@ -306,6 +301,7 @@ export const initiateVideoGeneration = onCall(
           };
       }
 
+      // IMPORTANT: This uses the Server's credentials/quota
       const operation = await ai.models.generateVideos({
         model,
         prompt,
@@ -319,194 +315,89 @@ export const initiateVideoGeneration = onCall(
         throw new Error("No operation name returned from Google AI.");
       }
 
-      // Create the database entry under the organization's subcollection
-      const opId = operationName.split('/').pop();
-      const docRef = db.collection('organizations').doc(orgId).collection('videoOperations').doc(opId || `op-${Date.now()}`);
-      
-      await docRef.set({
-          operationName: operationName,
-          orgId,
-          screenId,
-          postId,
-          userId: request.auth.uid,
-          status: 'processing',
-          model: model,
-          prompt: prompt,
-          createdAt: FieldValue.serverTimestamp()
-      });
-
+      // Return operation name to client so client can poll
       return { success: true, operationName };
 
     } catch (error) {
       console.error("Video initiation failed:", error);
-      // Pass through the error message if safe, or generic
       throw new HttpsError("internal", error.message || "Failed to start video generation.");
     }
   }
 );
 
 /* ------------------------------------------------------------------ */
-/*                  Video Generation Process (Trigger)                 */
+/*                  Save Generated Video (Callable)                    */
 /* ------------------------------------------------------------------ */
 
-export const processVideoOperation = onDocumentCreated(
+export const saveGeneratedVideo = onCall(
   {
-    document: "organizations/{orgId}/videoOperations/{operationId}",
-    timeoutSeconds: 540, // 540s (9 mins) is the max for Eventarc triggers
+    timeoutSeconds: 300, // 5 minutes to download/upload
     memory: "1GiB",
     secrets: ["API_KEY"]
   },
-  async (event) => {
-    const snap = event.data;
-    if (!snap) {
-      console.log("No data associated with the event");
-      return;
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "You must be logged in.");
     }
-    const data = snap.data();
-    const orgId = event.params.orgId;
-    
-    // Only process newly created operations that are in 'processing' state
-    if (data.status !== 'processing') return;
 
-    const { operationName, screenId, postId } = data;
+    const { videoUri, orgId, postId, screenId } = request.data;
     const API_KEY = process.env.API_KEY;
 
-    if (!API_KEY || !operationName || !orgId || !screenId || !postId) {
-        console.error("Missing required fields or API key for video operation", event.params.operationId);
-        await snap.ref.update({ status: 'error', errorMessage: 'Missing configuration' });
-        return;
+    if (!videoUri || !orgId || !postId || !screenId) {
+        throw new HttpsError("invalid-argument", "Missing required parameters.");
     }
 
-    const ai = new GoogleGenAI({ apiKey: API_KEY });
-    console.log(`Starting polling for video operation: ${operationName}`);
+    try {
+        // 1. Download Video from Google
+        const separator = videoUri.includes("?") ? "&" : "?";
+        const downloadUrl = `${videoUri}${separator}key=${API_KEY}`;
+        
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error(`Download failed: ${response.statusText}`);
+        const buffer = await response.arrayBuffer();
 
-    const POLL_INTERVAL = 5000; // 5s
-    // Max retries to fit within 540s timeout. 100 * 5s = 500s.
-    const MAX_RETRIES = 100; 
+        // 2. Upload to Firebase Storage
+        const bucket = storage.bucket();
+        const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
+        const file = bucket.file(fileName);
+        const token = randomUUID();
 
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        try {
-            const result = await ai.operations.getVideosOperation({ name: operationName });
-            
-            if (result.done) {
-                if (result.error) {
-                    throw new Error(`Video generation failed: ${JSON.stringify(result.error)}`);
-                }
-
-                // Handle different response structures from Google API
-                const videoUri = 
-                    result.response?.generatedVideos?.[0]?.video?.uri || 
-                    result.result?.generatedVideos?.[0]?.video?.uri ||
-                    result.metadata?.generatedVideos?.[0]?.video?.uri;
-
-                if (!videoUri) throw new Error("Operation done but no video URI returned.");
-
-                console.log("Video generated. Downloading...");
-                
-                // Download and Save Logic
-                const separator = videoUri.includes("?") ? "&" : "?";
-                const downloadUrl = `${videoUri}${separator}key=${API_KEY}`;
-                
-                let buffer;
-                try {
-                    const response = await fetch(downloadUrl);
-                    if (!response.ok) throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-                    buffer = await response.arrayBuffer();
-                } catch (dlError) {
-                    throw new Error(`Failed to download video from Google: ${dlError.message}`);
-                }
-
-                const bucket = storage.bucket();
-                const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
-                const file = bucket.file(fileName);
-                const token = randomUUID();
-
-                try {
-                    await file.save(Buffer.from(buffer), {
-                        metadata: {
-                            contentType: "video/mp4",
-                            metadata: { firebaseStorageDownloadTokens: token }
-                        }
-                    });
-                } catch (saveError) {
-                    console.error("Storage save error:", saveError);
-                    throw new Error(`Failed to save video to Storage (Permission/Config): ${saveError.message}`);
-                }
-
-                const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
-                console.log(`Video saved to ${publicUrl}`);
-
-                // Update Post in Firestore
-                const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
-                
-                try {
-                    await db.runTransaction(async (t) => {
-                        const doc = await t.get(postRef);
-                        if (!doc.exists) throw new Error("Screen not found");
-                        const postData = doc.data();
-                        const posts = postData.posts || [];
-                        const idx = posts.findIndex(p => p.id === postId);
-                        
-                        if (idx > -1) {
-                            posts[idx].videoUrl = publicUrl;
-                            posts[idx].isAiGeneratedVideo = true;
-                            delete posts[idx].imageUrl;
-                            delete posts[idx].isAiGeneratedImage;
-                            t.update(postRef, { posts });
-                        }
-                    });
-                } catch (dbError) {
-                    console.error("Firestore update error:", dbError);
-                    // Even if this fails, we succeeded in generating/saving. 
-                    // But we should report it.
-                    throw new Error(`Failed to update post with video URL: ${dbError.message}`);
-                }
-
-                // Mark operation as done
-                await snap.ref.update({ 
-                    status: 'done', 
-                    videoUrl: publicUrl, 
-                    completedAt: FieldValue.serverTimestamp() 
-                });
-                return; // Success!
+        await file.save(Buffer.from(buffer), {
+            metadata: {
+                contentType: "video/mp4",
+                metadata: { firebaseStorageDownloadTokens: token }
             }
+        });
 
-        } catch (error) {
-            console.error("Error in polling loop:", error);
+        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
+
+        // 3. Update Firestore (Organization -> Subcollection)
+        const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
+        
+        await db.runTransaction(async (t) => {
+            const doc = await t.get(postRef);
+            if (!doc.exists) throw new Error("Screen not found");
             
-            const errMsg = error.message ? error.message.toLowerCase() : "";
-            // Check for fatal errors that shouldn't be retried
-            if (
-                errMsg.includes("not found") || 
-                errMsg.includes("failed") || 
-                errMsg.includes("quota") || 
-                errMsg.includes("429") ||
-                errMsg.includes("403") ||
-                errMsg.includes("permission")
-            ) {
-                 await snap.ref.update({ 
-                    status: 'error', 
-                    errorMessage: error.message || "Unknown fatal error",
-                    completedAt: FieldValue.serverTimestamp()
-                });
-                return;
+            const postData = doc.data();
+            const posts = postData.posts || [];
+            const idx = posts.findIndex(p => p.id === postId);
+            
+            if (idx > -1) {
+                posts[idx].videoUrl = publicUrl;
+                posts[idx].isAiGeneratedVideo = true;
+                // Clean up image properties if they exist
+                delete posts[idx].imageUrl;
+                delete posts[idx].isAiGeneratedImage;
+                t.update(postRef, { posts });
             }
-            // For other errors (network glitches), loop continues
-        }
+        });
 
-        // Wait before next retry, regardless of success/failure of the current check
-        // This fixes the "spinning loop" bug where errors caused instant retries
-        if (i < MAX_RETRIES - 1) {
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-        }
+        return { success: true, videoUrl: publicUrl };
+
+    } catch (error) {
+        console.error("Error saving video:", error);
+        throw new HttpsError("internal", error.message || "Failed to save video.");
     }
-
-    // Timeout
-    await snap.ref.update({ 
-        status: 'error', 
-        errorMessage: 'Operation timed out (exceeded 9 minutes)',
-        completedAt: FieldValue.serverTimestamp()
-    });
   }
 );
 
@@ -541,7 +432,6 @@ export const deleteOrganization = onCall(async (request) => {
     const batch = db.batch();
 
     // 2. Delete subcollections (we must list documents and delete them)
-    // Added 'videoOperations' to clean up
     const subcollections = ["displayScreens", "suggestedPosts", "instagramStories", "videoOperations"];
     for (const sub of subcollections) {
         const subcollectionRef = orgRef.collection(sub);
@@ -943,13 +833,11 @@ async function runAutomationsOnce(orgIdFilter) {
 
   await Promise.all(perOrg);
   
-  // --- CLEANUP STUCK VIDEO OPERATIONS (updated path) ---
+  // --- CLEANUP STUCK VIDEO OPERATIONS ---
   try {
       const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
       const cutoff = new Date(now.getTime() - STUCK_THRESHOLD_MS);
       
-      // Warning: Collection Group query requires an index. 
-      // If this fails initially, create the index in Firebase Console.
       const stuckOpsSnapshot = await db.collectionGroup('videoOperations')
           .where('status', '==', 'processing')
           .where('createdAt', '<', cutoff)
@@ -970,6 +858,43 @@ async function runAutomationsOnce(orgIdFilter) {
       }
   } catch (cleanupError) {
       console.error("[Scheduler] Video cleanup failed:", cleanupError);
+  }
+
+  // --- CLEANUP OLD PENDING PAIRING CODES ---
+  try {
+    const PAIRING_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+    const pairingCutoff = new Date(now.getTime() - PAIRING_CODE_TTL);
+    
+    // Query pending codes. Assuming low volume of pending codes, no composite index needed.
+    const pendingCodesSnap = await db.collection('screenPairingCodes')
+      .where('status', '==', 'pending')
+      .get();
+
+    const batch = db.batch();
+    let deleteCount = 0;
+
+    pendingCodesSnap.forEach((doc) => {
+      const data = doc.data();
+      let createdAt;
+      // Parse timestamps robustly
+      if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+        createdAt = data.createdAt.toDate();
+      } else if (data.createdAt) {
+        createdAt = new Date(data.createdAt);
+      }
+
+      if (createdAt && createdAt < pairingCutoff) {
+        batch.delete(doc.ref);
+        deleteCount++;
+      }
+    });
+
+    if (deleteCount > 0) {
+      await batch.commit();
+      console.log(`[Scheduler] Cleaned up ${deleteCount} expired pending pairing codes.`);
+    }
+  } catch (err) {
+    console.error("[Scheduler] Pairing code cleanup failed:", err);
   }
   
   console.log("[Scheduler] AI Automations check finished.");
