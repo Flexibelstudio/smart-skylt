@@ -109,22 +109,25 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const hardReset = useCallback(() => {
     try {
-      // 1. Remove Device ID (The session key)
-      removeDeviceId(currentUser?.uid);
-
-      // 2. Remove Persisted Organization
-      localStorage.removeItem(LOCAL_STORAGE_ORG_KEY);
-
-      // 3. Remove Persisted Display Screen Selection
-      if (currentUser) {
-          localStorage.removeItem(getLocalStorageDisplayScreenKey(currentUser.uid));
+      console.log('[hardReset] Performing aggressive cleanup...');
+      
+      // Aggressively clear ALL keys starting with 'smart-skylt-' to ensure no ghost session data remains.
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('smart-skylt-')) {
+              keysToRemove.push(key);
+          }
       }
+      
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+
     } catch (e) {
       console.error('[hardReset] Failed to clear local storage:', e);
     } finally {
       window.location.replace('/');
     }
-  }, [currentUser]);
+  }, []);
 
   const clearSelection = useCallback(() => {
     setSelectedDisplayScreen(null);
