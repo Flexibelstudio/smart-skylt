@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useState,
@@ -108,9 +109,18 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const hardReset = useCallback(() => {
     try {
+      // 1. Remove Device ID (The session key)
       removeDeviceId(currentUser?.uid);
+
+      // 2. Remove Persisted Organization
+      localStorage.removeItem(LOCAL_STORAGE_ORG_KEY);
+
+      // 3. Remove Persisted Display Screen Selection
+      if (currentUser) {
+          localStorage.removeItem(getLocalStorageDisplayScreenKey(currentUser.uid));
+      }
     } catch (e) {
-      console.error('[hardReset] Failed to clear device ID:', e);
+      console.error('[hardReset] Failed to clear local storage:', e);
     } finally {
       window.location.replace('/');
     }
