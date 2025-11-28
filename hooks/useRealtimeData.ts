@@ -117,23 +117,19 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
     useEffect(() => {
         if (!isScreenMode || !deviceId) return;
 
-        let gracePeriodActive = true;
-        let hasReceivedInitialData = false;
+        let hasReceivedData = false;
 
-        // Give the system 10 seconds to sync permissions/data before enabling the kill switch
-        const graceTimer = setTimeout(() => {
-            // console.log('[Session] Grace period ended.');
-            gracePeriodActive = false;
-            
-            // Late check: If we never received data and grace period ends -> Kill
-            if (!hasReceivedInitialData) {
-                 // console.log('[Session] No session data received within grace period. Resetting.');
+        // Connection timeout: If we haven't heard ANYTHING from DB in 30s, assume network issue/zombie state
+        // and reset to try to force a fresh reconnection.
+        const connectionTimeout = setTimeout(() => {
+            if (!hasReceivedData) {
+                 console.log('[Session] Connection timeout (no data received). Resetting.');
                  onForceDisconnect();
             }
-        }, 10000);
+        }, 30000);
 
         const unsubscribe = listenToScreenSession(deviceId, (doc) => {
-            hasReceivedInitialData = true;
+            hasReceivedData = true;
 
             // 1. Explicit kill command from backend
             if (doc && doc.forceDisconnect) {
@@ -142,16 +138,17 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
                 return;
             }
             
-            // 2. Session deleted/missing (Kill Switch)
-            // Only trigger if grace period is over to avoid race conditions on initial load
-            if (!doc && !gracePeriodActive) {
-                console.log('[Session] Session document deleted/missing. Resetting.');
+            // 2. Session document deleted/missing (Kill Switch)
+            // If the doc is null, it means it definitely does not exist in DB (deleted by admin).
+            // We trigger disconnect IMMEDIATELY without waiting for grace period.
+            if (doc === null) {
+                console.log('[Session] Session document missing/deleted. Resetting.');
                 onForceDisconnect();
             }
         });
 
         return () => {
-            clearTimeout(graceTimer);
+            clearTimeout(connectionTimeout);
             unsubscribe();
         };
     }, [deviceId, isScreenMode, onForceDisconnect]);
