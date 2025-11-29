@@ -1,4 +1,3 @@
-
 import React, {
   createContext,
   useState,
@@ -109,22 +108,16 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const hardReset = useCallback(() => {
     try {
-      console.log('[hardReset] Performing aggressive cleanup...');
+      console.log('[hardReset] Performing NUCLEAR cleanup...');
       
-      // Aggressively clear ALL keys starting with 'smart-skylt-' to ensure no ghost session data remains.
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('smart-skylt-')) {
-              keysToRemove.push(key);
-          }
-      }
-      
-      keysToRemove.forEach(key => localStorage.removeItem(key));
+      // Wipe everything. This ensures no state survives.
+      localStorage.clear();
+      sessionStorage.clear();
 
     } catch (e) {
-      console.error('[hardReset] Failed to clear local storage:', e);
+      console.error('[hardReset] Failed to clear storage:', e);
     } finally {
+      // Force reload from server to clear memory state as well
       window.location.replace('/');
     }
   }, []);
