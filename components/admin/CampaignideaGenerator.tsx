@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import ReactDOM from 'react-dom';
 import { Organization, CampaignIdea, DisplayScreen, DisplayPost } from '../../types';
-import { generateCampaignIdeasForEvent, generateSeasonalCampaignIdeas } from '../../services/geminiService';
+import { generateCampaignIdeasForEvent, generateSeasonalCampaignIdeas, generateCampaignIdeasForEvent as generateFollowUp } from '../../services/geminiService'; // Assuming same service function reuse or specific one
 import { SparklesIcon } from '../icons';
 import { PrimaryButton, SecondaryButton } from '../Buttons';
 import { StyledSelect } from '../Forms';
@@ -170,13 +169,6 @@ export const CampaignIdeaGenerator: React.FC<CampaignIdeaGeneratorProps> = ({ is
 
     if (!isOpen) return null;
 
-    let portalRoot = document.getElementById('modal-root');
-    if (!portalRoot) {
-        portalRoot = document.createElement('div');
-        portalRoot.id = 'modal-root';
-        document.body.appendChild(portalRoot);
-    }
-
     const renderContent = () => {
         if (isLoading) {
             return (
@@ -267,7 +259,7 @@ export const CampaignIdeaGenerator: React.FC<CampaignIdeaGeneratorProps> = ({ is
         }
     }
 
-    return ReactDOM.createPortal(
+    return (
         <>
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => handleAttemptClose()}>
                 <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-2xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -295,7 +287,6 @@ export const CampaignIdeaGenerator: React.FC<CampaignIdeaGeneratorProps> = ({ is
             >
                 <p>Är du säker på att du vill stänga? Dina val kommer inte att sparas och du får börja om från början.</p>
             </ConfirmDialog>
-        </>,
-        portalRoot
+        </>
     );
 };
