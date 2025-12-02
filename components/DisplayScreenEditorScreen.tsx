@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -105,6 +106,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         let postWithStorageUrls = { ...postToSave, id: finalPostId };
     
         const wasAiDataUri = postToSave.imageUrl?.startsWith('data:') && postToSave.isAiGeneratedImage;
+        const aiCollageItems: MediaItem[] = [];
     
         try {
             const processUrl = async (url: string | undefined): Promise<string | undefined> => {
@@ -138,8 +140,24 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                     postWithStorageUrls.collageItems.map(async (item) => {
                         if (!item) return item;
                         const newItem = { ...item };
+                        const wasCollageAi = item.isAiGeneratedImage && item.imageUrl?.startsWith('data:');
+                        
                         if (newItem.imageUrl?.startsWith('data:')) {
-                            newItem.imageUrl = await processUrl(newItem.imageUrl);
+                            const newUrl = await processUrl(newItem.imageUrl);
+                            newItem.imageUrl = newUrl;
+                            
+                            // Collect AI-generated collage items to add to gallery
+                            if (wasCollageAi && newUrl) {
+                                aiCollageItems.push({
+                                    id: `media-ai-collage-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                                    type: 'image',
+                                    url: newUrl,
+                                    internalTitle: `AI Collage: ${postToSave.internalTitle || 'Bild'}`,
+                                    createdAt: new Date().toISOString(),
+                                    createdBy: 'ai',
+                                    aiPrompt: "Collage Image" // Ideally we'd store the specific prompt used, but general is ok
+                                });
+                            }
                         }
                         if (newItem.videoUrl?.startsWith('data:')) {
                             newItem.videoUrl = await processUrl(newItem.videoUrl);
@@ -210,7 +228,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             styleProfile: updatedProfile,
             planningProfile: newPlanningProfile,
         };
-    
+        
+        let newMediaItems: MediaItem[] = [];
+
+        // Add main AI image if applicable
         if (wasAiDataUri && postWithStorageUrls.imageUrl) {
             const newMediaItem: MediaItem = {
                 id: `media-ai-${Date.now()}`,
@@ -221,7 +242,16 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 createdBy: 'ai',
                 aiPrompt: postToSave.aiImagePrompt,
             };
-            orgUpdatePayload.mediaLibrary = [...(organization.mediaLibrary || []), newMediaItem];
+            newMediaItems.push(newMediaItem);
+        }
+        
+        // Add collected collage items
+        if (aiCollageItems.length > 0) {
+            newMediaItems.push(...aiCollageItems);
+        }
+
+        if (newMediaItems.length > 0) {
+            orgUpdatePayload.mediaLibrary = [...(organization.mediaLibrary || []), ...newMediaItems];
         }
     
         await onUpdateOrganization(organization.id, orgUpdatePayload);

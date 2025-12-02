@@ -373,7 +373,20 @@ export const saveGeneratedVideo = onCall(
 
         // 3. Update Firestore (Organization -> Subcollection)
         const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
+        const orgRef = db.collection("organizations").doc(orgId);
         
+        // Attempt to fetch prompt for metadata
+        let aiPrompt = "AI Video";
+        try {
+            const opSnap = await db.collection("organizations").doc(orgId).collection("videoOperations")
+                .where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1).get();
+            if (!opSnap.empty) {
+                aiPrompt = opSnap.docs[0].data().prompt || "AI Video";
+            }
+        } catch (e) {
+            console.warn("Could not fetch prompt info", e);
+        }
+
         await db.runTransaction(async (t) => {
             const doc = await t.get(postRef);
             if (!doc.exists) throw new Error("Screen not found");
@@ -390,6 +403,21 @@ export const saveGeneratedVideo = onCall(
                 delete posts[idx].isAiGeneratedImage;
                 t.update(postRef, { posts });
             }
+
+            // Also add to Organization Media Library
+            const newMediaItem = {
+                id: `media-ai-video-${Date.now()}`,
+                type: 'video',
+                url: publicUrl,
+                internalTitle: `AI: ${aiPrompt.slice(0, 30)}...`,
+                createdAt: new Date().toISOString(),
+                createdBy: 'ai',
+                aiPrompt: aiPrompt
+            };
+            
+            t.update(orgRef, {
+                mediaLibrary: FieldValue.arrayUnion(newMediaItem)
+            });
         });
 
         return { success: true, videoUrl: publicUrl };
