@@ -1,4 +1,3 @@
-
 // services/geminiService.ts
 import {
   GoogleGenAI,
@@ -763,8 +762,12 @@ export const generateVideoFromPrompt = (
         }
 
         try {
-            // IMPORTANT: Use name property as required by the SDK
-            const opResult = await ai.operations.getVideosOperation({ name: operationName });
+            // FIX: Pass the operation name nested inside an operation object to satisfy SDK requirements
+            // SDK call signature: getVideosOperation(request: { operation: { name: string } } | { name: string })
+            // The generated client sometimes strictly expects the operation object structure.
+            const opResult = await ai.operations.getVideosOperation({ 
+                operation: { name: operationName } 
+            } as any);
             
             if (opResult.done) {
                 if (opResult.error) {
@@ -787,9 +790,12 @@ export const generateVideoFromPrompt = (
                 await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
             }
         } catch (pollErr: any) {
-            // Ignore transient network errors during polling, but throw fatal ones
+            // Check for specific SDK error about missing properties and try alternative structure if needed
+            // However, retrying with the same parameters is safer if it's just a network blip.
             console.warn("Polling error (retrying):", pollErr);
-            if (pollErr.message && pollErr.message.includes("not found")) throw pollErr;
+            if (pollErr.message && (pollErr.message.includes("not found") || pollErr.message.includes("404"))) {
+                 throw pollErr; // Stop if operation is gone
+            }
             await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
         }
     }
