@@ -188,6 +188,7 @@ const SingleMediaEditor: React.FC<{
     const { currentUser } = useAuth();
     const { showToast } = useToast();
     const [videoProgressText, setVideoProgressText] = useState("");
+    const [useImageForVideo, setUseImageForVideo] = useState(false);
 
     const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
@@ -206,6 +207,13 @@ const SingleMediaEditor: React.FC<{
         }
     }, [speechError, showToast]);
     
+    // Reset "use image" toggle if image is removed
+    useEffect(() => {
+        if (!post.imageUrl) {
+            setUseImageForVideo(false);
+        }
+    }, [post.imageUrl]);
+
     const handleStructuredPromptChange = (newPrompt: Partial<StructuredImagePrompt>) => {
         const fullPrompt = [newPrompt.subject, newPrompt.style, newPrompt.colorTone, newPrompt.perspective, newPrompt.composition, newPrompt.story].filter(Boolean).join(', ');
         onPostChange({
@@ -248,6 +256,21 @@ const SingleMediaEditor: React.FC<{
     const handleGenerateVideo = async () => {
         if (!post.aiVideoPrompt || !post.aiVideoPrompt.trim() || !currentUser) return;
         
+        let imagePayload = undefined;
+        // Check if we should use existing image as starting frame
+        if (useImageForVideo && post.imageUrl) {
+             try {
+                 setAiLoading('preparing-image');
+                 const { mimeType, data } = await urlToBase64(post.imageUrl);
+                 imagePayload = { mimeType, data };
+             } catch (e) {
+                 console.error("Failed to process start image for video", e);
+                 showToast({ message: "Kunde inte använda bilden för animering.", type: 'error' });
+                 setAiLoading(false);
+                 return;
+             }
+        }
+
         setAiLoading('generate-video');
         setVideoProgressText("Startar...");
 
@@ -258,7 +281,8 @@ const SingleMediaEditor: React.FC<{
                 organization.id,
                 screen.id,
                 post.id,
-                (status) => setVideoProgressText(status)
+                (status) => setVideoProgressText(status),
+                imagePayload
             );
             
             showToast({ message: 'Videogenerering klar!', type: 'success' });
@@ -334,7 +358,7 @@ const SingleMediaEditor: React.FC<{
         }
     };
     
-    const isVideoGenerating = aiLoading === 'generate-video';
+    const isVideoGenerating = aiLoading === 'generate-video' || aiLoading === 'preparing-image';
 
     return (
         <>
@@ -378,22 +402,37 @@ const SingleMediaEditor: React.FC<{
                         <div className="flex items-center gap-3 p-4 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
                             <LoadingSpinnerIcon className="w-6 h-6 animate-spin" />
                             <div>
-                                <p className="font-bold">{videoProgressText || "Videogenerering pågår..."}</p>
+                                <p className="font-bold">{videoProgressText || (aiLoading === 'preparing-image' ? "Förbereder bild..." : "Videogenerering pågår...")}</p>
                                 <p className="text-xs mt-1">Detta tar ca 1-2 minuter. Lämna inte sidan.</p>
                             </div>
                         </div>
                     ) : (
                         <>
+                            {post.imageUrl && (
+                                <div className="flex items-center gap-2 mb-1 p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-md border border-indigo-200 dark:border-indigo-700/50">
+                                    <input
+                                        type="checkbox"
+                                        id="useImageForVideo"
+                                        checked={useImageForVideo}
+                                        onChange={(e) => setUseImageForVideo(e.target.checked)}
+                                        className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
+                                        disabled={!!aiLoading}
+                                    />
+                                    <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
+                                        Använd inläggets bild som startbild
+                                    </label>
+                                </div>
+                            )}
                             <textarea
                                 value={post.aiVideoPrompt || ''}
                                 onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
-                                placeholder="Beskriv en kort video du vill skapa..."
+                                placeholder={useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa..."}
                                 rows={3}
                                 className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
                                 disabled={!!aiLoading}
                             />
                             <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim() || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500">
-                                Generera video
+                                {useImageForVideo ? "Animera bild" : "Generera video"}
                             </PrimaryButton>
                         </>
                     )}
