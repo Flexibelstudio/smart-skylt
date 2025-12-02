@@ -11,11 +11,11 @@ import { ConfirmDialog } from '../ConfirmDialog';
 import { InputDialog } from '../DisplayScreenEditor/Modals';
 // Re-implementing ProactiveUpcomingEventBanner locally to avoid circular dependency if moved later.
 import { ProactiveRhythmBanner, ProactiveSeasonalBanner } from '../ProactiveRhythmBanner';
-import { CampaignIdeaGenerator } from './CampaignideaGenerator';
+import { CampaignIdeaGenerator } from './CampaignIdeaGenerator';
 import { unpairPhysicalScreen, isOffline } from '../../services/firebaseService';
 import { getSwedishHolidays } from '../../data/holidays';
 import { generateEventReminderText } from '../../services/geminiService';
-import { SparklesIcon, ChevronDownIcon, PencilIcon, TrashIcon } from '../icons';
+import { SparklesIcon, ChevronDownIcon, PencilIcon, TrashIcon, EyeIcon } from '../icons';
 import { PlanningView } from '../DisplayScreenEditor/PlanningView';
 import { parseToDate } from '../../utils/dateUtils';
 
@@ -413,7 +413,7 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                                                     <ScreenStats screen={screen} />
                                                 </div>
                                                 <PrimaryButton onClick={() => onEditDisplayScreen(screen)} disabled={isSaving} className="bg-blue-600 hover:bg-blue-500">Hantera inlägg</PrimaryButton>
-                                                <button onClick={() => onPreviewScreen(screen)} disabled={isSaving} title="Förhandsgranska" className="p-3 rounded-lg bg-teal-600 hover:bg-teal-500 text-white transition-colors"><div className="h-5 w-5">👁️</div></button>
+                                                <button onClick={() => onPreviewScreen(screen)} disabled={isSaving} title="Förhandsgranska" className="p-3 rounded-lg bg-teal-600 hover:bg-teal-500 text-white transition-colors"><EyeIcon className="h-5 w-5" /></button>
                                                 <button onClick={() => setScreenToDelete(screen)} disabled={isSaving} title="Ta bort" className="p-3 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors"><TrashIcon className="h-5 w-5"/></button>
                                             </div>
                                         </div>
