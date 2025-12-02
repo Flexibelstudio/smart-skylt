@@ -9,9 +9,8 @@ import { useToast } from '../../context/ToastContext';
 import { SkylieEmptyState } from '../SkylieEmptyState';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { InputDialog } from '../DisplayScreenEditor/Modals';
-// Re-implementing ProactiveUpcomingEventBanner locally to avoid circular dependency if moved later.
 import { ProactiveRhythmBanner, ProactiveSeasonalBanner } from '../ProactiveRhythmBanner';
-import { CampaignIdeaGenerator } from '/CampaignIdeaGenerator';
+import { CampaignIdeaGenerator } from './CampaignIdeaGenerator';
 import { unpairPhysicalScreen, isOffline } from '../../services/firebaseService';
 import { getSwedishHolidays } from '../../data/holidays';
 import { generateEventReminderText } from '../../services/geminiService';

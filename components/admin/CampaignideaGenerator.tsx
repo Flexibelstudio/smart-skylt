@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Organization, CampaignIdea, DisplayScreen, DisplayPost } from '../../types';
-import { generateCampaignIdeasForEvent, generateSeasonalCampaignIdeas, generateCampaignIdeasForEvent as generateFollowUp } from '../../services/geminiService'; // Assuming same service function reuse or specific one
+import { generateCampaignIdeasForEvent, generateSeasonalCampaignIdeas } from '../../services/geminiService';
 import { SparklesIcon } from '../icons';
 import { PrimaryButton, SecondaryButton } from '../Buttons';
 import { StyledSelect } from '../Forms';
