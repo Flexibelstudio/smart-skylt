@@ -167,36 +167,18 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const activePosts = useStablePosts(filtered);
 
   /* Håll index giltigt och försök hitta rätt post om listan ändras */
-  const currentPostIdRef = useRef<string | null>(null);
-
-  // Spara vilket ID vi tittar på, så vi kan hitta tillbaka om listan ändras
   useEffect(() => {
-      if (!isTransitioning && activePosts[currentIndex]) {
-          currentPostIdRef.current = activePosts[currentIndex].id;
+    // Om index pekar utanför, nollställ.
+    if (currentIndex >= activePosts.length) {
+      if (activePosts.length > 0) {
+        setCurrentIndex(0);
       }
-  }, [currentIndex, isTransitioning, activePosts]);
-
-  useEffect(() => {
-    if (activePosts.length === 0) return;
-
-    const postAtIndex = activePosts[currentIndex];
-    
-    // Om index pekar fel, eller om inlägget på detta index har bytts ut mot ett annat
-    if (!postAtIndex || (currentPostIdRef.current && postAtIndex.id !== currentPostIdRef.current)) {
-        if (currentPostIdRef.current) {
-            const foundIndex = activePosts.findIndex(p => p.id === currentPostIdRef.current);
-            if (foundIndex !== -1) {
-                // Vi hittade inlägget på en ny plats -> hoppa dit
-                setCurrentIndex(foundIndex);
-            } else {
-                // Inlägget är borta (borttaget eller utgånget) -> börja om från 0
-                setCurrentIndex(0);
-            }
-        } else {
-            setCurrentIndex(0);
-        }
+    } else {
+        // Avancerad logik: Om listan ändras (t.ex. nytt inlägg lades till först), 
+        // försök behålla fokus på det inlägg vi tittade på, om det finns kvar.
+        // (Detta kan implementeras om behovet uppstår, men "reset till 0" är säkrast vid fel)
     }
-  }, [activePosts]); // Körs när activePosts (stabil) ändras
+  }, [activePosts.length, currentIndex]);
 
   /* Avancera */
   const advance = useCallback(() => {
@@ -318,10 +300,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // FIX: Använd ett stabilt key baserat på ID. 
-          // Vi använder INTE cycleCount i key, för att undvika att komponenten unmountas/remountas i onödan (vilket skapar blinkningar).
-          // Istället skickar vi cycleCount som prop till DisplayPostRenderer, som lyssnar på ändringar och spolar tillbaka videon vid behov.
-          key={`post-${(currentPost as any).id}`}
+          // FIX: Använd alltid ett stabilt ID om vi har en lista, men lägg till cycleCount för loopning.
+          // Om listan bara har 1 post använder vi en stabil key för att undvika onödiga om-mountingar (svart blink).
+          key={activePosts.length === 1 ? `single-${(currentPost as any).id}` : `curr-${(currentPost as any).id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={undefined} // Current post doesn't use transitionType entering, handled by CSS
