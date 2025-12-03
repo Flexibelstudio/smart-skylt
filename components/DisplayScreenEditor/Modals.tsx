@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import {
@@ -15,6 +16,7 @@ import {
   PhotoIcon,
   DownloadIcon,
   MagnifyingGlassIcon,
+  ExclamationTriangleIcon
 } from '../icons';
 import { PrimaryButton, SecondaryButton } from '../Buttons';
 import { EmptyState } from '../EmptyState';
@@ -859,6 +861,7 @@ export const MediaPickerModal: React.FC<{
   const [activeTab, setActiveTab] = useState<'all' | 'gallery' | 'ai' | 'post-variants'>(
     'all'
   );
+  const [brokenMediaIds, setBrokenMediaIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isOpen) setActiveTab('all');
@@ -909,6 +912,10 @@ export const MediaPickerModal: React.FC<{
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [mediaLibrary, filter, activeTab, postAiVariants]);
+
+  const handleMediaError = (id: string) => {
+      setBrokenMediaIds(prev => new Set(prev).add(id));
+  };
 
   if (!isOpen) return null;
 
@@ -970,26 +977,38 @@ export const MediaPickerModal: React.FC<{
         <div className="flex-grow overflow-y-auto -mx-2 pr-2">
           {mediaToDisplay.length > 0 ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 p-2">
-              {mediaToDisplay.map((item) => (
+              {mediaToDisplay.map((item) => {
+                const isBroken = brokenMediaIds.has(item.id);
+                return (
                 <button
                   key={item.id}
-                  onClick={() => onSelect(item)}
-                  className="aspect-square bg-slate-100 dark:bg-slate-700 rounded-lg overflow-hidden group relative focus:outline-none focus:ring-2 focus:ring-primary ring-offset-2 ring-offset-slate-800"
+                  onClick={() => !isBroken && onSelect(item)}
+                  disabled={isBroken}
+                  className={`aspect-square bg-slate-100 dark:bg-slate-700 rounded-lg overflow-hidden group relative focus:outline-none focus:ring-2 focus:ring-primary ring-offset-2 ring-offset-slate-800 ${isBroken ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
-                  {item.type === 'image' ? (
-                    <img
-                      src={item.url}
-                      alt={item.internalTitle}
-                      className="w-full h-full object-cover"
-                    />
+                  {isBroken ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2">
+                          <ExclamationTriangleIcon className="w-8 h-8 mb-1" />
+                          <span className="text-[10px] text-center">Trasig fil</span>
+                      </div>
                   ) : (
-                    <video
-                      src={item.url}
-                      muted
-                      loop
-                      playsInline
-                      className="w-full h-full object-cover"
-                    />
+                      item.type === 'image' ? (
+                        <img
+                          src={item.url}
+                          alt={item.internalTitle}
+                          className="w-full h-full object-cover"
+                          onError={() => handleMediaError(item.id)}
+                        />
+                      ) : (
+                        <video
+                          src={item.url}
+                          muted
+                          loop
+                          playsInline
+                          className="w-full h-full object-cover"
+                          onError={() => handleMediaError(item.id)}
+                        />
+                      )
                   )}
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex items-end">
                     <p className="text-white text-xs font-semibold line-clamp-2">
@@ -997,7 +1016,7 @@ export const MediaPickerModal: React.FC<{
                     </p>
                   </div>
                 </button>
-              ))}
+              )})}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center">
