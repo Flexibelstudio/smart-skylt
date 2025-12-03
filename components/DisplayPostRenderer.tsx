@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from 'react';
 import { DisplayPost, Tag, SubImage, SubImageConfig, ContentPosition, TagPositionOverride, CollageItem, Organization, TagColorOverride, DisplayScreen } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
@@ -654,8 +655,7 @@ const AnimatedLine: React.FC<{
     }
 
     // Default for 'blur-in', 'none', and any other case
-    const animationClass = animation === 'blur-in' ? 'animate-blur-in' : '';
-    const animationStyle = animation === 'blur-in' ? { animationDelay: `${delay}s` } : {};
+    const animationClass = animation === 'blur-in', animationStyle = animation === 'blur-in' ? { animationDelay: `${delay}s` } : {};
 
     return (
         <span 
@@ -1178,7 +1178,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     aspectRatio = '16:9',
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [hasEnded, setHasEnded] = useState(false);
 
     // FIX: This logic makes the component more robust. It can derive data from the 'organization' object if provided,
     // or fall back to the individual direct props for backward compatibility with existing calls.
@@ -1191,7 +1190,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             videoRef.current.play().catch(e => {
                 // Autoplay might be blocked or video not ready, usually fine in this context
             });
-            setHasEnded(false);
         }
     }, []);
 
@@ -1206,7 +1204,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 // Autoplay might be blocked or video not ready, usually fine in this context
                 // console.warn("Rewind play failed", e); 
             });
-            setHasEnded(false);
         }
     }, [cycleCount]); // Trigger whenever cycleCount increments
 
@@ -1214,17 +1211,10 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         const videoElement = videoRef.current;
         if (videoElement) {
             const handleEnd = () => {
-                setHasEnded(true);
                 if(onVideoEnded) onVideoEnded();
             };
-            const handlePlay = () => setHasEnded(false);
-
             videoElement.addEventListener('ended', handleEnd);
-            videoElement.addEventListener('play', handlePlay);
-            return () => {
-                videoElement.removeEventListener('ended', handleEnd);
-                videoElement.removeEventListener('play', handlePlay);
-            };
+            return () => videoElement.removeEventListener('ended', handleEnd);
         }
     }, [onVideoEnded]);
     
@@ -1481,32 +1471,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             )}
 
             <BackgroundEffects effect={post.backgroundEffect} />
-
-            {/* Replay Button for Video in Preview Mode - ALWAYS VISIBLE if video exists */}
-            {mode === 'preview' && isMediaLayout && post.videoUrl && !post.imageUrl && (
-                <>
-                    <div className="absolute bottom-4 left-4 z-50">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleReplay(); }}
-                            className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full backdrop-blur-sm transition-colors touch-none shadow-lg"
-                            title="Spela upp från början"
-                        >
-                            <ArrowUturnLeftIcon className="h-5 w-5" />
-                        </button>
-                    </div>
-                    
-                    {hasEnded && (
-                        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-[1px] transition-all animate-fade-in">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleReplay(); }}
-                                className="bg-white/90 hover:bg-white text-primary p-6 rounded-full shadow-2xl transition-transform hover:scale-105 group"
-                            >
-                                <ArrowUturnLeftIcon className="h-10 w-10 group-hover:-rotate-90 transition-transform duration-300" />
-                            </button>
-                        </div>
-                    )}
-                </>
-            )}
         </div>
     );
 };
