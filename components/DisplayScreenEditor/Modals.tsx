@@ -884,17 +884,15 @@ export const MediaPickerModal: React.FC<{
       );
     }
 
+    // Apply strict type filter if provided
     if (filter === 'video') {
-      return media
-        .filter((item) => item.type === 'video')
-        .sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        media = media.filter((item) => item.type === 'video');
+    } else if (filter === 'image') {
+        media = media.filter((item) => item.type === 'image');
     }
+    // If filter is undefined, we show everything (both images and videos)
 
-    media = media.filter((item) => item.type === 'image');
-
+    // Then filter by Source (Tab)
     switch (activeTab) {
       case 'gallery':
         media = media.filter((item) => item.createdBy !== 'ai');
@@ -946,7 +944,7 @@ export const MediaPickerModal: React.FC<{
               onClick={() => setActiveTab('all')}
               icon={<PhotoIcon className="w-5 h-5" />}
             >
-              Alla bilder
+              {filter === 'image' ? 'Alla bilder' : 'Alla filer'}
             </TabButton>
             <TabButton
               active={activeTab === 'gallery'}
@@ -1009,6 +1007,12 @@ export const MediaPickerModal: React.FC<{
                           onError={() => handleMediaError(item.id)}
                         />
                       )
+                  )}
+                  {/* Type Badge if mixed content */}
+                  {!filter && !isBroken && (
+                      <div className="absolute top-1 right-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded backdrop-blur-sm">
+                          {item.type === 'video' ? 'VIDEO' : 'BILD'}
+                      </div>
                   )}
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex items-end">
                     <p className="text-white text-xs font-semibold line-clamp-2">

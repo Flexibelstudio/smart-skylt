@@ -302,8 +302,16 @@ const SingleMediaEditor: React.FC<{
     };
 
     const handleSelectFromGallery = (item: MediaItem) => {
+        // Smart layout switching if user picks video for image layout or vice versa
+        const newLayout = (item.type === 'video' && post.layout === 'image-fullscreen') 
+            ? 'video-fullscreen' 
+            : (item.type === 'image' && post.layout === 'video-fullscreen')
+            ? 'image-fullscreen'
+            : post.layout;
+
         onPostChange({
             ...post,
+            layout: newLayout,
             imageUrl: item.type === 'image' ? item.url : undefined,
             videoUrl: item.type === 'video' ? item.url : undefined,
             isAiGeneratedImage: item.createdBy === 'ai',
@@ -469,7 +477,7 @@ const SingleMediaEditor: React.FC<{
                 onClose={() => setIsMediaPickerOpen(false)}
                 mediaLibrary={organization.mediaLibrary || []}
                 onSelect={handleSelectFromGallery}
-                filter={post.layout === 'video-fullscreen' ? 'video' : 'image'}
+                filter={undefined} // Allow picking both video and images to enable type switching
                 postAiVariants={post.aiImageVariants}
             />
             <AiImageEditorModal
