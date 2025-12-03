@@ -436,12 +436,21 @@ export const generateCompletePost = (
     const parts: any[] = [{ text: prompt }];
     const preferenceMedia = organization.preferenceProfile?.mediaItems;
     if (preferenceMedia && preferenceMedia.length > 0) {
-      const imageParts = await Promise.all(
-        preferenceMedia.map((item) => urlToBase64(item.url))
+      // Map requests to promise that resolves to null on failure instead of throwing
+      const imagePartsPromises = preferenceMedia.map((item) => 
+        urlToBase64(item.url).catch(err => {
+            console.warn(`[GeminiService] Skipping broken preference image: ${item.url}`, err);
+            return null;
+        })
       );
-      imageParts.forEach((data) =>
-        parts.push({ inlineData: { mimeType: data.mimeType, data: data.data } })
-      );
+      
+      const imageParts = await Promise.all(imagePartsPromises);
+      
+      imageParts.forEach((data) => {
+        if (data) {
+            parts.push({ inlineData: { mimeType: data.mimeType, data: data.data } });
+        }
+      });
     }
 
     const textGenResponse = await ai.models.generateContent({
