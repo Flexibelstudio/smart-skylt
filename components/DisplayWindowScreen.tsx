@@ -15,9 +15,9 @@ interface DisplayWindowScreenProps {
 const isPostActive = (post: DisplayPost, now: Date) => {
     if (post.status === 'archived') return false; 
     const start = parseToDate(post.startDate, false);
-    // If start date exists and is in the future, it's not active. 
-    // If start date is missing, we assume it's active immediately (user preference).
-    if (start && start > now) return false;
+    
+    // Requirement: A start date must exist and have passed for the post to be shown.
+    if (!start || start > now) return false;
     
     const end = parseToDate(post.endDate, true);
     if (end && end < now) return false;
