@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef } 
 import { DisplayPost, Tag, SubImage, SubImageConfig, ContentPosition, TagPositionOverride, CollageItem, Organization, TagColorOverride, DisplayScreen } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
-import { MoveIcon } from './icons';
+import { MoveIcon, ArrowUturnLeftIcon } from './icons';
 
 // --- HELPER COMPONENTS & FUNCTIONS ---
 
@@ -1185,6 +1185,15 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
 
+    const handleReplay = useCallback(() => {
+        if (videoRef.current) {
+            videoRef.current.currentTime = 0;
+            videoRef.current.play().catch(e => {
+                // Autoplay might be blocked or video not ready, usually fine in this context
+            });
+        }
+    }, []);
+
     // --- REWIND LOGIC FOR SEAMLESS LOOP ---
     // If this component stays mounted (same key in parent) but cycleCount changes, it means we are looping the same post.
     // We must rewind the video manually because 'key' didn't change to remount the component.
@@ -1453,6 +1462,19 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             )}
 
             <BackgroundEffects effect={post.backgroundEffect} />
+
+            {/* Replay Button for Video in Preview Mode */}
+            {mode === 'preview' && isMediaLayout && post.videoUrl && !post.imageUrl && (
+                <div className="absolute bottom-4 left-4 z-50 group">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); handleReplay(); }}
+                        className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 touch-none"
+                        title="Spela upp från början"
+                    >
+                        <ArrowUturnLeftIcon className="h-5 w-5" />
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

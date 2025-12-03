@@ -856,15 +856,17 @@ export const generateVideoFromPrompt = (
     onProgress("Sparar video...");
     const saveGeneratedVideo = functions.httpsCallable('saveGeneratedVideo');
     
-    await saveGeneratedVideo({
+    const saveResult = await saveGeneratedVideo({
         videoUri,
         orgId: organizationId,
         screenId,
         postId
     });
 
+    const saveData = saveResult.data as { success: boolean, videoUrl: string };
+
     onProgress("Klar!");
-    return "done";
+    return saveData.videoUrl;
   });
 };
 

@@ -276,7 +276,8 @@ const SingleMediaEditor: React.FC<{
 
         try {
             // Use the Hybrid approach: Start on server, poll on client, save on server.
-            await generateVideoFromPrompt(
+            // The service now returns the video URL directly.
+            const videoUrl = await generateVideoFromPrompt(
                 post.aiVideoPrompt,
                 organization.id,
                 screen.id,
@@ -287,10 +288,14 @@ const SingleMediaEditor: React.FC<{
             
             showToast({ message: 'Videogenerering klar!', type: 'success' });
             
-            // Force a reload of the post data is handled by the parent re-render from DB update in background, 
-            // but let's optimistically update if possible, or just let the toast signal completion.
-            // Since `generateVideoFromPrompt` now resolves when done, we can trigger a refresh or 
-            // rely on the live preview updating automatically via Firestore listener in the parent context.
+            // Update local state immediately with the new video URL
+            onPostChange({
+                ...post,
+                videoUrl: videoUrl,
+                isAiGeneratedVideo: true,
+                // Ensure we don't have conflicting image if we generated a video
+                imageUrl: undefined
+            });
 
         } catch (error) {
             console.error("Video generation failed:", error);
