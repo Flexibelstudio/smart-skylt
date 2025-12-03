@@ -251,13 +251,17 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             newMediaItems.push(...aiCollageItems);
         }
 
+        const updatePromises: Promise<any>[] = [];
+
         if (newMediaItems.length > 0) {
-            // Update the local payload for immediate UI reflection in the gallery tab
-            const currentLibrary = organization.mediaLibrary || [];
-            orgUpdatePayload.mediaLibrary = [...currentLibrary, ...newMediaItems];
+            // Use arrayUnion via specialized service function to prevent overwrites/race conditions
+            // This is safer than modifying orgUpdatePayload.mediaLibrary directly
+            updatePromises.push(addMediaItemsToLibrary(organization.id, newMediaItems));
         }
     
-        await onUpdateOrganization(organization.id, orgUpdatePayload);
+        updatePromises.push(onUpdateOrganization(organization.id, orgUpdatePayload));
+
+        await Promise.all(updatePromises);
     
         showToast({ message: "Inlägget sparades.", type: 'success' });
     

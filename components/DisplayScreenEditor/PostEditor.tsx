@@ -106,43 +106,10 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     const handleSaveWrapper = async () => {
         setIsSaving(true);
         try {
-            // New logic: find all data URIs and upload them first
-            let postWithStorageUrls = { ...post };
-            const mediaUploads: Promise<void>[] = [];
-            
-            const processUrl = async (url: string | undefined, isAi: boolean, title: string, prompt?: string): Promise<string | undefined> => {
-                if (!url || !url.startsWith('data:')) return url;
-                
-                const response = await fetch(url);
-                const blob = await response.blob();
-                const file = new File([blob], "media.png", { type: blob.type });
-
-                // Use a new upload function that returns the URL
-                const storageUrl = await uploadPostAsset(organization.id, post.id, file, () => {});
-
-                // If media library update is needed, do it here (omitted for brevity)
-                return storageUrl;
-            };
-
-            // This is a simplified version. A full implementation would handle all media fields.
-            if (post.imageUrl && post.imageUrl.startsWith('data:')) {
-                mediaUploads.push(
-                    processUrl(post.imageUrl, post.isAiGeneratedImage || false, "Image").then(url => {
-                        postWithStorageUrls.imageUrl = url;
-                    })
-                );
-            }
-            if (post.videoUrl && post.videoUrl.startsWith('data:')) {
-                mediaUploads.push(
-                    processUrl(post.videoUrl, post.isAiGeneratedVideo || false, "Video").then(url => {
-                        postWithStorageUrls.videoUrl = url;
-                    })
-                );
-            }
-
-            await Promise.all(mediaUploads);
-
-            await onSave(postWithStorageUrls);
+            // Simply pass the post to the parent handler.
+            // The parent handler (DisplayScreenEditorScreen) manages uploading data URIs 
+            // and adding them to the media library.
+            await onSave(post);
         } catch (e) {
             showToast({ message: `Kunde inte spara: ${e instanceof Error ? e.message : "Okänt fel"}`, type: 'error' });
         } finally {
