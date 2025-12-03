@@ -251,10 +251,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             newMediaItems.push(...aiCollageItems);
         }
 
-        // IMPORTANT: Use arrayUnion helper to avoid overwriting items added by backend (like videos)
-        // that the client might not know about yet due to race conditions.
         if (newMediaItems.length > 0) {
-            await addMediaItemsToLibrary(organization.id, newMediaItems);
+            // Update the local payload for immediate UI reflection in the gallery tab
+            const currentLibrary = organization.mediaLibrary || [];
+            orgUpdatePayload.mediaLibrary = [...currentLibrary, ...newMediaItems];
         }
     
         await onUpdateOrganization(organization.id, orgUpdatePayload);
