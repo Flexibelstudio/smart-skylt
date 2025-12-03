@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DisplayPost, DisplayScreen, Organization, BrandingOptions, Tag, TagPositionOverride } from '../../types';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -19,7 +20,10 @@ const SinglePostPreview: React.FC<{
     onUpdateTagPosition: (tagId: string, newPosition: { x: number, y: number, rotation: number }) => void,
     onUpdateTextPosition: (pos: { x: number, y: number }) => void,
     onUpdateTextWidth: (width: number) => void,
-}> = ({ post, screen, organization, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth }) => {
+    onUpdateQrPosition?: (pos: { x: number, y: number }) => void,
+    onUpdateQrWidth?: (width: number) => void,
+    isTextDraggable?: boolean,
+}> = ({ post, screen, organization, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable }) => {
     const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
     const branding = screen.branding;
     const logoUrl = organization?.logoUrlDark || organization?.logoUrlLight;
@@ -43,7 +47,9 @@ const SinglePostPreview: React.FC<{
                     onUpdateTagPosition={onUpdateTagPosition}
                     onUpdateTextPosition={onUpdateTextPosition}
                     onUpdateTextWidth={onUpdateTextWidth}
-                    isTextDraggable={true}
+                    onUpdateQrPosition={onUpdateQrPosition}
+                    onUpdateQrWidth={onUpdateQrWidth}
+                    isTextDraggable={isTextDraggable}
                     organization={organization}
                     aspectRatio={screen.aspectRatio}
                 />
@@ -56,7 +62,7 @@ const SinglePostPreview: React.FC<{
                     </div>
                 )}
             </div>
-            <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text och taggar för att placera dem fritt. Dra i handtagen på textrutan för att ändra dess bredd.</p>
+            <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text, QR-kod och taggar för att placera dem fritt. Dra i handtagen på textrutan eller QR-koden för att ändra storlek.</p>
         </div>
     );
 };
@@ -177,8 +183,11 @@ interface PreviewPaneProps {
     onUpdateTagPosition: (tagId: string, pos: {x: number, y: number, rotation: number}) => void;
     onUpdateTextPosition: (pos: {x: number, y: number}) => void;
     onUpdateTextWidth: (width: number) => void;
+    onUpdateQrPosition?: (pos: {x: number, y: number}) => void;
+    onUpdateQrWidth?: (width: number) => void;
+    isTextDraggable?: boolean;
 }
-export const PreviewPane: React.FC<PreviewPaneProps> = ({ editingPost, screen, organization, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth }) => {
+export const PreviewPane: React.FC<PreviewPaneProps> = ({ editingPost, screen, organization, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable }) => {
     if (editingPost) {
         return (
             <SinglePostPreview
@@ -188,6 +197,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ editingPost, screen, o
                 onUpdateTagPosition={onUpdateTagPosition}
                 onUpdateTextPosition={onUpdateTextPosition}
                 onUpdateTextWidth={onUpdateTextWidth}
+                onUpdateQrPosition={onUpdateQrPosition}
+                onUpdateQrWidth={onUpdateQrWidth}
+                isTextDraggable={isTextDraggable}
             />
         );
     }

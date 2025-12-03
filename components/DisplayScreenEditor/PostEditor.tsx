@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { DisplayPost, Organization, DisplayScreen, UserRole, PostTemplate } from '../../types';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
@@ -190,6 +191,8 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                     onUpdateTagPosition={(tagId, pos) => onPostChange({ ...post, tagPositionOverrides: [...(post.tagPositionOverrides || []).filter(o => o.tagId !== tagId), { tagId, ...pos }] })}
                     onUpdateTextPosition={(pos) => onPostChange({ ...post, textPositionX: pos.x, textPositionY: pos.y })}
                     onUpdateTextWidth={(width) => onPostChange({ ...post, textWidth: width })}
+                    onUpdateQrPosition={(pos) => onPostChange({ ...post, qrPositionX: pos.x, qrPositionY: pos.y })}
+                    onUpdateQrWidth={(width) => onPostChange({ ...post, qrWidth: width })}
                     isTextDraggable={true}
                 />
             </div>

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { DisplayPost, Organization } from '../../../types';
 import { StyledInput, StyledSelect } from '../../Forms';
@@ -76,9 +77,28 @@ export const Step4_Publishing: React.FC<{
                         ))}
                     </div>
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">QR-kod (valfritt)</label>
-                    <StyledInput type="url" placeholder="URL för QR-kod" value={post.qrCodeUrl || ''} onChange={e => handleFieldChange('qrCodeUrl', e.target.value.trim() ? e.target.value.trim() : undefined)} />
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">QR-kod (valfritt)</label>
+                        <StyledInput type="url" placeholder="URL för QR-kod" value={post.qrCodeUrl || ''} onChange={e => handleFieldChange('qrCodeUrl', e.target.value.trim() ? e.target.value.trim() : undefined)} />
+                    </div>
+                    {post.qrCodeUrl && (
+                        <div>
+                            <div className="flex justify-between mb-1">
+                                <label className="text-sm font-medium text-slate-500 dark:text-slate-400">Storlek ({post.qrWidth || 12}%)</label>
+                            </div>
+                            <input
+                                type="range"
+                                min="5"
+                                max="50"
+                                step="1"
+                                value={post.qrWidth || 12}
+                                onChange={e => handleFieldChange('qrWidth', parseInt(e.target.value, 10))}
+                                className="w-full h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Du kan dra och släppa QR-koden i förhandsgranskningen för att flytta den.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

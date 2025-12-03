@@ -149,12 +149,13 @@ const BackgroundEffects: React.FC<{ effect: DisplayPost['backgroundEffect'] }> =
     return null;
 };
 
-const QrCodeComponent: React.FC<{ url: string; size: number; color?: { dark: string; light: string } }> = ({ url, size, color = { dark: '#000000', light: '#FFFFFF' } }) => {
+const QrCodeComponent: React.FC<{ url: string; color?: { dark: string; light: string }; className?: string; style?: React.CSSProperties }> = ({ url, color = { dark: '#000000', light: '#FFFFFF' }, className, style }) => {
     const [dataUrl, setDataUrl] = useState('');
 
     useEffect(() => {
         if (url) {
-            QRCode.toDataURL(url, { width: size, margin: 1, color })
+            // High resolution for scaling
+            QRCode.toDataURL(url, { width: 512, margin: 1, color })
                 .then(setDataUrl)
                 .catch(err => {
                     console.error("QR Code generation failed:", err);
@@ -162,11 +163,11 @@ const QrCodeComponent: React.FC<{ url: string; size: number; color?: { dark: str
         } else {
             setDataUrl('');
         }
-    }, [url, size, color]);
+    }, [url, color]);
 
     if (!dataUrl) return null;
 
-    return <img src={dataUrl} alt="QR Code" width={size} height={size} />;
+    return <img src={dataUrl} alt="QR Code" className={className} style={style} />;
 };
 
 const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
@@ -323,10 +324,169 @@ const getBodyFontSizeClass = (size?: DisplayPost['bodyFontSize'], mode?: 'previe
         default: return 'text-lg';
     }
 };
-const getQrCodeSize = (size?: DisplayPost['qrCodeSize']) => {
+
+const mapLegacySize = (size?: DisplayPost['qrCodeSize']): number => {
     switch (size) {
-        case 'sm': return 60; case 'md': return 90; case 'lg': return 120; case 'xl': return 150; default: return 90;
+        case 'sm': return 10;
+        case 'md': return 15;
+        case 'lg': return 20;
+        case 'xl': return 25;
+        default: return 12; // Fallback default
     }
+};
+
+const mapLegacyPosition = (position?: DisplayPost['qrCodePosition']): { x: number, y: number } => {
+    switch (position) {
+        case 'top-left': return { x: 10, y: 10 };
+        case 'top-right': return { x: 90, y: 10 };
+        case 'bottom-left': return { x: 10, y: 90 };
+        case 'bottom-right': return { x: 90, y: 90 };
+        default: return { x: 90, y: 90 };
+    }
+};
+
+const DraggableQrCode: React.FC<{
+    url: string;
+    x: number;
+    y: number;
+    width: number;
+    isDraggable?: boolean;
+    onUpdatePosition?: (pos: { x: number, y: number }) => void;
+    onUpdateWidth?: (width: number) => void;
+}> = ({ url, x, y, width, isDraggable, onUpdatePosition, onUpdateWidth }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        
+        // Use center of the element as the drag point relative to parent
+        const containerRect = containerRef.current.getBoundingClientRect();
+        
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        
+        // Offset from the element's top-left corner
+        const offsetX = clientX - containerRect.left;
+        const offsetY = clientY - containerRect.top;
+
+        const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
+            
+            // Calculate new top-left position
+            const newLeft = moveClientX - offsetX;
+            const newTop = moveClientY - offsetY;
+            
+            // Calculate center position relative to parent
+            const centerX = newLeft + containerRect.width / 2;
+            const centerY = newTop + containerRect.height / 2;
+
+            const xPercent = ((centerX - parentRect.left) / parentRect.width) * 100;
+            const yPercent = ((centerY - parentRect.top) / parentRect.height) * 100;
+
+            onUpdatePosition({ 
+                x: Math.max(0, Math.min(100, xPercent)), 
+                y: Math.max(0, Math.min(100, yPercent)) 
+            });
+        };
+
+        const onDragEnd = () => {
+            setIsDragging(false);
+            window.removeEventListener('mousemove', onDragMove as any);
+            window.removeEventListener('mouseup', onDragEnd);
+            window.removeEventListener('touchmove', onDragMove as any);
+            window.removeEventListener('touchend', onDragEnd);
+        };
+        
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onDragMove as any);
+            window.addEventListener('touchend', onDragEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onDragMove as any);
+            window.addEventListener('mouseup', onDragEnd, { once: true });
+        }
+    };
+
+    const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        
+        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialWidth = containerRef.current.offsetWidth;
+
+        const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const dx = moveClientX - initialX;
+            const newWidthPx = initialWidth + dx;
+            
+            // Convert back to percentage of parent width
+            const newWidthPercent = (newWidthPx / parentRect.width) * 100;
+            const clampedWidth = Math.max(5, Math.min(50, newWidthPercent));
+
+            onUpdateWidth(clampedWidth);
+        };
+
+        const onResizeEnd = () => {
+            window.removeEventListener('mousemove', onResizeMove as any);
+            window.removeEventListener('mouseup', onResizeEnd);
+            window.removeEventListener('touchmove', onResizeMove as any);
+            window.removeEventListener('touchend', onResizeEnd);
+        };
+        
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onResizeMove as any);
+            window.addEventListener('touchend', onResizeEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onResizeMove as any);
+            window.addEventListener('mouseup', onResizeEnd, { once: true });
+        }
+    };
+
+    const style: React.CSSProperties = {
+        position: 'absolute',
+        left: `${x}%`,
+        top: `${y}%`,
+        width: `${width}%`,
+        transform: 'translate(-50%, -50%)',
+        cursor: isDraggable ? 'move' : 'default',
+        zIndex: 20,
+    };
+
+    return (
+        <div 
+            ref={containerRef}
+            style={style}
+            onMouseDown={isDraggable ? handleDragStart : undefined}
+            onTouchStart={isDraggable ? handleDragStart : undefined}
+            className={`group touch-none ${isDragging ? 'opacity-70' : ''}`}
+        >
+            <div className="bg-white p-1 rounded-lg shadow-lg relative">
+                <QrCodeComponent url={url} className="w-full h-full" />
+                {isDraggable && (
+                    <div 
+                        onMouseDown={handleResizeStart}
+                        onTouchStart={handleResizeStart}
+                        className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border-2 border-primary rounded-full cursor-se-resize flex items-center justify-center shadow-md opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-none z-30"
+                    >
+                        <div className="w-2 h-2 bg-primary rounded-full" />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 };
 
 const SubImageCarousel: React.FC<{ images: SubImage[], config: SubImageConfig, cycleCount: number }> = ({ images, config, cycleCount }) => {
@@ -940,7 +1100,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
                 <div className={`flex items-center ${isShapeVertical ? 'flex-col gap-1' : 'gap-2'}`}>
                     <span>{tag.text || "Taggtext"}</span>
                     <div className="bg-white p-0.5 rounded-sm">
-                        <QrCodeComponent url={tag.url} size={isPreview ? 16 : 24} color={{ dark: '#000', light: '#fff' }} />
+                        <QrCodeComponent url={tag.url} className={isPreview ? 'w-4 h-4' : 'w-6 h-6'} color={{ dark: '#000', light: '#fff' }} />
                     </div>
                 </div>
             ) : (
@@ -991,6 +1151,8 @@ export interface DisplayPostRendererProps {
     onUpdateTagPosition?: (tagId: string, newPosition: { x: number, y: number, rotation: number }) => void;
     onUpdateTextPosition?: (pos: { x: number, y: number }) => void;
     onUpdateTextWidth?: (width: number) => void;
+    onUpdateQrPosition?: (pos: { x: number, y: number }) => void;
+    onUpdateQrWidth?: (width: number) => void;
     isTextDraggable?: boolean;
     // FIX: Added optional 'organization' prop to resolve TypeScript errors where it was being passed without being defined.
     organization?: Organization;
@@ -1009,6 +1171,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     onUpdateTagPosition,
     onUpdateTextPosition,
     onUpdateTextWidth,
+    onUpdateQrPosition,
+    onUpdateQrWidth,
     isTextDraggable,
     isForDownload = false,
     organization,
@@ -1221,6 +1385,11 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         return ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
     }, [post.layout]);
 
+    // Calculate QR position and size with defaults fallback
+    const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
+    const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
+    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 12);
+
     return (
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
             {isMediaLayout && (
@@ -1264,14 +1433,19 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                      ...(colorOverride || {}),
                  };
                  
-                 // FIX: Corrected a typo in the onUpdatePosition prop name, changing it to onUpdateTagPosition to match the defined prop and resolve the 'Cannot find name' error.
                  return <DraggableTag key={tagId} tag={finalTag} override={positionOverride} mode={mode} onUpdatePosition={onUpdateTagPosition} />;
             })}
 
              {post.qrCodeUrl && (
-                <div className={`absolute z-20 p-1.5 bg-white rounded-lg shadow-lg ${post.qrCodePosition === 'top-left' ? 'top-4 left-4' : ''} ${post.qrCodePosition === 'top-right' ? 'top-4 right-4' : ''} ${post.qrCodePosition === 'bottom-left' ? 'bottom-4 left-4' : ''} ${post.qrCodePosition === 'bottom-right' || !post.qrCodePosition ? 'bottom-4 right-4' : ''}`}>
-                    <QrCodeComponent url={post.qrCodeUrl} size={getQrCodeSize(post.qrCodeSize)} />
-                </div>
+                <DraggableQrCode 
+                    url={post.qrCodeUrl}
+                    x={qrX}
+                    y={qrY}
+                    width={qrW}
+                    isDraggable={isTextDraggable}
+                    onUpdatePosition={onUpdateQrPosition}
+                    onUpdateWidth={onUpdateQrWidth}
+                />
             )}
 
             {post.layout === 'image-fullscreen' && post.subImages && post.subImages.length > 0 && post.subImageConfig && (

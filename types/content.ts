@@ -1,3 +1,4 @@
+
 import { StructuredImagePrompt, AiImageVariant } from './ai';
 
 export interface Tag {
@@ -110,8 +111,11 @@ export interface DisplayPost {
   aiImageVariants?: AiImageVariant[]; // NEW: To store AI-generated image variations
   transitionToNext?: 'fade' | 'slide' | 'dissolve';
   qrCodeUrl?: string;
-  qrCodePosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  qrCodeSize?: 'sm' | 'md' | 'lg' | 'xl';
+  qrCodePosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'; // Deprecated
+  qrCodeSize?: 'sm' | 'md' | 'lg' | 'xl'; // Deprecated
+  qrPositionX?: number; // percentage from left
+  qrPositionY?: number; // percentage from top
+  qrWidth?: number; // percentage of container width
   splitRatio?: number; // % of space for image in split layouts (25-75)
   sharedFrom?: string; // NEW: Renamed from sharedFromScreenId to track original channel ID.
   sharedFromPostId?: string; // NEW: To link a shared post to its original post for syncing.
