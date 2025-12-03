@@ -145,7 +145,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
     const now = currentTime;
     return posts.filter(p => {
-      if (p.status === 'archived') return false; // NEW: Filter out archived posts
+      if (p.status === 'archived') return false; 
       const start = parseToDate(p.startDate, false);
       if (!start || start > now) return false;
       const end = parseToDate(p.endDate, true);
@@ -193,7 +193,6 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
     // Vi väntar istället på 'onEnded' eventet från <video>-taggen.
     // Detta förhindrar att timern avbryter videon om videon är längre än durationSeconds.
-    // Vi kollar på videoUrl, och säkerställer att ingen imageUrl överskuggar den.
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
     const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
 
@@ -271,8 +270,8 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // FIX: Use stable key for single post playlist to prevent unmounting and black screen
-          key={activePosts.length === 1 ? (currentPost as any).id : `${(currentPost as any).id}-${cycleCount}`}
+          // Always use cycle count key to force remount on every show. This fixes skipping issues.
+          key={`${(currentPost as any).id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={transitionType}
