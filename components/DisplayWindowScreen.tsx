@@ -190,6 +190,17 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     }
     if (isTransitioning || !currentPost) return;
 
+    // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
+    // Vi väntar istället på 'onEnded' eventet från <video>-taggen.
+    // Detta förhindrar att timern avbryter videon om videon är längre än durationSeconds.
+    // Vi kollar på videoUrl, och säkerställer att ingen imageUrl överskuggar den.
+    const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
+    const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
+
+    if (hasActiveVideo) {
+      return;
+    }
+
     const durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
     timerRef.current = window.setTimeout(() => {
       advance();
@@ -201,7 +212,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
         timerRef.current = null;
       }
     };
-  }, [currentPost?.id, currentPost?.durationSeconds, currentIndex, isTransitioning, advance]);
+  }, [currentPost?.id, currentPost?.durationSeconds, currentPost?.layout, (currentPost as any)?.videoUrl, (currentPost as any)?.imageUrl, currentIndex, isTransitioning, advance]);
 
   /* Admin dubbelklick */
   const handleAdminClick = (e: React.MouseEvent) => {
@@ -236,6 +247,10 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
   const previousPost = previousIndex !== null ? activePosts[previousIndex] : null;
   const transitionType = (previousPost as any)?.transitionToNext || 'fade';
+
+  // Helper to determine if we should show the progress bar (skip for videos)
+  const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost?.layout || '');
+  const hasActiveVideo = isMediaLayout && !(currentPost as any)?.imageUrl && (currentPost as any)?.videoUrl;
 
   return (
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
@@ -272,7 +287,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
         <div className="w-full h-full flex items-center justify-center text-gray-500">Inga aktiva inlägg att visa.</div>
       )}
 
-      {activePosts.length > 1 && currentPost && (currentPost as any).layout !== 'video-fullscreen' && (
+      {activePosts.length > 1 && currentPost && !hasActiveVideo && (
         <ProgressBar duration={(currentPost as any).durationSeconds ?? 10} isPaused={isTransitioning} />
       )}
 
