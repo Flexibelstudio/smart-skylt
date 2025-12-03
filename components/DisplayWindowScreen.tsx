@@ -11,32 +11,19 @@ interface DisplayWindowScreenProps {
 }
 
 /* ===================== Datum-helpers ===================== */
-type FirestoreTimestamp = { seconds: number; nanoseconds?: number; toDate?: () => Date };
-/* ============= Gör listan stabil mellan realtidsuppdateringar ============= */
-function useStablePosts(posts: DisplayPost[]): DisplayPost[] {
-  const prevRef = useRef<DisplayPost[] | null>(null);
-  const sigRef = useRef<string>('');
-  const signature = useMemo(() => {
-    return posts
-      .map(p =>
-        [
-          p.id ?? '',
-          String(p.startDate ?? ''),
-          String(p.endDate ?? ''),
-          String(p.durationSeconds ?? ''),
-          String(p.transitionToNext ?? ''),
-          String(p.layout ?? ''),
-        ].join('~')
-      )
-      .join('|');
-  }, [posts]);
-
-  if (signature !== sigRef.current) {
-    sigRef.current = signature;
-    prevRef.current = posts;
-  }
-  return prevRef.current ?? posts;
-}
+// Helper function to check if a post is currently active based on dates
+const isPostActive = (post: DisplayPost, now: Date) => {
+    if (post.status === 'archived') return false; 
+    const start = parseToDate(post.startDate, false);
+    // If start date exists and is in the future, it's not active. 
+    // If start date is missing, we assume it's active immediately (user preference).
+    if (start && start > now) return false;
+    
+    const end = parseToDate(post.endDate, true);
+    if (end && end < now) return false;
+    
+    return true;
+};
 
 /* ===================== UI: ProgressBar ===================== */
 const ProgressBar: React.FC<{ duration: number; isPaused: boolean }> = ({ duration, isPaused }) => {
@@ -45,7 +32,7 @@ const ProgressBar: React.FC<{ duration: number; isPaused: boolean }> = ({ durati
     animationPlayState: isPaused ? 'paused' : 'running',
   };
   return (
-    <div className="absolute bottom-0 left-0 h-1.5 bg-white/20 w-full">
+    <div className="absolute bottom-0 left-0 h-1.5 bg-white/20 w-full z-50">
       <div key={duration} className="h-full bg-white animate-progress-bar" style={style} />
       <style>{`
         @keyframes progress-bar-animation { from { width: 0% } to { width: 100% } }
@@ -83,12 +70,15 @@ const PostWrapper: React.FC<{
   };
   const getZIndexClass = () => (state === 'exiting' ? 'z-20' : 'z-10');
 
+  // If exiting, we disconnect the video ended handler to prevent double-firing
+  const handleVideoEnded = state === 'exiting' ? undefined : onVideoEnded;
+
   return (
     <div className={`absolute inset-0 ${getAnimationClass()} ${getZIndexClass()}`}>
       <DisplayPostRenderer
         post={post}
         allTags={allTags}
-        onVideoEnded={onVideoEnded}
+        onVideoEnded={handleVideoEnded}
         primaryColor={primaryColor}
         cycleCount={cycleCount}
         organization={organization}
@@ -101,17 +91,20 @@ const PostWrapper: React.FC<{
 export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack, isEmbedded = false }) => {
   const { selectedDisplayScreen, selectedOrganization } = useLocation();
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [previousIndex, setPreviousIndex] = useState<number | null>(null);
+  // State
+  const [currentPostId, setCurrentPostId] = useState<string | null>(null);
+  const [exitingPost, setExitingPost] = useState<DisplayPost | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [cycleCount, setCycleCount] = useState(0);
+  
+  // Refs & Timers
   const timerRef = useRef<number | null>(null);
-  const failsafeTimerRef = useRef<number | null>(null); // Nöd-timer för videos
+  const failsafeTimerRef = useRef<number | null>(null);
   const [lastClickTime, setLastClickTime] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
   
-  /* Wake Lock (ej inbäddat) */
+  /* Wake Lock */
   useEffect(() => {
     if (isEmbedded) return;
     const requestWakeLock = async () => {
@@ -133,64 +126,65 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     };
   }, [isEmbedded]);
 
-  /* Uppdatera “nu” varje minut (för publiceringsfiltret) */
+  /* Time Tick */
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(t);
   }, []);
 
-  /* Publicerad-logik: start ≤ now och (end saknas eller end ≥ now). Behåll originalordning. */
-  const filtered = useMemo(() => {
+  /* Filter Active Posts */
+  const activePosts = useMemo(() => {
     const posts = selectedDisplayScreen?.posts ?? [];
     if (!selectedDisplayScreen?.isEnabled || posts.length === 0) return [];
-
-    const now = currentTime;
-    return posts.filter(p => {
-      if (p.status === 'archived') return false; 
-      const start = parseToDate(p.startDate, false);
-      if (!start || start > now) return false;
-      const end = parseToDate(p.endDate, true);
-      if (end && end < now) return false;
-      return true;
-    });
+    return posts.filter(p => isPostActive(p, currentTime));
   }, [selectedDisplayScreen, currentTime]);
 
-  /* Stabil version som inte byter referens i onödan (pga realtid) */
-  const activePosts = useStablePosts(filtered);
+  /* Determine Current Post Object */
+  const currentPost = useMemo(() => {
+      if (activePosts.length === 0) return null;
+      if (!currentPostId) return activePosts[0];
+      return activePosts.find(p => p.id === currentPostId) || activePosts[0];
+  }, [activePosts, currentPostId]);
 
-  /* Säkerställ att index är giltigt om listan krymper */
+  /* Ensure we have a valid ID if posts are loaded but no ID selected */
   useEffect(() => {
-    if (activePosts.length === 0) {
-        setCurrentIndex(0);
-    } else if (currentIndex >= activePosts.length) {
-        setCurrentIndex(0);
-    }
-  }, [activePosts.length, currentIndex]);
+      if (!currentPostId && activePosts.length > 0) {
+          setCurrentPostId(activePosts[0].id);
+      }
+  }, [activePosts, currentPostId]);
 
-  /* Avancera */
+  /* Advance Logic */
   const advance = useCallback(() => {
-    if (isTransitioning) return;
+    if (isTransitioning || activePosts.length === 0) return;
     
-    // Vi startar alltid en transition, även om det bara finns 1 inlägg.
-    // Detta gör att "Post A" tonar ut och "Post A (nästa loop)" tonar in.
-    // Det löser problemet med att videos fastnar och ger en snyggare loop.
+    const currentIndex = activePosts.findIndex(p => p.id === (currentPostId || activePosts[0].id));
+    if (currentIndex === -1) {
+        // Current post disappeared, reset to start
+        setCurrentPostId(activePosts[0].id);
+        setCycleCount(c => c + 1);
+        return;
+    }
+
+    const nextIndex = (currentIndex + 1) % activePosts.length;
+    const nextPost = activePosts[nextIndex];
+    const prevPost = activePosts[currentIndex];
+
+    // Start transition
     setIsTransitioning(true);
-    setCurrentIndex(prev => {
-      setPreviousIndex(prev);
-      const nextIndex = (prev + 1) % activePosts.length;
-      return nextIndex;
-    });
+    setExitingPost(prevPost);
+    setCurrentPostId(nextPost.id);
     setCycleCount(c => c + 1);
     
+    // End transition after animation
     window.setTimeout(() => {
-      setPreviousIndex(null);
+      setExitingPost(null);
       setIsTransitioning(false);
-    }, 1200); // matcha CSS-transition
-  }, [isTransitioning, activePosts.length]);
+    }, 1200);
+  }, [isTransitioning, activePosts, currentPostId]);
 
-  /* Timer – bero på aktuell post, inte hela arrayen */
-  const currentPost = activePosts[currentIndex];
+  /* Timer Logic */
   useEffect(() => {
+    // Clear existing timers
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -202,22 +196,23 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
     if (isTransitioning || !currentPost) return;
 
-    // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
-    // Vi väntar istället på 'onEnded' eventet från <video>-taggen.
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
-    const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
+    // Check if it's a video that should control the timing
+    const hasActiveVideo = isMediaLayout && !currentPost.imageUrl && currentPost.videoUrl;
 
-    const durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
+    const durationMs = (currentPost.durationSeconds ?? 10) * 1000;
 
     if (hasActiveVideo) {
-        // FAILSAFE: Om videon fastnar eller inte laddar, tvinga vidare efter duration + 8 sekunder
+        // For video, we wait for onEnded (handled in PostWrapper -> DisplayPostRenderer)
+        // But we add a failsafe in case video stalls
         failsafeTimerRef.current = window.setTimeout(() => {
             console.log("Video failsafe triggered - forcing advance");
             advance();
-        }, durationMs + 8000);
+        }, durationMs + 8000); // 8s grace period for buffering
         return;
     }
 
+    // For images/text, use simple timer
     timerRef.current = window.setTimeout(() => {
       advance();
     }, durationMs);
@@ -226,9 +221,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       if (timerRef.current) clearTimeout(timerRef.current);
       if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
     };
-  }, [currentPost?.id, currentPost?.durationSeconds, currentPost?.layout, (currentPost as any)?.videoUrl, (currentPost as any)?.imageUrl, currentIndex, isTransitioning, advance]);
+  }, [currentPost, isTransitioning, advance]); // Dependencies are specific to avoid re-running on list changes unless currentPost changes
 
-  /* Admin dubbelklick */
+  /* Admin Double Click */
   const handleAdminClick = (e: React.MouseEvent) => {
     if (isEmbedded) return;
     const now = Date.now();
@@ -239,6 +234,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     setLastClickTime(now);
   };
 
+  // Loading / Error States
   if (!selectedDisplayScreen || !selectedOrganization) {
     return <div className="bg-black text-white min-h-screen flex items-center justify-center">Laddar skärm...</div>;
   }
@@ -246,37 +242,36 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     return <div className="bg-black text-white min-h-screen flex items-center justify-center">Denna skärm är inte aktiverad.</div>;
   }
 
+  // Branding
   const branding = selectedDisplayScreen.branding;
   const logoUrl = selectedOrganization.logoUrlDark || selectedOrganization.logoUrlLight;
-
   const getPositionClasses = (position: BrandingOptions['position'] = 'bottom-right') => {
     switch (position) {
       case 'top-left': return 'top-6 left-6';
       case 'top-right': return 'top-6 right-6';
       case 'bottom-left': return 'bottom-6 left-6';
-      case 'bottom-right':
+      case 'bottom-right': return 'bottom-6 right-6';
       default: return 'bottom-6 right-6';
     }
   };
 
-  const previousPost = previousIndex !== null ? activePosts[previousIndex] : null;
-  const transitionType = (previousPost as any)?.transitionToNext || 'fade';
-
-  // Helper to determine if we should show the progress bar (skip for videos)
-  const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost?.layout || '');
-  const hasActiveVideo = isMediaLayout && !(currentPost as any)?.imageUrl && (currentPost as any)?.videoUrl;
+  // Determine transition type from the exiting post
+  const transitionType = exitingPost?.transitionToNext || 'fade';
+  
+  // Helper to determine progress bar visibility
+  const hasActiveVideo = currentPost && ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout) && !currentPost.imageUrl && currentPost.videoUrl;
 
   return (
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
-      {previousPost && (
+      {exitingPost && (
         <PostWrapper
-          // Använd alltid unikt ID för att säkerställa att React inte återanvänder komponenten felaktigt vid loop.
-          key={`${(previousPost as any).id}-exit-${cycleCount - 1}`}
-          post={previousPost}
+          // IMPORTANT: Removed prefix to ensure key matches the previous 'current' key.
+          // This allows React to move the component instead of unmounting/remounting it.
+          key={`${exitingPost.id}-${cycleCount - 1}`}
+          post={exitingPost}
           state="exiting"
-          transitionType={(previousPost as any).transitionToNext}
+          transitionType={exitingPost.transitionToNext}
           allTags={selectedOrganization.tags}
-          onVideoEnded={() => {}} // CRITICAL FIX: Empty function prevents exiting post from triggering advance()
           primaryColor={selectedOrganization.primaryColor}
           cycleCount={cycleCount - 1}
           organization={selectedOrganization}
@@ -286,9 +281,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // Vi använder ALLTID cycleCount i nyckeln. Detta garanterar att varje visning är en "ny" komponentinstans.
-          // Det löser problem med videoloopar, animeringar och att listan hoppar fel om längden ändras.
-          key={`${(currentPost as any).id}-${cycleCount}`}
+          key={`${currentPost.id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={transitionType}
@@ -303,9 +296,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
         <div className="w-full h-full flex items-center justify-center text-gray-500">Inga aktiva inlägg att visa.</div>
       )}
 
-      {/* Visa bara progressbar om det INTE är en video som styr takten */}
+      {/* Show progress bar unless it's a video that controls its own timing */}
       {currentPost && !hasActiveVideo && (
-        <ProgressBar duration={(currentPost as any).durationSeconds ?? 10} isPaused={isTransitioning} />
+        <ProgressBar duration={currentPost.durationSeconds ?? 10} isPaused={isTransitioning} />
       )}
 
       {branding?.isEnabled && selectedOrganization && (branding.showLogo || branding.showName) && (

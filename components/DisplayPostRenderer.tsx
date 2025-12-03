@@ -1214,7 +1214,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 // Robustness: Ignore 'ended' events that fire almost immediately (e.g. < 0.5s)
                 // This prevents skipping if the browser fires 'ended' due to caching/mounting quirks.
                 // We assume valid content videos are > 1 second.
-                if (videoElement.currentTime < 0.5 && videoElement.duration > 1) {
+                const duration = videoElement.duration;
+                // Check if duration is valid and > 1.
+                if (videoElement.currentTime < 0.5 && !isNaN(duration) && duration > 1) {
                     return;
                 }
                 if(onVideoEnded) onVideoEnded();
