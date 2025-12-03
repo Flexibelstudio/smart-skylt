@@ -117,7 +117,7 @@ export const ChevronDownIcon: React.FC<{className?: string}> = ({className = "h-
 );
 
 export const CalendarIcon: React.FC<{className?: string}> = ({className = "h-6 w-6"}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18M9.75 14.25h.008v.008H9.75v-.008Zm0 2.25h.008v.008H9.75v-.008Zm2.25-2.25h.008v.008H12v-.008Zm0 2.25h.008v.008H12v-.008Zm2.25-2.25h.008v.008H14.25v-.008Zm0 2.25h.008v.008H14.25v-.008Z" />
     </svg>
 );
@@ -305,8 +305,8 @@ export const PaintBrushIcon: React.FC<{className?: string}> = ({className}) => (
 export const MegaphoneIcon: React.FC<{className?: string}> = ({className}) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M10.34 3.34a1.5 1.5 0 0 1 1.32 0l6.36 3.695a1.5 1.5 0 0 1 0 2.602l-6.36 3.695a1.5 1.5 0 0 1-1.32 0L3.98 9.64a1.5 1.5 0 0 1 0-2.602l6.36-3.695z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12.158v-2.31a1.5 1.5 0 0 0-1.5-1.5h-1.5m1.5 3.81a1.5 1.5 0 0 1-1.5 1.5h-1.5m-3.92-2.93a1.5 1.5 0 0 1-1.32 0l-6.36-3.695a1.5 1.5 0 0 1 0-2.602l6.36-3.695a1.5 1.5 0 0 1 1.32 0l6.36 3.695a1.5 1.5 0 0 1 0 2.602l-6.36 3.695z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12.158v-2.31a1.5 1.5 0 0 0-1.5-1.5h-1.5m1.5 3.81a1.5 1.5 0 0 1-1.5 1.5h-1.5m-3.92-2.93a1.5 1.5 0 0 1-1.32 0l-6.36-3.695a1.5 1.5 0 0 1 0-2.602l6.36-3.695a1.5 1.5 0 0 1 1.32 0l6.36 3.695a1.5 1.5 0 0 1 0 2.602l-6.36 3.695z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12.158v-2.31a1.5 1.5 0 0 0-1.5-1.5h-1.5m1.5 3.81a1.5 1.5 0 0 1-1.5 1.5h-1.5m-3.92-2.93a1.5 1.5 0 0 1-1.32 0l-6.36-3.695a1.5 1.5 0 0 1 0-2.602l6.36-3.695a1.5 1.5 0 0 1 1.32 0l6.36 3.695z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12.158v-2.31a1.5 1.5 0 0 0-1.5-1.5h-1.5m1.5 3.81a1.5 1.5 0 0 1-1.5 1.5h-1.5m-3.92-2.93a1.5 1.5 0 0 1-1.32 0l-6.36-3.695a1.5 1.5 0 0 1 0-2.602l6.36-3.695a1.5 1.5 0 0 1 1.32 0l6.36 3.695z" />
     </svg>
 );
 
@@ -355,5 +355,17 @@ export const LayoutCollageIcon: React.FC<{className?: string}> = ({className}) =
 export const LayoutWebpageIcon: React.FC<{className?: string}> = ({className}) => (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+    </svg>
+);
+
+export const ArrowsPointingOutIcon: React.FC<{className?: string}> = ({className = "h-5 w-5"}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+    </svg>
+);
+
+export const ArrowsPointingInIcon: React.FC<{className?: string}> = ({className = "h-5 w-5"}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 4.5v3m0 0h3m-3 0-5.25-5.25M9 19.5v-3m0 0h3m-3 0-5.25 5.25M15 4.5v3m0 0h-3m3 0 5.25-5.25M15 19.5v-3m0 0h-3m3 0 5.25 5.25" />
     </svg>
 );

@@ -4,7 +4,7 @@ import { ChatMessage, Organization, DisplayPost, DisplayScreen } from '../types'
 import { initializeMarketingCoachChat, fileToBase64, generateCompletePost } from '../services/geminiService';
 import { getVoiceServerConfig } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
-import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon } from './icons';
+import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from './icons';
 import { useToast } from '../context/ToastContext';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useAssistantProfile } from '../hooks/useAssistantProfile';
@@ -134,6 +134,9 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  
+  // New state for maximizing the chat window
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // Skydda mot parallella stream-svar
   const streamingRef = useRef(false);
@@ -148,7 +151,8 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const nextStartTimeRef = useRef(0);
   const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
   const isClosingIntentionally = useRef(false);
-  const retryTimeoutRef = useRef<number>();
+  // FIX: Initialize useRef with `undefined` to satisfy the requirement of providing an initial value.
+  const retryTimeoutRef = useRef<number | undefined>(undefined);
 
   const [currentUserTranscription, setCurrentUserTranscription] = useState('');
   const [currentModelTranscription, setCurrentModelTranscription] = useState('');
@@ -184,7 +188,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isMaximized]); // Added isMaximized to scroll on resize
 
   useEffect(() => {
     return () => { if (attachmentPreview) URL.revokeObjectURL(attachmentPreview); };
@@ -327,8 +331,8 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           for (const fc of chunk.functionCalls) {
             if (fc.name === 'createDisplayPost') {
-              const { topic, offerDetails, product, validity } = fc.args;
-              let constructedPrompt = topic || '';
+              const { topic, offerDetails, product, validity } = fc.args as any;
+              let constructedPrompt = (topic as string) || '';
               if (product) constructedPrompt += ` på ${product}`;
               if (offerDetails) constructedPrompt += ` med ${offerDetails}`;
               if (validity) constructedPrompt += ` som gäller ${validity}`;
@@ -571,7 +575,8 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
               const fc = m.data;
               if (fc.name === 'createDisplayPost') {
                 const prompt = fc.args.prompt;
-                if (prompt) {
+                // FIX: Add a type check to ensure `prompt` is a string before setting state.
+                if (prompt && typeof prompt === 'string') {
                   setPostPrompt(prompt);
                   setIsChannelSelectOpen(true);
                 } else {
@@ -661,9 +666,14 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
 
   /* ------------------------------ render --------------------------- */
 
+  // Define dynamic container classes based on maximization state
+  const containerClasses = isMaximized
+    ? "fixed inset-4 md:inset-10 z-50 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col animate-fade-in"
+    : "fixed bottom-24 right-6 w-[90vw] max-w-md h-[70vh] max-h-[600px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-fade-in";
+
   return (
     <>
-      <div className="fixed bottom-24 right-6 w-[90vw] max-w-md h-[70vh] max-h-[600px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-fade-in">
+      <div className={containerClasses}>
         <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
           <div className="flex items-center gap-3">
             <img src={assistantAvatar} alt={assistantName} className="w-8 h-8 rounded-full object-cover" />
@@ -671,7 +681,14 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
           </div>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsClearConfirmOpen(true)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:underline" disabled={isLoading}>Rensa</button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold text-2xl">&times;</button>
+            <button 
+                onClick={() => setIsMaximized(!isMaximized)} 
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                title={isMaximized ? "Återställ storlek" : "Maximera"}
+            >
+                {isMaximized ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold text-2xl leading-none">&times;</button>
           </div>
         </header>
 
