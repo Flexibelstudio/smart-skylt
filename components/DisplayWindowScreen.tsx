@@ -138,18 +138,27 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     return () => clearInterval(t);
   }, []);
 
-  /* Publicerad-logik: start ≤ now och (end saknas eller end ≥ now). Behåll originalordning. */
+  /* Publicerad-logik */
   const filtered = useMemo(() => {
     const posts = selectedDisplayScreen?.posts ?? [];
     if (!selectedDisplayScreen?.isEnabled || posts.length === 0) return [];
 
     const now = currentTime;
+    // Grace period på 2 minuter för att hantera klockdiffar
+    const gracePeriodMs = 2 * 60 * 1000; 
+    const nowWithGrace = new Date(now.getTime() + gracePeriodMs);
+
     return posts.filter(p => {
-      if (p.status === 'archived') return false; // NEW: Filter out archived posts
+      if (p.status === 'archived') return false;
+      
       const start = parseToDate(p.startDate, false);
-      if (!start || start > now) return false;
+      // Om startdatum finns OCH det är mer än 2 minuter in i framtiden -> dölj.
+      if (start && start > nowWithGrace) return false;
+      
       const end = parseToDate(p.endDate, true);
+      // Om slutdatum passerat -> dölj.
       if (end && end < now) return false;
+      
       return true;
     });
   }, [selectedDisplayScreen, currentTime]);
@@ -157,10 +166,37 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   /* Stabil version som inte byter referens i onödan (pga realtid) */
   const activePosts = useStablePosts(filtered);
 
-  /* Håll index giltigt */
+  /* Håll index giltigt och försök hitta rätt post om listan ändras */
+  const currentPostIdRef = useRef<string | null>(null);
+
+  // Spara vilket ID vi tittar på, så vi kan hitta tillbaka om listan ändras
   useEffect(() => {
-    if (currentIndex >= activePosts.length) setCurrentIndex(0);
-  }, [activePosts.length, currentIndex]);
+      if (activePosts[currentIndex]) {
+          currentPostIdRef.current = activePosts[currentIndex].id;
+      }
+  }, [currentIndex, activePosts]);
+
+  useEffect(() => {
+    if (activePosts.length === 0) return;
+
+    const postAtIndex = activePosts[currentIndex];
+    
+    // Om index pekar fel, eller om inlägget på detta index har bytts ut mot ett annat
+    if (!postAtIndex || (currentPostIdRef.current && postAtIndex.id !== currentPostIdRef.current)) {
+        if (currentPostIdRef.current) {
+            const foundIndex = activePosts.findIndex(p => p.id === currentPostIdRef.current);
+            if (foundIndex !== -1) {
+                // Vi hittade inlägget på en ny plats -> hoppa dit
+                setCurrentIndex(foundIndex);
+            } else {
+                // Inlägget är borta (borttaget eller utgånget) -> börja om från 0
+                setCurrentIndex(0);
+            }
+        } else {
+            setCurrentIndex(0);
+        }
+    }
+  }, [activePosts]); // Körs när activePosts (stabil) ändras
 
   /* Avancera */
   const advance = useCallback(() => {
@@ -183,25 +219,36 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
   /* Timer – bero på aktuell post, inte hela arrayen */
   const currentPost = activePosts[currentIndex];
+  
   useEffect(() => {
+    // Rensa alltid gammal timer när vi renderar om (nytt index eller post)
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    
     if (isTransitioning || !currentPost) return;
 
-    // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
-    // Vi väntar istället på 'onEnded' eventet från <video>-taggen.
-    // Detta förhindrar att timern avbryter videon om videon är längre än durationSeconds.
-    // Vi kollar på videoUrl, och säkerställer att ingen imageUrl överskuggar den.
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
+    // Kolla om det är en video som SKA spelas (dvs har URL och ingen täckande bild)
     const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
 
+    let durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
+
     if (hasActiveVideo) {
-      return;
+      // FAILSAFE: Även om videon ska styra, sätt en timer på videolängd + 5 sekunder.
+      // Om videon kraschar, eller 'ended' eventet missas, går vi vidare ändå.
+      // Vi gissar på en generös max-tid om vi inte vet längden, t.ex. 60s, eller litar på durationSeconds om den är satt rimligt.
+      const safeGuardDuration = Math.max(durationMs, 60000); 
+      
+      timerRef.current = window.setTimeout(() => {
+        console.warn("Video failsafe triggered - forcing advance");
+        advance();
+      }, safeGuardDuration);
+      
+      return; // Låt onVideoEnded (i <DisplayPostRenderer>) sköta advance normalt
     }
 
-    const durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
     timerRef.current = window.setTimeout(() => {
       advance();
     }, durationMs);
@@ -212,7 +259,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
         timerRef.current = null;
       }
     };
-  }, [currentPost?.id, currentPost?.durationSeconds, currentPost?.layout, (currentPost as any)?.videoUrl, (currentPost as any)?.imageUrl, currentIndex, isTransitioning, advance]);
+  }, [currentPost, currentIndex, isTransitioning, advance]); // Dependencies minimerade
 
   /* Admin dubbelklick */
   const handleAdminClick = (e: React.MouseEvent) => {
@@ -246,8 +293,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   };
 
   const previousPost = previousIndex !== null ? activePosts[previousIndex] : null;
-  const transitionType = (previousPost as any)?.transitionToNext || 'fade';
-
+  
   // Helper to determine if we should show the progress bar (skip for videos)
   const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost?.layout || '');
   const hasActiveVideo = isMediaLayout && !(currentPost as any)?.imageUrl && (currentPost as any)?.videoUrl;
@@ -256,7 +302,8 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
       {previousPost && (
         <PostWrapper
-          key={`${(previousPost as any).id}-${cycleCount - 1}`}
+          // Unik key för previous ser till att den inte blandas ihop med current
+          key={`prev-${(previousPost as any).id}`}
           post={previousPost}
           state="exiting"
           transitionType={(previousPost as any).transitionToNext}
@@ -271,11 +318,13 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // FIX: Use stable key for single post playlist to prevent unmounting and black screen
-          key={activePosts.length === 1 ? (currentPost as any).id : `${(currentPost as any).id}-${cycleCount}`}
+          // FIX: Använd ett stabilt key baserat på ID. 
+          // Vi använder INTE cycleCount i key, för att undvika att komponenten unmountas/remountas i onödan (vilket skapar blinkningar).
+          // Istället skickar vi cycleCount som prop till DisplayPostRenderer, som lyssnar på ändringar och spolar tillbaka videon vid behov.
+          key={`post-${(currentPost as any).id}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
-          transitionType={transitionType}
+          transitionType={undefined} // Current post doesn't use transitionType entering, handled by CSS
           allTags={selectedOrganization.tags}
           onVideoEnded={advance}
           primaryColor={selectedOrganization.primaryColor}
