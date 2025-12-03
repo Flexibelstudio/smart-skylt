@@ -1407,7 +1407,17 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         <ImageWithFallback src={post.imageUrl} alt={post.headline || 'Post image'} className={`${mediaBaseClasses} ${mediaAnimationClasses}`} style={mediaStyle} />
                     )}
                     {!post.imageUrl && post.videoUrl && (
-                        <VideoWithFallback ref={videoRef} src={post.videoUrl} autoPlay muted playsInline onEnded={onVideoEnded} className={mediaBaseClasses} style={mediaStyle} />
+                        <VideoWithFallback 
+                            key={post.videoUrl} // FORCE REMOUNT ON URL CHANGE
+                            ref={videoRef} 
+                            src={post.videoUrl} 
+                            autoPlay 
+                            muted 
+                            playsInline 
+                            onEnded={onVideoEnded} 
+                            className={mediaBaseClasses} 
+                            style={mediaStyle} 
+                        />
                     )}
                 </>
             )}
@@ -1463,12 +1473,12 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
             <BackgroundEffects effect={post.backgroundEffect} />
 
-            {/* Replay Button for Video in Preview Mode */}
+            {/* Replay Button for Video in Preview Mode - ALWAYS VISIBLE if video exists */}
             {mode === 'preview' && isMediaLayout && post.videoUrl && !post.imageUrl && (
-                <div className="absolute bottom-4 left-4 z-50 group">
+                <div className="absolute bottom-4 left-4 z-50">
                     <button 
                         onClick={(e) => { e.stopPropagation(); handleReplay(); }}
-                        className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 touch-none"
+                        className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full backdrop-blur-sm transition-colors touch-none shadow-lg"
                         title="Spela upp från början"
                     >
                         <ArrowUturnLeftIcon className="h-5 w-5" />
