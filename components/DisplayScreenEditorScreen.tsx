@@ -234,7 +234,8 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         // Add main AI image if applicable
         if (wasAiDataUri && postWithStorageUrls.imageUrl) {
             const newMediaItem: MediaItem = {
-                id: `media-ai-${Date.now()}`,
+                // Generate a unique ID to prevent collisions in high-frequency saves
+                id: `media-ai-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                 type: 'image',
                 url: postWithStorageUrls.imageUrl,
                 internalTitle: `AI: ${postToSave.aiImagePrompt?.slice(0, 30) || postToSave.internalTitle || 'Bild'}...`,
