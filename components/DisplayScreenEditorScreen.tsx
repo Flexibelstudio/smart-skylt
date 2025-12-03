@@ -4,7 +4,7 @@ import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, Ca
 import { useToast } from '../context/ToastContext';
 import { StarIcon } from './icons';
 import { useLocation } from '../context/StudioContext';
-import { getSuggestedPostById, updateSuggestedPost, uploadPostAsset } from '../services/firebaseService';
+import { getSuggestedPostById, updateSuggestedPost, uploadPostAsset, addMediaItemsToLibrary } from '../services/firebaseService';
 
 import { 
     generateCampaignIdeasForEvent,
@@ -250,8 +250,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             newMediaItems.push(...aiCollageItems);
         }
 
+        // IMPORTANT: Use arrayUnion helper to avoid overwriting items added by backend (like videos)
+        // that the client might not know about yet due to race conditions.
         if (newMediaItems.length > 0) {
-            orgUpdatePayload.mediaLibrary = [...(organization.mediaLibrary || []), ...newMediaItems];
+            await addMediaItemsToLibrary(organization.id, newMediaItems);
         }
     
         await onUpdateOrganization(organization.id, orgUpdatePayload);

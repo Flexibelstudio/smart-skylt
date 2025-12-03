@@ -1,6 +1,6 @@
 
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
-import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, InstagramStory, VideoOperation, PostTemplate, Tag, DisplayPost } from '../types';
+import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, InstagramStory, VideoOperation, PostTemplate, Tag, DisplayPost, MediaItem } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
 
 // Re-export isOffline for use in other components
@@ -562,6 +562,21 @@ export const uploadMediaForGallery = async (orgId: string, file: File, onProgres
                 resolve({ url });
             }
         );
+    });
+};
+
+export const addMediaItemsToLibrary = async (orgId: string, items: MediaItem[]) => {
+    if (isOffline) {
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org) {
+            org.mediaLibrary = [...(org.mediaLibrary || []), ...items];
+        }
+        return offlineWarning('addMediaItemsToLibrary');
+    }
+    if (!db) return;
+    // Use arrayUnion to append without overwriting existing items that might have been added by backend
+    await db.collection('organizations').doc(orgId).update({
+        mediaLibrary: firebase.firestore.FieldValue.arrayUnion(...items)
     });
 };
 
