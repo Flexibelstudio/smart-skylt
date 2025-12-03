@@ -111,9 +111,6 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const [currentTime, setCurrentTime] = useState(new Date());
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
   
-  // Ref för att spåra nuvarande inläggs-ID för att återställa position vid omladdning
-  const currentPostIdRef = useRef<string | null>(null);
-
   /* Wake Lock (ej inbäddat) */
   useEffect(() => {
     if (isEmbedded) return;
@@ -161,60 +158,38 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   /* Stabil version som inte byter referens i onödan (pga realtid) */
   const activePosts = useStablePosts(filtered);
 
-  /* Håll index giltigt och stabilt baserat på ID */
+  /* Säkerställ att index är giltigt om listan krymper */
   useEffect(() => {
-    // Om listan är tom, nollställ allt
     if (activePosts.length === 0) {
         setCurrentIndex(0);
-        return;
-    }
-
-    // Försök hitta var det nuvarande inlägget tog vägen i den nya listan
-    const savedId = currentPostIdRef.current;
-    if (savedId) {
-        const foundIndex = activePosts.findIndex(p => p.id === savedId);
-        if (foundIndex !== -1) {
-            // Om inlägget finns kvar, se till att vi är på rätt index
-            if (currentIndex !== foundIndex) {
-                setCurrentIndex(foundIndex);
-            }
-            return;
-        }
-    }
-
-    // Om inlägget är borta eller vi är utanför listan, gå till 0
-    if (currentIndex >= activePosts.length) {
+    } else if (currentIndex >= activePosts.length) {
         setCurrentIndex(0);
-        if (activePosts[0]) currentPostIdRef.current = activePosts[0].id;
-    } else {
-        // Uppdatera ref till det som nu är på aktuell plats
-        currentPostIdRef.current = activePosts[currentIndex].id;
     }
-  }, [activePosts, currentIndex]); // Removed activePosts.length dep, relied on activePosts ref check
+  }, [activePosts.length, currentIndex]);
 
   /* Avancera */
   const advance = useCallback(() => {
     if (isTransitioning) return;
+    
+    // Om bara ett inlägg finns, öka bara cycleCount för att trigga omrendering (loop)
     if (activePosts.length <= 1) {
       setCycleCount(c => c + 1);
-      // Even if looping same post, ensure we track it
-      if (activePosts[0]) currentPostIdRef.current = activePosts[0].id;
       return;
     }
+
     setIsTransitioning(true);
     setCurrentIndex(prev => {
       setPreviousIndex(prev);
       const nextIndex = (prev + 1) % activePosts.length;
-      // Uppdatera ref direkt så att useEffect inte återställer felaktigt
-      if (activePosts[nextIndex]) currentPostIdRef.current = activePosts[nextIndex].id;
       return nextIndex;
     });
     setCycleCount(c => c + 1);
+    
     window.setTimeout(() => {
       setPreviousIndex(null);
       setIsTransitioning(false);
     }, 1200); // matcha CSS-transition
-  }, [isTransitioning, activePosts]);
+  }, [isTransitioning, activePosts.length]);
 
   /* Timer – bero på aktuell post, inte hela arrayen */
   const currentPost = activePosts[currentIndex];
@@ -232,7 +207,6 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
     // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
     // Vi väntar istället på 'onEnded' eventet från <video>-taggen.
-    // Detta förhindrar att timern avbryter videon om videon är längre än durationSeconds.
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
     const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
 
@@ -299,7 +273,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
       {previousPost && (
         <PostWrapper
-          key={`${(previousPost as any).id}-${cycleCount - 1}`}
+          // Använd endast unik nyckel för transition om vi faktiskt byter inlägg.
+          // Om listan bara har 1 inlägg, används inte transition-logiken på samma sätt.
+          key={`${(previousPost as any).id}-exit`}
           post={previousPost}
           state="exiting"
           transitionType={(previousPost as any).transitionToNext}
@@ -314,8 +290,10 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // Always use cycle count key to force remount on every show. This fixes skipping issues.
-          key={`${(currentPost as any).id}-${cycleCount}`}
+          // LOOP-FIX: Om vi bara har ETT inlägg måste vi tvinga en "remount" med unik nyckel (id-cycleCount)
+          // för att videospelaren ska nollställas korrekt varje varv.
+          // Har vi FLERA inlägg räcker post.id som nyckel eftersom React byter komponent naturligt.
+          key={activePosts.length === 1 ? `${(currentPost as any).id}-${cycleCount}` : (currentPost as any).id}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={transitionType}
