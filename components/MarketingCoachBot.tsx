@@ -413,7 +413,14 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   }, [cleanupVoiceResources]);
 
   const handleMultiChannelSelect = async (screens: DisplayScreen[]) => {
-    if (!postPrompt || screens.length === 0) return;
+    if (!postPrompt) {
+        // Fallback safety check. If prompt is missing, try to restore from last suggestion if possible, or error out safely.
+        console.error("Missing postPrompt in handleMultiChannelSelect");
+        showToast({ message: "Kunde inte hitta instruktionerna för inlägget. Försök igen.", type: 'error' });
+        return;
+    }
+    
+    if (screens.length === 0) return;
     
     setIsChannelSelectOpen(false);
     setIsLoading(true);
@@ -422,7 +429,9 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     appendToAssistant(`Jag förstår! Jag skapar nu utkast för ${screenNames}... Det kan ta en liten stund.`);
 
     try {
-        await Promise.all(screens.map(async (screen) => {
+        // Run sequentially or with limited concurrency to avoid overwhelming the backend/quota if many screens
+        // Here we run parallel but the backend service has timeouts now.
+        const results = await Promise.allSettled(screens.map(async (screen) => {
             const { postData, imageData } = await generateCompletePost(postPrompt, organization, screen.aspectRatio);
             const imageUrl = imageData ? `data:${imageData.mimeType};base64,${imageData.imageBytes}` : undefined;
             
@@ -434,20 +443,31 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
                 isAiGeneratedImage: !!imageUrl,
             };
 
-            const targetScreen = organization.displayScreens.find(s => s.id === screen.id);
+            const targetScreen = organization.displayScreens?.find(s => s.id === screen.id);
             if (targetScreen) {
                 const updatedPosts = [...(targetScreen.posts || []), newPost];
                 await updateDisplayScreen(screen.id, { posts: updatedPosts });
             }
+            return screen.name;
         }));
 
-        appendToAssistant(`\n\nKlart! ✨ Jag har skapat ${screens.length} nya utkast. Du hittar dem i respektive kanals planeringsvy.`);
-        showToast({ message: "Nya utkast har skapats!", type: "success" });
+        const successCount = results.filter(r => r.status === 'fulfilled').length;
+        const failureCount = results.length - successCount;
+
+        if (successCount > 0) {
+            appendToAssistant(`\n\nKlart! ✨ Jag har skapat ${successCount} nya utkast. Du hittar dem i respektive kanals planeringsvy.`);
+            showToast({ message: "Nya utkast har skapats!", type: "success" });
+        }
+        
+        if (failureCount > 0) {
+             const failedReasons = results.filter(r => r.status === 'rejected').map(r => (r as PromiseRejectedResult).reason.message).join(', ');
+             appendToAssistant(`\n\nOBS: ${failureCount} inlägg kunde inte skapas. Fel: ${failedReasons}`);
+        }
 
     } catch (e) {
         console.error("Multi-channel post creation failed", e);
         const errorMsg = e instanceof Error ? e.message : 'Ett okänt fel inträffade.';
-        appendToAssistant(`\n\nUrsäkta, jag kunde inte skapa inläggen: ${errorMsg}`);
+        appendToAssistant(`\n\nUrsäkta, ett kritiskt fel inträffade: ${errorMsg}`);
         showToast({ message: `Kunde inte skapa inlägg: ${errorMsg}`, type: 'error' });
     } finally {
         setIsLoading(false);

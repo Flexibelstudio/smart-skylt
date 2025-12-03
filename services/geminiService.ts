@@ -56,8 +56,17 @@ const ensureAiInitialized = (): GoogleGenAI => {
 };
 
 // -------------------------------------------------------------
-// Helpers (filer/bilder/base64)
+// Helpers (Timeouts, filer/bilder/base64)
 // -------------------------------------------------------------
+
+// Timeout helper to prevent infinite hangs
+const timeoutPromise = <T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> => {
+    let timer: any;
+    const timerPromise = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(errorMessage)), ms);
+    });
+    return Promise.race([promise, timerPromise]).finally(() => clearTimeout(timer));
+};
 
 async function ensurePublicImageUrl(url: string): Promise<string> {
   if (isOffline || !storage || !url.includes("firebasestorage.googleapis.com")) {
@@ -98,7 +107,14 @@ export async function urlToBase64(
 ): Promise<{ mimeType: string; data: string }> {
   try {
     const publicUrl = await ensurePublicImageUrl(url);
-    const response = await fetch(publicUrl);
+    
+    // Add 15s timeout for fetching image
+    const response = await timeoutPromise(
+        fetch(publicUrl), 
+        15000, 
+        "Hämtning av bild tog för lång tid (timeout)."
+    );
+    
     if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
     const blob = await response.blob();
 
@@ -239,6 +255,9 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (errorString.includes("permission")) {
         throw new Error("Behörighetsfel vid lagring av filen. Kontakta support.");
+    }
+    if (errorString.includes("timeout")) {
+        throw new Error("AI-tjänsten svarade inte i tid. Försök igen.");
     }
     throw new Error(
       error instanceof Error ? error.message : "Ett fel inträffade hos AI-tjänsten."
@@ -434,8 +453,11 @@ export const generateCompletePost = (
     const prompt = Prompts.getCompletePostPrompt(userPrompt, organization, layout);
 
     const parts: any[] = [{ text: prompt }];
-    const preferenceMedia = organization.preferenceProfile?.mediaItems;
-    if (preferenceMedia && preferenceMedia.length > 0) {
+    
+    // Limit preference media to 3 items to avoid payload size issues and timeouts
+    const preferenceMedia = (organization.preferenceProfile?.mediaItems || []).slice(0, 3);
+    
+    if (preferenceMedia.length > 0) {
       // Map requests to promise that resolves to null on failure instead of throwing
       const imagePartsPromises = preferenceMedia.map((item) => 
         urlToBase64(item.url).catch(err => {
@@ -453,23 +475,33 @@ export const generateCompletePost = (
       });
     }
 
-    const textGenResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Keep Pro here for good Art Direction prompts
-      contents: { parts },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: Schemas.GenAiCompletePostResponse,
-      }
-    });
+    // Add explicit timeout to text generation
+    const textGenResponse = await timeoutPromise(
+        ai.models.generateContent({
+          model: "gemini-3-pro-preview", // Keep Pro here for good Art Direction prompts
+          contents: { parts },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: Schemas.GenAiCompletePostResponse,
+          }
+        }),
+        45000, // 45s timeout for text generation with images
+        "Textgenerering tog för lång tid."
+    );
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
 
     if (postData.layout !== "text-only" && (postData as any).imagePrompt) {
-      const imageResponse = await ai.models.generateImages({
-        model: "imagen-4.0-generate-001", // Explicitly use Imagen 4
-        prompt: (postData as any).imagePrompt,
-        config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
-      });
+      // Add explicit timeout to image generation
+      const imageResponse = await timeoutPromise(
+          ai.models.generateImages({
+            model: "imagen-4.0-generate-001", // Explicitly use Imagen 4
+            prompt: (postData as any).imagePrompt,
+            config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
+          }),
+          30000, // 30s timeout for image generation
+          "Bildgenerering tog för lång tid."
+      );
 
       if (!imageResponse.generatedImages || imageResponse.generatedImages.length === 0) {
         throw new Error("AI:n kunde inte generera en bild.");
@@ -650,11 +682,18 @@ export const generateDisplayPostImage = (
   handleAIError(async () => {
     const ai = ensureAiInitialized();
     const apiPrompt = Prompts.getGenerateImagePrompt(prompt);
-    const response = await ai.models.generateImages({
-      model: "imagen-4.0-generate-001", // Keep Imagen 4 for high quality
-      prompt: apiPrompt,
-      config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
-    });
+    
+    // Add explicit timeout to image generation
+    const response = await timeoutPromise(
+        ai.models.generateImages({
+          model: "imagen-4.0-generate-001", // Keep Imagen 4 for high quality
+          prompt: apiPrompt,
+          config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
+        }),
+        30000,
+        "Bildgenerering tog för lång tid."
+    );
+
     if (response.generatedImages && response.generatedImages.length > 0) {
       return { 
           imageBytes: response.generatedImages[0].image.imageBytes, 
@@ -681,11 +720,15 @@ export const editDisplayPostImage = (
       parts.push({ inlineData: { data: logo.base64Data, mimeType: logo.mimeType } });
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image", // Editing works best/fastest with flash-image
-      contents: { parts },
-      config: { responseModalities: [Modality.IMAGE] },
-    });
+    const response = await timeoutPromise(
+        ai.models.generateContent({
+          model: "gemini-2.5-flash-image", // Editing works best/fastest with flash-image
+          contents: { parts },
+          config: { responseModalities: [Modality.IMAGE] },
+        }),
+        30000,
+        "Bildredigering tog för lång tid."
+    );
 
     if (response.promptFeedback?.blockReason) {
       throw new Error(
