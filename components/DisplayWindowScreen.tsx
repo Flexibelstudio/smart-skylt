@@ -106,9 +106,13 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [cycleCount, setCycleCount] = useState(0);
   const timerRef = useRef<number | null>(null);
+  const failsafeTimerRef = useRef<number | null>(null); // Nöd-timer för videos
   const [lastClickTime, setLastClickTime] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
+  
+  // Ref för att spåra nuvarande inläggs-ID för att återställa position vid omladdning
+  const currentPostIdRef = useRef<string | null>(null);
 
   /* Wake Lock (ej inbäddat) */
   useEffect(() => {
@@ -157,29 +161,60 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   /* Stabil version som inte byter referens i onödan (pga realtid) */
   const activePosts = useStablePosts(filtered);
 
-  /* Håll index giltigt */
+  /* Håll index giltigt och stabilt baserat på ID */
   useEffect(() => {
-    if (currentIndex >= activePosts.length) setCurrentIndex(0);
-  }, [activePosts.length, currentIndex]);
+    // Om listan är tom, nollställ allt
+    if (activePosts.length === 0) {
+        setCurrentIndex(0);
+        return;
+    }
+
+    // Försök hitta var det nuvarande inlägget tog vägen i den nya listan
+    const savedId = currentPostIdRef.current;
+    if (savedId) {
+        const foundIndex = activePosts.findIndex(p => p.id === savedId);
+        if (foundIndex !== -1) {
+            // Om inlägget finns kvar, se till att vi är på rätt index
+            if (currentIndex !== foundIndex) {
+                setCurrentIndex(foundIndex);
+            }
+            return;
+        }
+    }
+
+    // Om inlägget är borta eller vi är utanför listan, gå till 0
+    if (currentIndex >= activePosts.length) {
+        setCurrentIndex(0);
+        if (activePosts[0]) currentPostIdRef.current = activePosts[0].id;
+    } else {
+        // Uppdatera ref till det som nu är på aktuell plats
+        currentPostIdRef.current = activePosts[currentIndex].id;
+    }
+  }, [activePosts, currentIndex]); // Removed activePosts.length dep, relied on activePosts ref check
 
   /* Avancera */
   const advance = useCallback(() => {
     if (isTransitioning) return;
     if (activePosts.length <= 1) {
       setCycleCount(c => c + 1);
+      // Even if looping same post, ensure we track it
+      if (activePosts[0]) currentPostIdRef.current = activePosts[0].id;
       return;
     }
     setIsTransitioning(true);
     setCurrentIndex(prev => {
       setPreviousIndex(prev);
-      return (prev + 1) % activePosts.length;
+      const nextIndex = (prev + 1) % activePosts.length;
+      // Uppdatera ref direkt så att useEffect inte återställer felaktigt
+      if (activePosts[nextIndex]) currentPostIdRef.current = activePosts[nextIndex].id;
+      return nextIndex;
     });
     setCycleCount(c => c + 1);
     window.setTimeout(() => {
       setPreviousIndex(null);
       setIsTransitioning(false);
     }, 1200); // matcha CSS-transition
-  }, [isTransitioning, activePosts.length]);
+  }, [isTransitioning, activePosts]);
 
   /* Timer – bero på aktuell post, inte hela arrayen */
   const currentPost = activePosts[currentIndex];
@@ -188,6 +223,11 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    if (failsafeTimerRef.current) {
+        clearTimeout(failsafeTimerRef.current);
+        failsafeTimerRef.current = null;
+    }
+
     if (isTransitioning || !currentPost) return;
 
     // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
@@ -196,20 +236,24 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
     const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
 
+    const durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
+
     if (hasActiveVideo) {
-      return;
+        // FAILSAFE: Om videon fastnar eller inte laddar, tvinga vidare efter duration + 8 sekunder
+        failsafeTimerRef.current = window.setTimeout(() => {
+            console.log("Video failsafe triggered - forcing advance");
+            advance();
+        }, durationMs + 8000);
+        return;
     }
 
-    const durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
     timerRef.current = window.setTimeout(() => {
       advance();
     }, durationMs);
 
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
     };
   }, [currentPost?.id, currentPost?.durationSeconds, currentPost?.layout, (currentPost as any)?.videoUrl, (currentPost as any)?.imageUrl, currentIndex, isTransitioning, advance]);
 
