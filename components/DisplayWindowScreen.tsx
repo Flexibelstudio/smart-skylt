@@ -138,27 +138,18 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     return () => clearInterval(t);
   }, []);
 
-  /* Publicerad-logik */
+  /* Publicerad-logik: start ≤ now och (end saknas eller end ≥ now). Behåll originalordning. */
   const filtered = useMemo(() => {
     const posts = selectedDisplayScreen?.posts ?? [];
     if (!selectedDisplayScreen?.isEnabled || posts.length === 0) return [];
 
     const now = currentTime;
-    // Grace period på 2 minuter för att hantera klockdiffar
-    const gracePeriodMs = 2 * 60 * 1000; 
-    const nowWithGrace = new Date(now.getTime() + gracePeriodMs);
-
     return posts.filter(p => {
-      if (p.status === 'archived') return false;
-      
+      if (p.status === 'archived') return false; // NEW: Filter out archived posts
       const start = parseToDate(p.startDate, false);
-      // Om startdatum finns OCH det är mer än 2 minuter in i framtiden -> dölj.
-      if (start && start > nowWithGrace) return false;
-      
+      if (!start || start > now) return false;
       const end = parseToDate(p.endDate, true);
-      // Om slutdatum passerat -> dölj.
       if (end && end < now) return false;
-      
       return true;
     });
   }, [selectedDisplayScreen, currentTime]);
@@ -166,18 +157,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   /* Stabil version som inte byter referens i onödan (pga realtid) */
   const activePosts = useStablePosts(filtered);
 
-  /* Håll index giltigt och försök hitta rätt post om listan ändras */
+  /* Håll index giltigt */
   useEffect(() => {
-    // Om index pekar utanför, nollställ.
-    if (currentIndex >= activePosts.length) {
-      if (activePosts.length > 0) {
-        setCurrentIndex(0);
-      }
-    } else {
-        // Avancerad logik: Om listan ändras (t.ex. nytt inlägg lades till först), 
-        // försök behålla fokus på det inlägg vi tittade på, om det finns kvar.
-        // (Detta kan implementeras om behovet uppstår, men "reset till 0" är säkrast vid fel)
-    }
+    if (currentIndex >= activePosts.length) setCurrentIndex(0);
   }, [activePosts.length, currentIndex]);
 
   /* Avancera */
@@ -201,36 +183,25 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
   /* Timer – bero på aktuell post, inte hela arrayen */
   const currentPost = activePosts[currentIndex];
-  
   useEffect(() => {
-    // Rensa alltid gammal timer när vi renderar om (nytt index eller post)
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    
     if (isTransitioning || !currentPost) return;
 
+    // VIKTIGT: Om inlägget innehåller en video som spelas upp, använd INTE timer.
+    // Vi väntar istället på 'onEnded' eventet från <video>-taggen.
+    // Detta förhindrar att timern avbryter videon om videon är längre än durationSeconds.
+    // Vi kollar på videoUrl, och säkerställer att ingen imageUrl överskuggar den.
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
-    // Kolla om det är en video som SKA spelas (dvs har URL och ingen täckande bild)
     const hasActiveVideo = isMediaLayout && !(currentPost as any).imageUrl && (currentPost as any).videoUrl;
 
-    let durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
-
     if (hasActiveVideo) {
-      // FAILSAFE: Även om videon ska styra, sätt en timer på videolängd + 5 sekunder.
-      // Om videon kraschar, eller 'ended' eventet missas, går vi vidare ändå.
-      // Vi gissar på en generös max-tid om vi inte vet längden, t.ex. 60s, eller litar på durationSeconds om den är satt rimligt.
-      const safeGuardDuration = Math.max(durationMs, 60000); 
-      
-      timerRef.current = window.setTimeout(() => {
-        console.warn("Video failsafe triggered - forcing advance");
-        advance();
-      }, safeGuardDuration);
-      
-      return; // Låt onVideoEnded (i <DisplayPostRenderer>) sköta advance normalt
+      return;
     }
 
+    const durationMs = ((currentPost as any).durationSeconds ?? 10) * 1000;
     timerRef.current = window.setTimeout(() => {
       advance();
     }, durationMs);
@@ -241,7 +212,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
         timerRef.current = null;
       }
     };
-  }, [currentPost, currentIndex, isTransitioning, advance]); // Dependencies minimerade
+  }, [currentPost?.id, currentPost?.durationSeconds, currentPost?.layout, (currentPost as any)?.videoUrl, (currentPost as any)?.imageUrl, currentIndex, isTransitioning, advance]);
 
   /* Admin dubbelklick */
   const handleAdminClick = (e: React.MouseEvent) => {
@@ -275,7 +246,8 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   };
 
   const previousPost = previousIndex !== null ? activePosts[previousIndex] : null;
-  
+  const transitionType = (previousPost as any)?.transitionToNext || 'fade';
+
   // Helper to determine if we should show the progress bar (skip for videos)
   const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost?.layout || '');
   const hasActiveVideo = isMediaLayout && !(currentPost as any)?.imageUrl && (currentPost as any)?.videoUrl;
@@ -284,8 +256,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
       {previousPost && (
         <PostWrapper
-          // Unik key för previous ser till att den inte blandas ihop med current
-          key={`prev-${(previousPost as any).id}`}
+          key={`${(previousPost as any).id}-${cycleCount - 1}`}
           post={previousPost}
           state="exiting"
           transitionType={(previousPost as any).transitionToNext}
@@ -300,12 +271,11 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // FIX: Använd alltid ett stabilt ID om vi har en lista, men lägg till cycleCount för loopning.
-          // Om listan bara har 1 post använder vi en stabil key för att undvika onödiga om-mountingar (svart blink).
-          key={activePosts.length === 1 ? `single-${(currentPost as any).id}` : `curr-${(currentPost as any).id}-${cycleCount}`}
+          // FIX: Use stable key for single post playlist to prevent unmounting and black screen
+          key={activePosts.length === 1 ? (currentPost as any).id : `${(currentPost as any).id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
-          transitionType={undefined} // Current post doesn't use transitionType entering, handled by CSS
+          transitionType={transitionType}
           allTags={selectedOrganization.tags}
           onVideoEnded={advance}
           primaryColor={selectedOrganization.primaryColor}
