@@ -171,12 +171,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const advance = useCallback(() => {
     if (isTransitioning) return;
     
-    // Om bara ett inlägg finns, öka bara cycleCount för att trigga omrendering (loop)
-    if (activePosts.length <= 1) {
-      setCycleCount(c => c + 1);
-      return;
-    }
-
+    // Vi startar alltid en transition, även om det bara finns 1 inlägg.
+    // Detta gör att "Post A" tonar ut och "Post A (nästa loop)" tonar in.
+    // Det löser problemet med att videos fastnar och ger en snyggare loop.
     setIsTransitioning(true);
     setCurrentIndex(prev => {
       setPreviousIndex(prev);
@@ -273,9 +270,8 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
       {previousPost && (
         <PostWrapper
-          // Använd endast unik nyckel för transition om vi faktiskt byter inlägg.
-          // Om listan bara har 1 inlägg, används inte transition-logiken på samma sätt.
-          key={`${(previousPost as any).id}-exit`}
+          // Använd alltid unikt ID för att säkerställa att React inte återanvänder komponenten felaktigt vid loop.
+          key={`${(previousPost as any).id}-exit-${cycleCount - 1}`}
           post={previousPost}
           state="exiting"
           transitionType={(previousPost as any).transitionToNext}
@@ -290,10 +286,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {currentPost ? (
         <PostWrapper
-          // LOOP-FIX: Om vi bara har ETT inlägg måste vi tvinga en "remount" med unik nyckel (id-cycleCount)
-          // för att videospelaren ska nollställas korrekt varje varv.
-          // Har vi FLERA inlägg räcker post.id som nyckel eftersom React byter komponent naturligt.
-          key={activePosts.length === 1 ? `${(currentPost as any).id}-${cycleCount}` : (currentPost as any).id}
+          // Vi använder ALLTID cycleCount i nyckeln. Detta garanterar att varje visning är en "ny" komponentinstans.
+          // Det löser problem med videoloopar, animeringar och att listan hoppar fel om längden ändras.
+          key={`${(currentPost as any).id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={transitionType}
@@ -308,7 +303,8 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
         <div className="w-full h-full flex items-center justify-center text-gray-500">Inga aktiva inlägg att visa.</div>
       )}
 
-      {activePosts.length > 1 && currentPost && !hasActiveVideo && (
+      {/* Visa bara progressbar om det INTE är en video som styr takten */}
+      {currentPost && !hasActiveVideo && (
         <ProgressBar duration={(currentPost as any).durationSeconds ?? 10} isPaused={isTransitioning} />
       )}
 
