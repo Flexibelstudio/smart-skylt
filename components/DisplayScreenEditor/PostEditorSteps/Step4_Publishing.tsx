@@ -48,9 +48,9 @@ export const Step4_Publishing: React.FC<{
                         value={post.transitionToNext || 'fade'} 
                         onChange={e => handleFieldChange('transitionToNext', e.target.value)}
                     >
-                        <option value="fade">Tona (Mjuk)</option>
-                        <option value="dissolve">Lös upp (Drömsk)</option>
-                        <option value="slide">Glid (Dynamisk)</option>
+                        <option value="fade">Tona (Standard)</option>
+                        <option value="slide">Glid (Slide)</option>
+                        <option value="dissolve">Lös upp (Dissolve)</option>
                     </StyledSelect>
                     <p className="text-xs text-slate-500 mt-1">Välj hur detta inlägg ska försvinna när nästa inlägg visas.</p>
                 </div>

@@ -61,7 +61,7 @@ const PostWrapper: React.FC<{
   const getAnimationClass = () => {
     if (state === 'exiting') {
       switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-out-post'; // Moves to left
+        case 'slide': return 'animate-slide-out-left-full'; // Custom full slide
         case 'dissolve': return 'animate-dissolve-out-post';
         case 'fade':
         default: return 'animate-fade-out-post';
@@ -70,9 +70,8 @@ const PostWrapper: React.FC<{
     
     if (state === 'entering') {
       switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-in-right'; // Enters from right
+        case 'slide': return 'animate-slide-in-right-full'; // Custom full slide
         case 'dissolve': return 'animate-dissolve-in-post';
-        // For standard fade, we can use a subtle zoom or just standard fade in to make it feel fresh
         case 'fade':
         default: return 'animate-fade-in-post';
       }
@@ -80,12 +79,9 @@ const PostWrapper: React.FC<{
     return 'opacity-100';
   };
 
-  // Improved Z-Index logic:
-  // - If sliding, 'entering' should be on top (z-20) to slide OVER, or 'exiting' on top to slide AWAY.
-  //   With Slide-Out-Left and Slide-In-Right, they don't overlap, so equal Z is fine, but let's put entering on top.
-  // - If fading/dissolving, usually Exiting is on top (z-20) fading out to reveal Entering (z-10) underneath.
   const getZIndexClass = () => {
-      if (transitionType === 'slide') return state === 'entering' ? 'z-20' : 'z-10';
+      // For slide, they move in tandem, so equal Z is fine, but new one on top prevents flickering edges
+      if (transitionType === 'slide') return 'z-20';
       return state === 'exiting' ? 'z-20' : 'z-10';
   };
 
@@ -283,6 +279,24 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
   return (
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
+      {/* Dynamic Keyframes for smoother full-width slides */}
+      <style>{`
+        @keyframes slide-out-left-full {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(-100%); opacity: 1; }
+        }
+        @keyframes slide-in-right-full {
+          from { transform: translateX(100%); opacity: 1; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        .animate-slide-out-left-full {
+          animation: slide-out-left-full 1.0s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        }
+        .animate-slide-in-right-full {
+          animation: slide-in-right-full 1.0s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        }
+      `}</style>
+
       {exitingPost && (
         <PostWrapper
           key={`${exitingPost.id}-${cycleCount - 1}`}

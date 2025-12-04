@@ -700,8 +700,12 @@ const AnimatedLine: React.FC<{
         );
     }
 
-    // Default for 'blur-in', 'none', and any other case
-    const animationClass = animation === 'blur-in', animationStyle = animation === 'blur-in' ? { animationDelay: `${delay}s` } : {};
+    // Determine animation class and style based on animation type.
+    // Use blur-in if specified, otherwise fall back to a simple delayed fade-in for 'none' or other types
+    // to ensure the delay logic (waiting for video) works visually.
+    const isBlur = animation === 'blur-in';
+    const animationClass = isBlur ? 'animate-blur-in' : 'animate-fade-in opacity-0';
+    const animationStyle = { animationDelay: `${delay}s`, animationFillMode: 'forwards' };
 
     return (
         <span 
@@ -913,7 +917,8 @@ const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosit
 
     const headlineLines = headlineToShow.split('\n');
     
-    let cumulativeDelay = 0;
+    // START DELAY: Set an initial delay of 0.8s to let the background settle first.
+    let cumulativeDelay = 0.8;
 
     const calculateDuration = (line: string, animation: DisplayPost['textAnimation']) => {
         if (!animation || animation === 'none') return 0;
@@ -972,10 +977,12 @@ const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosit
                     </h1>
                 )}
                 { post.body && (
-                    <PostMarkdownRenderer 
-                        content={post.body}
-                        className={`mt-4 break-words ${getBodyFontSizeClass(post.bodyFontSize, mode)} ${getTagFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`}
-                    />
+                    <div style={{ animation: `fade-in-post 1s ease-out ${cumulativeDelay}s forwards`, opacity: 0 }}>
+                        <PostMarkdownRenderer 
+                            content={post.body}
+                            className={`mt-4 break-words ${getBodyFontSizeClass(post.bodyFontSize, mode)} ${getTagFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`}
+                        />
+                    </div>
                 )}
             </div>
         </div>
