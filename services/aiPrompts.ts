@@ -1,3 +1,4 @@
+
 import { Organization, DisplayScreen, DisplayPost } from '../types';
 
 export const getMarketingCoachSystemInstruction = (
@@ -288,8 +289,9 @@ Requirements:
 `;
 
 export const getGenerateVideoPrompt = (prompt: string): string => `
-En kort, professionell video för en digital skylt. Idé: ${prompt}.
-Krav: Hög kvalitet, inga synliga texter eller ord i videon, passande för bakgrund eller stämningsvideo.`;
+En kort, professionell video för en digital skylt. Idé: "${prompt}".
+Krav: Hög kvalitet, inga synliga texter eller ord i videon, passande för bakgrund eller stämningsvideo.
+VIKTIGT: Videon SKA vara "silent video" (utan ljudspår eller med helt tyst ljud). Den ska användas på en skärm som oftast är ljudlös. Fokusera på rörelse och visuella effekter.`;
 
 export const getEventReminderPrompt = (event: { name: string; icon: string }, daysUntil: number, organization: Organization, hasExistingCampaign: boolean): string => {
   let timeContext = "";

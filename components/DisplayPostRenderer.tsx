@@ -20,14 +20,48 @@ const ImageWithFallback: React.FC<{ src?: string; alt: string; className: string
 // Updated VideoWithFallback to support ref forwarding for seamless looping control
 const VideoWithFallback = forwardRef<HTMLVideoElement, React.ComponentProps<'video'> & { src?: string }>(({ src, ...props }, ref) => {
     const [videoSrc, setVideoSrc] = useState(src);
+    // Use an internal ref if one isn't provided, so we can always manipulate the DOM element
+    const internalRef = useRef<HTMLVideoElement>(null);
+    const videoRef = (ref as React.RefObject<HTMLVideoElement>) || internalRef;
+
     useEffect(() => { setVideoSrc(src); }, [src]);
-    const handleError = () => setVideoSrc(undefined);
+    
+    // Force mute logic to bypass strict autoplay policies on some displays/TVs
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.muted = true;
+            videoRef.current.defaultMuted = true;
+            videoRef.current.setAttribute('muted', '');
+            videoRef.current.setAttribute('playsinline', '');
+            
+            // Explicitly try to play after a short delay to allow DOM to settle
+            const timer = setTimeout(() => {
+                if (videoRef.current && videoRef.current.paused) {
+                    videoRef.current.play().catch(e => console.warn("Force play failed:", e));
+                }
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [videoSrc, videoRef]);
+
+    const handleError = (e: any) => {
+        console.warn("Video failed to load:", src, e);
+        setVideoSrc(undefined);
+    };
     
     if (!videoSrc) {
         return <img src={PLACEHOLDER_URL} alt="Missing video" className={props.className + ' object-contain p-4 bg-slate-200 dark:bg-slate-700'} style={props.style} />;
     }
 
-    return <video ref={ref} src={videoSrc} onError={handleError} {...props} />;
+    return (
+        <video 
+            ref={videoRef} 
+            src={videoSrc} 
+            onError={handleError} 
+            crossOrigin="anonymous" 
+            {...props} 
+        />
+    );
 });
 VideoWithFallback.displayName = 'VideoWithFallback';
 
