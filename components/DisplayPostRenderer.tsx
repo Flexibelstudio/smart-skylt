@@ -17,48 +17,60 @@ const ImageWithFallback: React.FC<{ src?: string; alt: string; className: string
     return <img src={imgSrc} onError={handleError} alt={alt} className={`${className} ${imgSrc === PLACEHOLDER_URL ? 'object-contain p-4 bg-slate-200 dark:bg-slate-700' : ''}`} style={style} />;
 };
 
-// Updated VideoWithFallback to support ref forwarding for seamless looping control
+// Updated VideoWithFallback with Retry Logic
 const VideoWithFallback = forwardRef<HTMLVideoElement, React.ComponentProps<'video'> & { src?: string }>(({ src, ...props }, ref) => {
     const [videoSrc, setVideoSrc] = useState(src);
-    // Use an internal ref if one isn't provided, so we can always manipulate the DOM element
+    const [errorCount, setErrorCount] = useState(0);
     const internalRef = useRef<HTMLVideoElement>(null);
     const videoRef = (ref as React.RefObject<HTMLVideoElement>) || internalRef;
 
-    useEffect(() => { setVideoSrc(src); }, [src]);
+    useEffect(() => { 
+        setVideoSrc(src); 
+        setErrorCount(0);
+    }, [src]);
     
-    // Force mute logic to bypass strict autoplay policies on some displays/TVs
+    // Simple effect to ensure play is called if autoplay is true but browser paused it
     useEffect(() => {
-        if (videoRef.current) {
-            videoRef.current.muted = true;
-            videoRef.current.defaultMuted = true;
-            videoRef.current.setAttribute('muted', '');
-            videoRef.current.setAttribute('playsinline', '');
-            
-            // Explicitly try to play after a short delay to allow DOM to settle
-            const timer = setTimeout(() => {
-                if (videoRef.current && videoRef.current.paused) {
-                    videoRef.current.play().catch(e => console.warn("Force play failed:", e));
-                }
-            }, 100);
-            return () => clearTimeout(timer);
+        const video = videoRef.current;
+        if (video && props.autoPlay && video.paused) {
+            video.play().catch(() => { /* Autoplay prevented, waiting for interaction or mute */ });
         }
-    }, [videoSrc, videoRef]);
+    }, [videoSrc, videoRef, props.autoPlay]);
 
     const handleError = (e: any) => {
-        console.warn("Video failed to load:", src, e);
-        setVideoSrc(undefined);
+        const error = e.target?.error;
+        console.warn("Video failed to load:", src, "Error code:", error?.code, "Message:", error?.message, "Attempt:", errorCount + 1);
+        
+        if (errorCount < 3) {
+            // Retry logic: Wait 1s then reload
+            setTimeout(() => {
+                if (videoRef.current) {
+                    videoRef.current.load();
+                    // Attempt to play again if it was supposed to be playing
+                    if (props.autoPlay) {
+                        videoRef.current.play().catch(() => {});
+                    }
+                    setErrorCount(prev => prev + 1);
+                }
+            }, 1000);
+        } else {
+            // Give up after 3 attempts
+            setVideoSrc(undefined);
+        }
     };
     
-    if (!videoSrc) {
-        return <img src={PLACEHOLDER_URL} alt="Missing video" className={props.className + ' object-contain p-4 bg-slate-200 dark:bg-slate-700'} style={props.style} />;
+    if (!videoSrc && errorCount >= 3) {
+        return <img src={PLACEHOLDER_URL} alt="Media saknas" className={props.className + ' object-contain p-4 bg-slate-200 dark:bg-slate-700'} style={props.style} />;
     }
 
     return (
         <video 
             ref={videoRef} 
             src={videoSrc} 
-            onError={handleError} 
-            crossOrigin="anonymous" 
+            onError={handleError}
+            playsInline
+            muted
+            preload="auto"
             {...props} 
         />
     );
