@@ -42,6 +42,18 @@ export const Step4_Publishing: React.FC<{
                     <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
                     <StyledInput type="number" min="5" value={String(post.durationSeconds)} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10))} />
                 </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Övergångseffekt</label>
+                    <StyledSelect 
+                        value={post.transitionToNext || 'fade'} 
+                        onChange={e => handleFieldChange('transitionToNext', e.target.value)}
+                    >
+                        <option value="fade">Tona (Mjuk)</option>
+                        <option value="dissolve">Lös upp (Drömsk)</option>
+                        <option value="slide">Glid (Dynamisk)</option>
+                    </StyledSelect>
+                    <p className="text-xs text-slate-500 mt-1">Välj hur detta inlägg ska försvinna när nästa inlägg visas.</p>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Startdatum</label>

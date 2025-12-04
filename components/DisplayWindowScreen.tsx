@@ -57,18 +57,37 @@ const PostWrapper: React.FC<{
   organization?: Organization;
   aspectRatio: DisplayScreen['aspectRatio'];
 }> = ({ post, state, transitionType, allTags, onVideoEnded, primaryColor, cycleCount, organization, aspectRatio }) => {
+  
   const getAnimationClass = () => {
     if (state === 'exiting') {
       switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-out-post';
+        case 'slide': return 'animate-slide-out-post'; // Moves to left
         case 'dissolve': return 'animate-dissolve-out-post';
         case 'fade':
         default: return 'animate-fade-out-post';
       }
     }
+    
+    if (state === 'entering') {
+      switch (transitionType || 'fade') {
+        case 'slide': return 'animate-slide-in-right'; // Enters from right
+        case 'dissolve': return 'animate-dissolve-in-post';
+        // For standard fade, we can use a subtle zoom or just standard fade in to make it feel fresh
+        case 'fade':
+        default: return 'animate-fade-in-post';
+      }
+    }
     return 'opacity-100';
   };
-  const getZIndexClass = () => (state === 'exiting' ? 'z-20' : 'z-10');
+
+  // Improved Z-Index logic:
+  // - If sliding, 'entering' should be on top (z-20) to slide OVER, or 'exiting' on top to slide AWAY.
+  //   With Slide-Out-Left and Slide-In-Right, they don't overlap, so equal Z is fine, but let's put entering on top.
+  // - If fading/dissolving, usually Exiting is on top (z-20) fading out to reveal Entering (z-10) underneath.
+  const getZIndexClass = () => {
+      if (transitionType === 'slide') return state === 'entering' ? 'z-20' : 'z-10';
+      return state === 'exiting' ? 'z-20' : 'z-10';
+  };
 
   // If exiting, we disconnect the video ended handler to prevent double-firing
   const handleVideoEnded = state === 'exiting' ? undefined : onVideoEnded;
@@ -175,11 +194,12 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     setCurrentPostId(nextPost.id);
     setCycleCount(c => c + 1);
     
-    // End transition after animation
+    // End transition after animation. 
+    // Increased slightly to ensure animations complete before unmounting.
     window.setTimeout(() => {
       setExitingPost(null);
       setIsTransitioning(false);
-    }, 1200);
+    }, 1300);
   }, [isTransitioning, activePosts, currentPostId]);
 
   /* Timer Logic */
@@ -221,7 +241,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       if (timerRef.current) clearTimeout(timerRef.current);
       if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
     };
-  }, [currentPost, isTransitioning, advance]); // Dependencies are specific to avoid re-running on list changes unless currentPost changes
+  }, [currentPost, isTransitioning, advance]);
 
   /* Admin Double Click */
   const handleAdminClick = (e: React.MouseEvent) => {
@@ -255,7 +275,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     }
   };
 
-  // Determine transition type from the exiting post
+  // Determine transition type from the exiting post to allow per-post transition settings
   const transitionType = exitingPost?.transitionToNext || 'fade';
   
   // Helper to determine progress bar visibility
@@ -265,8 +285,6 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
       {exitingPost && (
         <PostWrapper
-          // IMPORTANT: Removed prefix to ensure key matches the previous 'current' key.
-          // This allows React to move the component instead of unmounting/remounting it.
           key={`${exitingPost.id}-${cycleCount - 1}`}
           post={exitingPost}
           state="exiting"
