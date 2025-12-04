@@ -977,7 +977,13 @@ const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosit
                     </h1>
                 )}
                 { post.body && (
-                    <div style={{ animation: `fade-in-post 1s ease-out ${cumulativeDelay}s forwards`, opacity: 0 }}>
+                    <div 
+                        className="animate-fade-in-post opacity-0"
+                        style={{ 
+                            animationDelay: `${cumulativeDelay}s`,
+                            animationFillMode: 'forwards'
+                        }}
+                    >
                         <PostMarkdownRenderer 
                             content={post.body}
                             className={`mt-4 break-words ${getBodyFontSizeClass(post.bodyFontSize, mode)} ${getTagFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`}
