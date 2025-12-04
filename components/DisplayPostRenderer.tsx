@@ -399,7 +399,8 @@ const DraggableQrCode: React.FC<{
     isDraggable?: boolean;
     onUpdatePosition?: (pos: { x: number, y: number }) => void;
     onUpdateWidth?: (width: number) => void;
-}> = ({ url, x, y, width, isDraggable, onUpdatePosition, onUpdateWidth }) => {
+    startDelay?: number;
+}> = ({ url, x, y, width, isDraggable, onUpdatePosition, onUpdateWidth, startDelay = 0 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -509,6 +510,8 @@ const DraggableQrCode: React.FC<{
         transform: 'translate(-50%, -50%)',
         cursor: isDraggable ? 'move' : 'default',
         zIndex: 20,
+        animationDelay: `${startDelay}s`,
+        animationFillMode: 'forwards',
     };
 
     return (
@@ -517,7 +520,7 @@ const DraggableQrCode: React.FC<{
             style={style}
             onMouseDown={isDraggable ? handleDragStart : undefined}
             onTouchStart={isDraggable ? handleDragStart : undefined}
-            className={`group touch-none ${isDragging ? 'opacity-70' : ''}`}
+            className={`group touch-none ${isDragging ? 'opacity-70' : ''} ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`}
         >
             <div className="bg-white p-1 rounded-lg shadow-lg relative">
                 <QrCodeComponent url={url} className="w-full h-full" />
@@ -658,6 +661,7 @@ interface TextContentProps {
     onUpdateTextWidth?: (width: number) => void;
     aspectRatio: DisplayScreen['aspectRatio'];
     isForDownload?: boolean;
+    startDelay?: number;
 }
 
 const AnimatedLine: React.FC<{
@@ -704,7 +708,9 @@ const AnimatedLine: React.FC<{
     // Use blur-in if specified, otherwise fall back to a simple delayed fade-in for 'none' or other types
     // to ensure the delay logic (waiting for video) works visually.
     const isBlur = animation === 'blur-in';
-    const animationClass = isBlur ? 'animate-blur-in' : 'animate-fade-in opacity-0';
+    // If startDelay > 0, we use animate-fade-in-post which handles opacity: 0 -> 1.
+    // If no delay (preview), standard opacity classes might be safer, but fade-in is generally OK.
+    const animationClass = isBlur ? 'animate-blur-in' : 'animate-fade-in-post opacity-0';
     const animationStyle = { animationDelay: `${delay}s`, animationFillMode: 'forwards' };
 
     return (
@@ -717,7 +723,7 @@ const AnimatedLine: React.FC<{
     );
 };
 
-const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosition, isTextDraggable, cycleCount = 0, organization, aspectRatio, isForDownload, onUpdateTextWidth }) => {
+const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosition, isTextDraggable, cycleCount = 0, organization, aspectRatio, isForDownload, onUpdateTextWidth, startDelay = 0 }) => {
     const textContainerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     
@@ -917,8 +923,8 @@ const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosit
 
     const headlineLines = headlineToShow.split('\n');
     
-    // START DELAY: Set an initial delay of 0.8s to let the background settle first.
-    let cumulativeDelay = 0.8;
+    // START DELAY: Initial delay to let background settle.
+    let cumulativeDelay = startDelay;
 
     const calculateDuration = (line: string, animation: DisplayPost['textAnimation']) => {
         if (!animation || animation === 'none') return 0;
@@ -1000,6 +1006,7 @@ interface DraggableTagProps {
     override: TagPositionOverride | undefined;
     mode: 'preview' | 'live';
     onUpdatePosition?: (tagId: string, newPosition: { x: number; y: number; rotation: number }) => void;
+    startDelay?: number;
 }
 
 const hexToRgba = (hex: string, alpha: number = 1): string => {
@@ -1014,7 +1021,7 @@ const hexToRgba = (hex: string, alpha: number = 1): string => {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpdatePosition }) => {
+const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpdatePosition, startDelay = 0 }) => {
     const tagRef = useRef<HTMLDivElement>(null);
     const isDraggable = !!onUpdatePosition;
 
@@ -1094,6 +1101,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
               top: `${override.y}%`,
               transform: `translate(-50%, -50%) rotate(${override.rotation}deg)${useScaleVar ? ' scale(var(--scale, 1))' : ''}`,
               cursor: isDraggable ? 'grab' : 'default',
+              animationDelay: `${startDelay}s`,
+              animationFillMode: 'forwards',
           }
         : {};
 
@@ -1103,7 +1112,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
         ...positionStyle
     };
 
-    let tagClassName = `inline-flex items-center z-20 touch-none ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType, !!override)} ${override ? '' : 'relative'}`;
+    let tagClassName = `inline-flex items-center z-20 touch-none ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType, !!override)} ${override ? '' : 'relative'} ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`;
 
     if (isStamp) {
         tagClassName += ' justify-center text-center uppercase tracking-[2px] font-bold ';
@@ -1212,7 +1221,6 @@ export interface DisplayPostRendererProps {
     onUpdateQrPosition?: (pos: { x: number, y: number }) => void;
     onUpdateQrWidth?: (width: number) => void;
     isTextDraggable?: boolean;
-    // FIX: Added optional 'organization' prop to resolve TypeScript errors where it was being passed without being defined.
     organization?: Organization;
     isForDownload?: boolean;
     aspectRatio?: DisplayScreen['aspectRatio'];
@@ -1238,43 +1246,34 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
-    // FIX: This logic makes the component more robust. It can derive data from the 'organization' object if provided,
-    // or fall back to the individual direct props for backward compatibility with existing calls.
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
+
+    // Delay start for overlays if in live mode to allow background to appear first
+    const startDelay = mode === 'live' ? 0.8 : 0;
 
     const handleReplay = useCallback(() => {
         if (videoRef.current) {
             videoRef.current.currentTime = 0;
             videoRef.current.play().catch(e => {
-                // Autoplay might be blocked or video not ready, usually fine in this context
             });
         }
     }, []);
 
     // --- REWIND LOGIC FOR SEAMLESS LOOP ---
-    // If this component stays mounted (same key in parent) but cycleCount changes, it means we are looping the same post.
-    // We must rewind the video manually because 'key' didn't change to remount the component.
     useEffect(() => {
         if (videoRef.current) {
-            // console.log("Cycle changed, rewinding video for seamless loop");
             videoRef.current.currentTime = 0;
             videoRef.current.play().catch(e => {
-                // Autoplay might be blocked or video not ready, usually fine in this context
-                // console.warn("Rewind play failed", e); 
             });
         }
-    }, [cycleCount]); // Trigger whenever cycleCount increments
+    }, [cycleCount]);
 
     useEffect(() => {
         const videoElement = videoRef.current;
         if (videoElement) {
             const handleEnd = () => {
-                // Robustness: Ignore 'ended' events that fire almost immediately (e.g. < 0.5s)
-                // This prevents skipping if the browser fires 'ended' due to caching/mounting quirks.
-                // We assume valid content videos are > 1 second.
                 const duration = videoElement.duration;
-                // Check if duration is valid and > 1.
                 if (videoElement.currentTime < 0.5 && !isNaN(duration) && duration > 1) {
                     return;
                 }
@@ -1504,7 +1503,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 ></div>
             )}
             
-            {(post.headline || post.body) && <TextContent post={post} mode={mode} onUpdateTextPosition={onUpdateTextPosition} onUpdateTextWidth={onUpdateTextWidth} isTextDraggable={isTextDraggable} cycleCount={cycleCount} organization={organization} aspectRatio={aspectRatio} isForDownload={isForDownload} />}
+            {(post.headline || post.body) && <TextContent post={post} mode={mode} onUpdateTextPosition={onUpdateTextPosition} onUpdateTextWidth={onUpdateTextWidth} isTextDraggable={isTextDraggable} cycleCount={cycleCount} organization={organization} aspectRatio={aspectRatio} isForDownload={isForDownload} startDelay={startDelay} />}
 
             {showTags && post.tagIds && post.tagIds.map(tagId => {
                  const tag = allTags.find(t => t.id === tagId);
@@ -1518,7 +1517,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                      ...(colorOverride || {}),
                  };
                  
-                 return <DraggableTag key={tagId} tag={finalTag} override={positionOverride} mode={mode} onUpdatePosition={onUpdateTagPosition} />;
+                 return <DraggableTag key={tagId} tag={finalTag} override={positionOverride} mode={mode} onUpdatePosition={onUpdateTagPosition} startDelay={startDelay} />;
             })}
 
              {post.qrCodeUrl && (
@@ -1530,6 +1529,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     isDraggable={isTextDraggable}
                     onUpdatePosition={onUpdateQrPosition}
                     onUpdateWidth={onUpdateQrWidth}
+                    startDelay={startDelay}
                 />
             )}
 

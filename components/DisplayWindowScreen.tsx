@@ -61,27 +61,30 @@ const PostWrapper: React.FC<{
   const getAnimationClass = () => {
     if (state === 'exiting') {
       switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-out-left-full'; // Custom full slide
-        case 'dissolve': return 'animate-dissolve-out-post';
+        case 'slide': return 'animate-slide-out-left-full'; // Custom full slide out
+        case 'dissolve': return 'animate-dissolve-out-post'; // Blur out
         case 'fade':
-        default: return 'animate-fade-out-post';
+        default: return 'animate-fade-out-post'; // Simple fade out
       }
     }
     
     if (state === 'entering') {
       switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-in-right-full'; // Custom full slide
-        case 'dissolve': return 'animate-dissolve-in-post';
+        case 'slide': return 'animate-slide-in-right-full'; // Custom full slide in
+        case 'dissolve': return 'animate-dissolve-in-post'; // Blur in
         case 'fade':
-        default: return 'animate-fade-in-post';
+        default: return 'animate-fade-in-post'; // Simple fade in
       }
     }
     return 'opacity-100';
   };
 
   const getZIndexClass = () => {
-      // For slide, they move in tandem, so equal Z is fine, but new one on top prevents flickering edges
-      if (transitionType === 'slide') return 'z-20';
+      // For slide transitions, put the entering post on top to cover the exiting one cleanly
+      if (transitionType === 'slide' && state === 'entering') return 'z-30';
+      if (transitionType === 'slide' && state === 'exiting') return 'z-20';
+      
+      // For fade/dissolve, exiting stays on top briefly while fading out
       return state === 'exiting' ? 'z-20' : 'z-10';
   };
 
@@ -98,6 +101,7 @@ const PostWrapper: React.FC<{
         cycleCount={cycleCount}
         organization={organization}
         aspectRatio={aspectRatio}
+        mode="live"
       />
     </div>
   );
@@ -271,9 +275,6 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     }
   };
 
-  // Determine transition type from the exiting post to allow per-post transition settings
-  const transitionType = exitingPost?.transitionToNext || 'fade';
-  
   // Helper to determine progress bar visibility
   const hasActiveVideo = currentPost && ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout) && !currentPost.imageUrl && currentPost.videoUrl;
 
@@ -316,7 +317,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
           key={`${currentPost.id}-${cycleCount}`}
           post={currentPost}
           state={isTransitioning ? 'entering' : 'idle'}
-          transitionType={transitionType}
+          transitionType={exitingPost?.transitionToNext || 'fade'}
           allTags={selectedOrganization.tags}
           onVideoEnded={advance}
           primaryColor={selectedOrganization.primaryColor}

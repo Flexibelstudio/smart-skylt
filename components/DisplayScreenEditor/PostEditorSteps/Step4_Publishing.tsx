@@ -52,7 +52,7 @@ export const Step4_Publishing: React.FC<{
                         <option value="slide">Glid (Slide)</option>
                         <option value="dissolve">Lös upp (Dissolve)</option>
                     </StyledSelect>
-                    <p className="text-xs text-slate-500 mt-1">Välj hur detta inlägg ska försvinna när nästa inlägg visas.</p>
+                    <p className="text-xs text-slate-500 mt-1">Välj hur detta inlägg ska övergå till nästa.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
