@@ -112,7 +112,25 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             const processUrl = async (url: string | undefined): Promise<string | undefined> => {
                 if (!url || !url.startsWith('data:')) return url;
                 const blob = dataUriToBlob(url);
-                const file = new File([blob], "ai-media.png", { type: blob.type });
+                
+                // --- FIX: Correct filename extension based on MIME type ---
+                const timestamp = Date.now();
+                const randomId = Math.random().toString(36).substring(2, 8);
+                let extension = 'png';
+                
+                // Check MIME type to set correct extension. 
+                // This is crucial for video players on TVs which often rely on file extension.
+                if (blob.type.includes('video')) {
+                    extension = 'mp4';
+                } else if (blob.type.includes('jpeg') || blob.type.includes('jpg')) {
+                    extension = 'jpg';
+                } else if (blob.type.includes('gif')) {
+                    extension = 'gif';
+                }
+
+                const filename = `asset-${timestamp}-${randomId}.${extension}`;
+                const file = new File([blob], filename, { type: blob.type });
+                
                 return await uploadPostAsset(organization.id, finalPostId, file, () => {});
             };
     
