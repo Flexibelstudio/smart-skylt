@@ -502,7 +502,7 @@ const DraggableQrCode: React.FC<{
         }
     };
 
-    const style: React.CSSProperties = {
+    const positioningStyle: React.CSSProperties = {
         position: 'absolute',
         left: `${x}%`,
         top: `${y}%`,
@@ -510,6 +510,9 @@ const DraggableQrCode: React.FC<{
         transform: 'translate(-50%, -50%)',
         cursor: isDraggable ? 'move' : 'default',
         zIndex: 20,
+    };
+
+    const animationStyle: React.CSSProperties = {
         animationDelay: `${startDelay}s`,
         animationFillMode: 'forwards',
     };
@@ -517,22 +520,27 @@ const DraggableQrCode: React.FC<{
     return (
         <div 
             ref={containerRef}
-            style={style}
+            style={positioningStyle}
             onMouseDown={isDraggable ? handleDragStart : undefined}
             onTouchStart={isDraggable ? handleDragStart : undefined}
-            className={`group touch-none ${isDragging ? 'opacity-70' : ''} ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`}
+            className={`group touch-none ${isDragging ? 'opacity-70' : ''}`}
         >
-            <div className="bg-white p-1 rounded-lg shadow-lg relative">
-                <QrCodeComponent url={url} className="w-full h-full" />
-                {isDraggable && (
-                    <div 
-                        onMouseDown={handleResizeStart}
-                        onTouchStart={handleResizeStart}
-                        className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border-2 border-primary rounded-full cursor-se-resize flex items-center justify-center shadow-md opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-none z-30"
-                    >
-                        <div className="w-2 h-2 bg-primary rounded-full" />
-                    </div>
-                )}
+            <div 
+                className={`w-full h-full ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`} 
+                style={animationStyle}
+            >
+                <div className="bg-white p-1 rounded-lg shadow-lg relative h-full">
+                    <QrCodeComponent url={url} className="w-full h-full" />
+                    {isDraggable && (
+                        <div 
+                            onMouseDown={handleResizeStart}
+                            onTouchStart={handleResizeStart}
+                            className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border-2 border-primary rounded-full cursor-se-resize flex items-center justify-center shadow-md opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-none z-30"
+                        >
+                            <div className="w-2 h-2 bg-primary rounded-full" />
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -1094,6 +1102,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
     const shape = (isStamp && tag.shape) ? tag.shape : 'circle';
     const useScaleVar = isStamp && tag.animation === 'pulse' && override;
     
+    // Positioning style (applied to outer wrapper if absolute)
     const positionStyle: React.CSSProperties = override
         ? {
               position: 'absolute',
@@ -1101,18 +1110,16 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
               top: `${override.y}%`,
               transform: `translate(-50%, -50%) rotate(${override.rotation}deg)${useScaleVar ? ' scale(var(--scale, 1))' : ''}`,
               cursor: isDraggable ? 'grab' : 'default',
-              animationDelay: `${startDelay}s`,
-              animationFillMode: 'forwards',
+              zIndex: 20, // Ensure absolute tags are on top
           }
         : {};
 
     const tagStyle: React.CSSProperties = {
         color: tag.textColor,
         ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {}),
-        ...positionStyle
     };
 
-    let tagClassName = `inline-flex items-center z-20 touch-none ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType, !!override)} ${override ? '' : 'relative'} ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`;
+    let tagClassName = `inline-flex items-center touch-none ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType, !!override)} ${override ? '' : 'relative z-20'} `;
 
     if (isStamp) {
         tagClassName += ' justify-center text-center uppercase tracking-[2px] font-bold ';
@@ -1154,13 +1161,13 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
     }
     tagClassName += ` ${paddingClass}`;
 
-
-    const tagContent = (
+    // Helper to generate the actual tag content
+    const TagVisual = (
         <div
-            ref={tagRef}
+            ref={override ? undefined : tagRef} // If overridden, ref is on outer wrapper
             style={tagStyle}
-            onMouseDown={isDraggable ? handleDragStart : undefined}
-            onTouchStart={isDraggable ? handleDragStart : undefined}
+            onMouseDown={(!override && isDraggable) ? handleDragStart : undefined}
+            onTouchStart={(!override && isDraggable) ? handleDragStart : undefined}
             className={tagClassName.replace(/\s\s+/g, ' ')}
         >
             {tag.url ? (
@@ -1176,17 +1183,35 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
         </div>
     );
     
-    if (override || isDraggable) {
-        return tagContent;
+    // Case 1: Absolute Positioned Tag (Dragged or manually positioned)
+    if (override) {
+        return (
+            <div
+                ref={tagRef}
+                style={positionStyle}
+                onMouseDown={isDraggable ? handleDragStart : undefined}
+                onTouchStart={isDraggable ? handleDragStart : undefined}
+                className="group"
+            >
+                <div className={startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''} style={{ animationDelay: `${startDelay}s`, animationFillMode: 'forwards' }}>
+                    {TagVisual}
+                </div>
+            </div>
+        );
     }
 
-    return (
-        <div className={`absolute inset-0 flex p-4 pointer-events-none z-20 justify-center items-center`}>
-            <div className="pointer-events-auto">
-                 {tagContent}
+    // Case 2: Static Layout Tag (e.g. Centered by default flex/grid in parent)
+    // Note: If startDelay > 0, we simply wrap it to fade in. No position conflict here as we rely on normal flow.
+    if (startDelay > 0) {
+        return (
+            <div className={`relative z-20 animate-fade-in-post opacity-0`} style={{ animationDelay: `${startDelay}s`, animationFillMode: 'forwards' }}>
+                {TagVisual}
             </div>
-        </div>
-    );
+        );
+    }
+
+    // Default return for static layout without delay
+    return TagVisual;
 };
 
 const CollageItemRenderer: React.FC<{ item: CollageItem }> = ({ item }) => {
@@ -1215,7 +1240,7 @@ export interface DisplayPostRendererProps {
     cycleCount?: number;
     mode?: 'preview' | 'live';
     showTags?: boolean;
-    onUpdateTagPosition?: (tagId: string, newPosition: { x: number, y: number, rotation: number }) => void;
+    onUpdateTagPosition?: (tagId: string, newPosition: { x: number; y: number, rotation: number }) => void;
     onUpdateTextPosition?: (pos: { x: number, y: number }) => void;
     onUpdateTextWidth?: (width: number) => void;
     onUpdateQrPosition?: (pos: { x: number, y: number }) => void;
