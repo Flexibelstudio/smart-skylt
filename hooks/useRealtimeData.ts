@@ -1,3 +1,4 @@
+
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen, ScreenPairingCode } from '../types';
@@ -117,38 +118,33 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
     useEffect(() => {
         if (!isScreenMode || !deviceId) return;
 
-        let hasReceivedData = false;
-
-        // Connection timeout: If we haven't heard ANYTHING from DB in 30s, assume network issue/zombie state
-        // and reset to try to force a fresh reconnection.
-        const connectionTimeout = setTimeout(() => {
-            if (!hasReceivedData) {
-                 console.log('[Session] Connection timeout (no data received). Resetting.');
-                 onForceDisconnect();
-            }
-        }, 30000);
+        // Note: We deliberately removed the "connection timeout" kill switch that was here previously.
+        // A screen should NEVER disconnect itself just because the network is flaky.
+        // It should only disconnect if the server explicitly tells it to (via document deletion).
 
         const unsubscribe = listenToScreenSession(deviceId, (doc) => {
-            hasReceivedData = true;
+            // If doc is undefined, it means network error or loading. Do nothing (keep playing).
+            if (doc === undefined) {
+                return;
+            }
 
-            // 1. Explicit kill command from backend
-            if (doc && doc.forceDisconnect) {
+            // If doc is null, it means the session document was DELETED from the database.
+            // This happens when the admin clicks "Koppla från". This is the only time we reset.
+            if (doc === null) {
+                console.log('[Session] Session document deleted by admin. Resetting.');
+                onForceDisconnect();
+                return;
+            }
+
+            // Check for explicit kill command inside the document
+            if (doc.forceDisconnect) {
                 console.log('[Session] Force disconnect signal received.');
                 onForceDisconnect();
                 return;
             }
-            
-            // 2. Session document deleted/missing (Kill Switch)
-            // If the doc is null, it means it definitely does not exist in DB (deleted by admin).
-            // We trigger disconnect IMMEDIATELY without waiting for grace period.
-            if (doc === null) {
-                console.log('[Session] Session document missing/deleted. Resetting.');
-                onForceDisconnect();
-            }
         });
 
         return () => {
-            clearTimeout(connectionTimeout);
             unsubscribe();
         };
     }, [deviceId, isScreenMode, onForceDisconnect]);

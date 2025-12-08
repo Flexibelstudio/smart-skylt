@@ -451,18 +451,16 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
     });
 };
 
-export const listenToScreenSession = (deviceId: string, callback: (data: any) => void) => {
+export const listenToScreenSession = (deviceId: string, callback: (data: any | null | undefined) => void) => {
     if (isOffline || !db) return () => {};
     return db.collection('screenSessions').doc(deviceId).onSnapshot(
         doc => {
             callback(doc.exists ? doc.data() : null);
         },
         error => {
-            console.error("Session listener error:", error);
-            if (error.code === 'permission-denied') {
-                console.error("Permission denied reading session. Check Firestore rules and screenUid linking.");
-            }
-            callback(null);
+            // NETWORK ERROR (e.g. offline): Return undefined to indicate uncertainty, not deletion.
+            console.error("Session listener error (Network?):", error);
+            callback(undefined); 
         }
     );
 };

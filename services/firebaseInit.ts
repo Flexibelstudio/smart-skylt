@@ -49,6 +49,16 @@ if (!cfg || !cfg.firebaseConfig || !cfg.firebaseConfig.apiKey) {
             auth = firebase.auth();
             db = firebase.firestore();
             
+            // Enable offline persistence
+            db.enablePersistence({ synchronizeTabs: true })
+                .catch((err) => {
+                    if (err.code == 'failed-precondition') {
+                        console.warn('Persistence failed: Multiple tabs open');
+                    } else if (err.code == 'unimplemented') {
+                        console.warn('Persistence failed: Browser not supported');
+                    }
+                });
+            
             // Apply settings to improve connection stability
             try {
               db.settings({
