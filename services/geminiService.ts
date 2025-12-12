@@ -34,7 +34,9 @@ import * as Schemas from './aiSchemas';
 // -------------------------------------------------------------
 
 // @ts-ignore - Netlify/Node env injection
-const API_KEY = process.env.API_KEY;
+// CRITICAL FIX: Force undefined to prevent using the leaked/expired key bundled in the frontend.
+// This forces the app to use the Cloud Function proxy which has the valid secret.
+const API_KEY = undefined; // process.env.API_KEY;
 
 // Only initialize local client if key exists. Calls will now fallback to proxy if local fails/key missing.
 let ai: GoogleGenAI | null = null;
@@ -46,13 +48,13 @@ if (API_KEY) {
   }
 } else {
   console.warn(
-    "Gemini API Key missing locally. AI features will rely on Cloud Functions proxy."
+    "Gemini API Key missing locally (or disabled for security). AI features will rely on Cloud Functions proxy."
   );
 }
 
 const ensureAiInitialized = (): GoogleGenAI => {
   if (!ai) {
-    throw new Error("Local AI-tjänst är inte konfigurerad. Försöker använda proxy...");
+    throw new Error("Local AI-tjänst är inte tillgänglig. Använd röstchatten eller vänta på en uppdatering.");
   }
   return ai;
 };
@@ -347,12 +349,13 @@ export async function initializeMarketingCoachChat(
 
 export const formatPageWithAI = (rawContent: string): Promise<string> =>
   handleAIError(async () => {
-    // Attempt local first if key exists, otherwise proxy via existing function action
-    if (functions && !ai) {
+    // Force proxy
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'formatPageWithAI', params: { rawContent } });
         return result.data as string;
     }
+    // Fallback only if functions are missing (which shouldn't happen online)
     const aiClient = ensureAiInitialized();
     const prompt = Prompts.getFormatPagePrompt(rawContent);
     const response = await aiClient.models.generateContent({
@@ -364,7 +367,7 @@ export const formatPageWithAI = (rawContent: string): Promise<string> =>
 
 export const generatePageContentFromPrompt = (userPrompt: string): Promise<string> =>
   handleAIError(async () => {
-    if (functions && !ai) {
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'generatePageContentFromPrompt', params: { userPrompt } });
         return result.data as string;
@@ -383,7 +386,7 @@ export const generateDisplayPostContent = (
   organizationName: string
 ): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
-    if (functions && !ai) {
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'generateDisplayPostContent', params: { userPrompt, organizationName } });
         return result.data as { headline: string; body: string };
@@ -417,7 +420,7 @@ export const generateAutomationPrompt = (inputs: {
   handleAIError(async () => {
     const prompt = Prompts.getAutomationPromptPrompt(inputs);
     // Use generic proxy for this since no specific action exists
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-2.5-flash", prompt);
         return (response.text ?? "").trim();
     }
@@ -440,7 +443,7 @@ export const generateSkyltIdeas = (
         responseSchema: Schemas.GenAiSkyltIdeSuggestionArray,
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-2.5-flash", fullPrompt, config);
         return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
     }
@@ -460,15 +463,13 @@ export const generateCampaignIdeasForEvent = (
   organization: Organization
 ): Promise<{ ideas: CampaignIdea[]; followUpSuggestion?: { question: string; eventName: string } | null }> =>
   handleAIError(async () => {
-    // There is a specific action for this, but it takes different params in existing index.js. 
-    // We'll use the generic proxy to be safe with our prompt construction.
     const prompt = Prompts.getCampaignIdeasForEventPrompt(eventName, daysUntil, organization);
     const config = {
         responseMimeType: "application/json",
         responseSchema: Schemas.GenAiCampaignIdeasResponse,
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as { ideas: CampaignIdea[]; followUpSuggestion?: { question: string; eventName: string } | null };
     }
@@ -493,7 +494,7 @@ export const generateSeasonalCampaignIdeas = (
         responseSchema: Schemas.GenAiCampaignIdeasResponse, 
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as { ideas: CampaignIdea[] };
     }
@@ -547,7 +548,7 @@ export const generateCompletePost = (
     };
 
     let textGenResponse;
-    if (functions && !ai) {
+    if (functions) {
         textGenResponse = await generateContentViaProxy("gemini-3-pro-preview", { parts }, config);
     } else {
         const aiClient = ensureAiInitialized();
@@ -568,7 +569,7 @@ export const generateCompletePost = (
     if (postData.layout !== "text-only" && (postData as any).imagePrompt) {
       // Add explicit timeout to image generation
       let imageResponse;
-      if (functions && !ai) {
+      if (functions) {
           const proxyImg = await generateImagesViaProxy(
               "imagen-4.0-generate-001", 
               (postData as any).imagePrompt, 
@@ -616,7 +617,7 @@ export const generateFollowUpPost = (
     };
 
     let textGenResponse;
-    if (functions && !ai) {
+    if (functions) {
         textGenResponse = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
     } else {
         const aiClient = ensureAiInitialized();
@@ -631,7 +632,7 @@ export const generateFollowUpPost = (
 
     if (postData.layout !== "text-only" && (postData as any).imagePrompt) {
       let imageResponse;
-      if (functions && !ai) {
+      if (functions) {
           const proxyImg = await generateImagesViaProxy(
               "imagen-4.0-generate-001",
               (postData as any).imagePrompt,
@@ -665,7 +666,7 @@ export const generateHeadlineSuggestions = (
   existingHeadlines?: string[]
 ): Promise<string[]> =>
   handleAIError(async () => {
-    if (functions && !ai) {
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'generateHeadlineSuggestions', params: { body, existingHeadlines } });
         return result.data as string[];
@@ -703,7 +704,7 @@ export const generateBodySuggestions = (
         },
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-2.5-flash", prompt, config);
         const content = safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as z.infer<typeof Schemas.BodySuggestionsSchema>;
         return content.bodies;
@@ -730,7 +731,7 @@ export const refineDisplayPostContent = (
     | "simplify_language"
 ): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
-    if (functions && !ai) {
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'refineDisplayPostContent', params: { content, command } });
         return result.data as { headline: string; body: string };
@@ -787,7 +788,7 @@ export const refineTextWithCustomPrompt = (
         },
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-2.5-flash", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
     }
@@ -806,7 +807,7 @@ export const generateDisplayPostImage = (
   aspectRatio: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" = "16:9"
 ): Promise<{ imageBytes: string; mimeType: string }> =>
   handleAIError(async () => {
-    if (functions && !ai) {
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'generateDisplayPostImage', params: { prompt, aspectRatio } });
         // The callable returns data URI string, need to parse
@@ -846,7 +847,7 @@ export const editDisplayPostImage = (
   logo?: { base64Data: string; mimeType: string }
 ): Promise<{ imageBytes: string; mimeType: string }> =>
   handleAIError(async () => {
-    if (functions && !ai) {
+    if (functions) {
         const fn = functions.httpsCallable('gemini');
         const result = await fn({ action: 'editDisplayPostImage', params: { base64ImageData, mimeType, prompt, logo } });
         const dataUri = result.data as string;
@@ -961,7 +962,7 @@ export const generateVideoFromPrompt = (
             let opResult: any;
             
             // Proxy logic for operation polling
-            if (functions && !ai) {
+            if (functions) {
                 const fn = functions.httpsCallable('gemini');
                 const res = await fn({ action: 'getVideosOperation', params: { operation: { name: operationName } } });
                 opResult = res.data;
@@ -1043,7 +1044,7 @@ export const generateEventReminderText = (
           },
       };
 
-      if (functions && !ai) {
+      if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
       }
@@ -1093,7 +1094,7 @@ export const updateStyleProfileSummary = (
         },
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
     }
@@ -1132,7 +1133,7 @@ export const generateRhythmReminderText = (
           },
       };
 
-      if (functions && !ai) {
+      if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
       }
@@ -1197,7 +1198,7 @@ export const getSeasonalSuggestion = (
           },
       };
 
-      if (functions && !ai) {
+      if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
       }
@@ -1241,7 +1242,7 @@ export const generateDnaAnalysis = (
         },
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as z.infer<typeof Schemas.DnaAnalysisSchema>;
         return {
@@ -1317,7 +1318,7 @@ export const analyzePostDiff = (
         },
     };
 
-    if (functions && !ai) {
+    if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as {
             ändringar: string[];
@@ -1355,7 +1356,7 @@ export async function summarizeLearnLogForOrg(orgId: string) {
   const prompt = Prompts.getRollupPrompt(learnLog, org.styleProfile?.summary);
   let summary = "";
 
-  if (functions && !ai) {
+  if (functions) {
       const response = await generateContentViaProxy("gemini-3-pro-preview", prompt);
       summary = response.text?.trim() || "";
   } else {
