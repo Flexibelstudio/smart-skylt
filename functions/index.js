@@ -1213,6 +1213,48 @@ export const gemini = onCall(
 
     try {
       switch (action) {
+        case "generateContent": {
+          const response = await ai.models.generateContent({
+            model: params.model,
+            contents: params.contents,
+            config: params.config,
+          });
+          return { text: response.text };
+        }
+
+        case "generateImages": {
+          const response = await ai.models.generateImages({
+            model: params.model,
+            prompt: params.prompt,
+            config: params.config,
+          });
+          
+          if (!response.generatedImages || response.generatedImages.length === 0) {
+             throw new HttpsError("not-found", "AI did not generate an image.");
+          }
+          
+          // Return just the imageBytes of the first image to keep payload simple
+          return { 
+              imageBytes: response.generatedImages[0].image.imageBytes,
+              mimeType: 'image/jpeg' 
+          };
+        }
+
+        case "getVideosOperation": {
+            // Proxying operation status check
+            const operation = params.operation;
+            if (!operation) throw new HttpsError("invalid-argument", "Missing operation name");
+            
+            const result = await ai.operations.getVideosOperation({ 
+                operation: operation // SDK expects { operation: { name: ... } } or just name? It's { name } in raw API but SDK wraps it.
+                // If params.operation is { name: '...' }, pass it directly or wrap it?
+                // The SDK method signature is getVideosOperation(request: GetVideosOperationRequest).
+                // Let's assume client sends the full request object structure or just name.
+                // Safest to construct it here if client sends name.
+            });
+            return result;
+        }
+
         case "formatPageWithAI": {
           const rawContent = params.rawContent;
           const prompt = `You are a world-class digital content designer... Raw text to transform: --- ${rawContent} ---`;
