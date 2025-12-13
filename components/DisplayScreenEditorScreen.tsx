@@ -113,13 +113,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 if (!url || !url.startsWith('data:')) return url;
                 const blob = dataUriToBlob(url);
                 
-                // --- FIX: Correct filename extension based on MIME type ---
                 const timestamp = Date.now();
                 const randomId = Math.random().toString(36).substring(2, 8);
                 let extension = 'png';
                 
-                // Check MIME type to set correct extension. 
-                // This is crucial for video players on TVs which often rely on file extension.
                 if (blob.type.includes('video')) {
                     extension = 'mp4';
                 } else if (blob.type.includes('jpeg') || blob.type.includes('jpg')) {
@@ -173,7 +170,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                     internalTitle: `AI Collage: ${postToSave.internalTitle || 'Bild'}`,
                                     createdAt: new Date().toISOString(),
                                     createdBy: 'ai',
-                                    aiPrompt: "Collage Image" // Ideally we'd store the specific prompt used, but general is ok
+                                    aiPrompt: "Collage Image"
                                 });
                             }
                         }
@@ -190,17 +187,21 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             showToast({ message: "Kunde inte ladda upp media till molnet. Försök igen.", type: 'error' });
             throw uploadError;
         }
+
+        // FIX: Sanitize the post object to remove 'undefined' values which Firestore does not support.
+        // JSON.stringify will omit keys with undefined values.
+        const sanitizedPost = JSON.parse(JSON.stringify(postWithStorageUrls));
     
         const updatedPosts = isNewPost
-            ? [...(screen.posts || []), postWithStorageUrls]
-            : (screen.posts || []).map(p => p.id === postWithStorageUrls.id ? postWithStorageUrls : p);
+            ? [...(screen.posts || []), sanitizedPost]
+            : (screen.posts || []).map(p => p.id === sanitizedPost.id ? sanitizedPost : p);
         
         await updateDisplayScreen(screen.id, { posts: updatedPosts });
         
-        const isOriginalPost = !postWithStorageUrls.sharedFromPostId;
+        const isOriginalPost = !sanitizedPost.sharedFromPostId;
         if (isOriginalPost) {
             const tempOrgForSync = { ...organization, displayScreens };
-            const syncedScreens = syncSharedPosts(postWithStorageUrls, tempOrgForSync);
+            const syncedScreens = syncSharedPosts(sanitizedPost, tempOrgForSync);
             for (const syncedScreen of syncedScreens) {
                 if (JSON.stringify(syncedScreen) !== JSON.stringify(displayScreens.find(s => s.id === syncedScreen.id))) {
                     await updateDisplayScreen(syncedScreen.id, { posts: syncedScreen.posts });
@@ -236,7 +237,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     
         if (postToSave.suggestionOriginId) {
             try {
-                await updateSuggestedPost(organization.id, postToSave.suggestionOriginId, { status: 'edited-and-published', finalPostId: postWithStorageUrls.id });
+                await updateSuggestedPost(organization.id, postToSave.suggestionOriginId, { status: 'edited-and-published', finalPostId: sanitizedPost.id });
             } catch (e) {
                 console.warn("Could not update suggestion status:", e);
             }
@@ -250,12 +251,11 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         let newMediaItems: MediaItem[] = [];
 
         // Add main AI image if applicable
-        if (wasAiDataUri && postWithStorageUrls.imageUrl) {
+        if (wasAiDataUri && sanitizedPost.imageUrl) {
             const newMediaItem: MediaItem = {
-                // Generate a unique ID to prevent collisions in high-frequency saves
                 id: `media-ai-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                 type: 'image',
-                url: postWithStorageUrls.imageUrl,
+                url: sanitizedPost.imageUrl,
                 internalTitle: `AI: ${postToSave.aiImagePrompt?.slice(0, 30) || postToSave.internalTitle || 'Bild'}...`,
                 createdAt: new Date().toISOString(),
                 createdBy: 'ai',
@@ -272,8 +272,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         const updatePromises: Promise<any>[] = [];
 
         if (newMediaItems.length > 0) {
-            // Use arrayUnion via specialized service function to prevent overwrites/race conditions
-            // This is safer than modifying orgUpdatePayload.mediaLibrary directly
             updatePromises.push(addMediaItemsToLibrary(organization.id, newMediaItems));
         }
     
