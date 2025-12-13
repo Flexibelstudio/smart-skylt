@@ -262,7 +262,7 @@ export const generateDisplayPostContent = (userPrompt: string, organizationName:
     const response = await aiClient.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: Schemas.DisplayPostContentSchema } // Simplified schema usage locally
+      config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema }
     });
     return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
@@ -405,7 +405,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
     const response = await aiClient.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { headlines: { type: Type.ARRAY, items: { type: Type.STRING } } } } },
+      config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
     return safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema).headlines;
   });
@@ -413,7 +413,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
 export const generateBodySuggestions = (headline: string, existingBodies?: string[]): Promise<string[]> =>
   handleAIError(async () => {
     const prompt = Prompts.getBodySuggestionsPrompt(headline, existingBodies);
-    const config = { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { bodies: { type: Type.ARRAY, items: { type: Type.STRING } } } } };
+    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiBodySuggestionsSchema };
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
@@ -436,7 +436,7 @@ export const refineDisplayPostContent = (content: { headline: string; body: stri
     const response = await aiClient.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: Schemas.DisplayPostContentSchema },
+      config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema },
     });
     return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
@@ -444,7 +444,7 @@ export const refineDisplayPostContent = (content: { headline: string; body: stri
 export const refineTextWithCustomPrompt = (content: { headline: string; body: string }, customPrompt: string): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
     const prompt = Prompts.getRefineWithCustomPromptPrompt(content, customPrompt);
-    const config = { responseMimeType: "application/json", responseSchema: Schemas.DisplayPostContentSchema };
+    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema };
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
@@ -559,7 +559,7 @@ export const generateEventReminderText = (event: { name: string; icon: string },
   return getCachedAIResponse(cacheKey, 60 * 6, () =>
     handleAIError(async () => {
       const prompt = Prompts.getEventReminderPrompt(event, daysUntil, organization, hasExistingCampaign);
-      const config = { responseMimeType: "application/json", responseSchema: Schemas.EventReminderSchema };
+      const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiEventReminderSchema };
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
@@ -575,7 +575,7 @@ export const updateStyleProfileSummary = (organization: Organization, recentPost
   handleAIError(async () => {
     const summaries = recentPosts.map(post => `Inlägg: "${post.internalTitle}", Layout: ${post.layout}, Rubrik: "${post.headline}"`).join("\n");
     const prompt = Prompts.getStyleProfileSummaryPrompt(organization, summaries);
-    const config = { responseMimeType: "application/json", responseSchema: Schemas.StyleProfileSummarySchema };
+    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiStyleProfileSummarySchema };
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
@@ -591,7 +591,7 @@ export const generateRhythmReminderText = (organization: Organization, analysis:
   return getCachedAIResponse(cacheKey, 60 * 6, () =>
     handleAIError(async () => {
       const prompt = Prompts.getRhythmReminderPrompt(organization, analysis.context);
-      const config = { responseMimeType: "application/json", responseSchema: Schemas.RhythmReminderSchema };
+      const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiRhythmReminderSchema };
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
@@ -612,7 +612,7 @@ export const getSeasonalSuggestion = (posts: DisplayPost[], organization: Organi
       if (!relevantPosts) return null;
 
       const prompt = Prompts.getSeasonalSuggestionPrompt(organization, relevantPosts, now.toLocaleDateString("sv-SE"));
-      const config = { responseMimeType: "application/json", responseSchema: Schemas.SeasonalSuggestionSchema };
+      const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiSeasonalSuggestionSchema };
       
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
@@ -628,7 +628,7 @@ export const getSeasonalSuggestion = (posts: DisplayPost[], organization: Organi
 export const generateDnaAnalysis = (organization: Organization): Promise<Partial<StyleProfile>> =>
   handleAIError(async () => {
     const prompt = Prompts.getDnaAnalysisPrompt(organization);
-    const config = { responseMimeType: "application/json", responseSchema: Schemas.DnaAnalysisSchema };
+    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiDnaAnalysisSchema };
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
@@ -644,7 +644,7 @@ export const generateDnaAnalysis = (organization: Organization): Promise<Partial
 export const analyzePostDiff = (aiSuggestion: DisplayPost, finalPost: DisplayPost): Promise<{ ändringar: string[]; tolkning: string; förslagFörFramtiden: string; }> =>
   handleAIError(async () => {
     const prompt = Prompts.getPostDiffPrompt(aiSuggestion.headline || "", finalPost.headline || "");
-    const config = { responseMimeType: "application/json", responseSchema: Schemas.PostDiffAnalysisSchema };
+    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiPostDiffAnalysisSchema };
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);

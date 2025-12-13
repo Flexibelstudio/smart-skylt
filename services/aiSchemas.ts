@@ -174,3 +174,87 @@ export const GenAiCompletePostResponse = {
     },
     required: ['headline', 'body', 'imagePrompt'],
 };
+
+export const GenAiDisplayPostContentSchema = {
+  type: Type.OBJECT,
+  properties: {
+    headline: { type: Type.STRING },
+    body: { type: Type.STRING },
+  },
+  required: ['headline', 'body'],
+};
+
+export const GenAiHeadlineSuggestionsSchema = {
+  type: Type.OBJECT,
+  properties: {
+    headlines: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+  required: ['headlines'],
+};
+
+export const GenAiBodySuggestionsSchema = {
+  type: Type.OBJECT,
+  properties: {
+    bodies: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+  required: ['bodies'],
+};
+
+export const GenAiEventReminderSchema = {
+  type: Type.OBJECT,
+  properties: {
+    headline: { type: Type.STRING },
+    subtext: { type: Type.STRING },
+  },
+  required: ['headline', 'subtext'],
+};
+
+export const GenAiStyleProfileSummarySchema = {
+  type: Type.OBJECT,
+  properties: {
+    summary: { type: Type.STRING },
+  },
+  required: ['summary'],
+};
+
+export const GenAiRhythmReminderSchema = {
+  type: Type.OBJECT,
+  properties: {
+    headline: { type: Type.STRING },
+    subtext: { type: Type.STRING },
+  },
+  required: ['headline', 'subtext'],
+};
+
+export const GenAiSeasonalSuggestionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    headline: { type: Type.STRING },
+    subtext: { type: Type.STRING },
+    context: { type: Type.STRING },
+  },
+  required: ['headline', 'subtext', 'context'],
+};
+
+export const GenAiDnaAnalysisSchema = {
+  type: Type.OBJECT,
+  properties: {
+    brandPersonality: { type: Type.STRING },
+    targetAudience: { type: Type.STRING },
+    coreMessage: { type: Type.STRING },
+    visualStyle: { type: Type.STRING },
+    toneOfVoice: { type: Type.STRING },
+    summary: { type: Type.STRING },
+  },
+  required: ['brandPersonality', 'targetAudience', 'coreMessage', 'visualStyle', 'toneOfVoice', 'summary'],
+};
+
+export const GenAiPostDiffAnalysisSchema = {
+  type: Type.OBJECT,
+  properties: {
+    ändringar: { type: Type.ARRAY, items: { type: Type.STRING } },
+    tolkning: { type: Type.STRING },
+    förslagFörFramtiden: { type: Type.STRING },
+  },
+  required: ['ändringar', 'tolkning', 'förslagFörFramtiden'],
+};
