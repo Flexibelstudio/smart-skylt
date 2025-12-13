@@ -11,6 +11,10 @@ const offlineWarning = (action: string) => {
     return Promise.resolve();
 };
 
+const sanitizeForFirestore = <T>(data: T): T => {
+    return JSON.parse(JSON.stringify(data));
+};
+
 // --- AUTH ---
 
 export const onAuthChange = (callback: (user: firebase.User | null) => void) => {
@@ -118,7 +122,7 @@ export const updateOrganization = async (orgId: string, data: Partial<Organizati
         return offlineWarning('updateOrganization');
     }
     if (!db) return;
-    await db.collection('organizations').doc(orgId).update(data);
+    await db.collection('organizations').doc(orgId).update(sanitizeForFirestore(data));
 };
 
 export const deleteOrganization = async (organizationId: string) => {
@@ -190,7 +194,7 @@ export const addDisplayScreen = async (orgId: string, screen: DisplayScreen) => 
         return offlineWarning('addDisplayScreen');
     }
     if (!db) return;
-    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(screen);
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(sanitizeForFirestore(screen));
 };
 
 export const updateDisplayScreen = async (orgId: string, screenId: string, data: Partial<DisplayScreen>) => {
@@ -201,7 +205,7 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
         return offlineWarning('updateDisplayScreen');
     }
     if (!db) return;
-    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(data);
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(sanitizeForFirestore(data));
 };
 
 export const deleteDisplayScreen = async (orgId: string, screenId: string) => {
@@ -598,7 +602,7 @@ export const getSuggestedPostById = async (orgId: string, suggestionId: string):
 export const updateSuggestedPost = async (orgId: string, suggestionId: string, data: Partial<SuggestedPost>) => {
     if (isOffline) return offlineWarning('updateSuggestedPost');
     if (!db) return;
-    await db.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggestionId).update(data);
+    await db.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggestionId).update(sanitizeForFirestore(data));
 };
 
 export const listenToInstagramStories = (orgId: string, callback: (stories: InstagramStory[]) => void) => {
