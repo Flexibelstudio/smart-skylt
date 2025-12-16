@@ -165,6 +165,18 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       return activePosts.find(p => p.id === currentPostId) || activePosts[0];
   }, [activePosts, currentPostId]);
 
+  /* Determine Next Post Object for Preloading */
+  const nextPost = useMemo(() => {
+      if (activePosts.length <= 1) return null;
+      if (!currentPostId) return activePosts[1]; // If first is active, next is second
+      
+      const currentIndex = activePosts.findIndex(p => p.id === currentPostId);
+      if (currentIndex === -1) return activePosts[0];
+      
+      const nextIndex = (currentIndex + 1) % activePosts.length;
+      return activePosts[nextIndex];
+  }, [activePosts, currentPostId]);
+
   /* Ensure we have a valid ID if posts are loaded but no ID selected */
   useEffect(() => {
       if (!currentPostId && activePosts.length > 0) {
@@ -297,6 +309,21 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
           animation: slide-in-right-full 1.0s cubic-bezier(0.25, 1, 0.5, 1) forwards;
         }
       `}</style>
+
+      {/* --- PRELOADER (INVISIBLE) --- */}
+      {nextPost && nextPost.id !== currentPost?.id && (
+        <div className="absolute inset-0 opacity-0 pointer-events-none -z-10" aria-hidden="true">
+            <DisplayPostRenderer 
+                post={nextPost} 
+                allTags={selectedOrganization.tags} 
+                primaryColor={selectedOrganization.primaryColor}
+                organization={selectedOrganization}
+                aspectRatio={selectedDisplayScreen.aspectRatio}
+                mode="live"
+                isPreloading={true} // Triggers silent loading
+            />
+        </div>
+      )}
 
       {exitingPost && (
         <PostWrapper

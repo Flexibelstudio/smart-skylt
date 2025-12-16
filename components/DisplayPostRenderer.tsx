@@ -12,8 +12,30 @@ const PLACEHOLDER_URL = `data:image/svg+xml;base64,${btoa(PLACEHOLDER_SVG)}`;
 
 const ImageWithFallback: React.FC<{ src?: string; alt: string; className: string; style: React.CSSProperties; }> = ({ src, alt, className, style }) => {
     const [imgSrc, setImgSrc] = useState(src || PLACEHOLDER_URL);
-    useEffect(() => { setImgSrc(src || PLACEHOLDER_URL); }, [src]);
-    const handleError = () => setImgSrc(PLACEHOLDER_URL);
+    const [errorCount, setErrorCount] = useState(0);
+
+    useEffect(() => { 
+        setImgSrc(src || PLACEHOLDER_URL); 
+        setErrorCount(0);
+    }, [src]);
+
+    const handleError = () => {
+        // If we have a source URL but it failed, try to retry a few times
+        if (src && errorCount < 3) {
+            const nextRetry = errorCount + 1;
+            setErrorCount(nextRetry);
+            
+            // Exponential backoff: 1s, 2s, 3s
+            setTimeout(() => {
+                // Add a cache-busting query param to force a network retry if it was a transient error
+                const separator = src.includes('?') ? '&' : '?';
+                setImgSrc(`${src}${separator}retry=${Date.now()}`);
+            }, 1000 * nextRetry);
+        } else {
+            setImgSrc(PLACEHOLDER_URL);
+        }
+    };
+
     return <img src={imgSrc} onError={handleError} alt={alt} className={`${className} ${imgSrc === PLACEHOLDER_URL ? 'object-contain p-4 bg-slate-200 dark:bg-slate-700' : ''}`} style={style} />;
 };
 
@@ -1214,7 +1236,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpda
     return TagVisual;
 };
 
-const CollageItemRenderer: React.FC<{ item: CollageItem }> = ({ item }) => {
+const CollageItemRenderer: React.FC<{ item: CollageItem; isPreloading?: boolean }> = ({ item, isPreloading }) => {
     const [hasError, setHasError] = useState(false);
     useEffect(() => { setHasError(false); }, [item.imageUrl, item.videoUrl]);
 
@@ -1222,7 +1244,7 @@ const CollageItemRenderer: React.FC<{ item: CollageItem }> = ({ item }) => {
         return <img src={PLACEHOLDER_URL} alt="Media saknas" className="w-full h-full object-contain p-2 bg-slate-200 dark:bg-slate-700" />;
     }
     if (item.type === 'video' && item.videoUrl) {
-        return <video src={item.videoUrl} onError={() => setHasError(true)} autoPlay muted loop playsInline className="w-full h-full object-cover" />;
+        return <video src={item.videoUrl} onError={() => setHasError(true)} autoPlay={!isPreloading} muted loop playsInline className="w-full h-full object-cover" />;
     }
     if (item.type === 'image' && item.imageUrl) {
         return <img src={item.imageUrl} onError={() => setHasError(true)} alt="Collage item" className="w-full h-full object-cover" />;
@@ -1249,6 +1271,7 @@ export interface DisplayPostRendererProps {
     organization?: Organization;
     isForDownload?: boolean;
     aspectRatio?: DisplayScreen['aspectRatio'];
+    isPreloading?: boolean;
 }
 
 export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
@@ -1268,6 +1291,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     isForDownload = false,
     organization,
     aspectRatio = '16:9',
+    isPreloading = false,
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -1289,10 +1313,11 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     useEffect(() => {
         if (videoRef.current) {
             videoRef.current.currentTime = 0;
-            videoRef.current.play().catch(e => {
-            });
+            if (!isPreloading) {
+                videoRef.current.play().catch(e => {});
+            }
         }
-    }, [cycleCount]);
+    }, [cycleCount, isPreloading]);
 
     useEffect(() => {
         const videoElement = videoRef.current;
@@ -1358,7 +1383,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         const items = post.collageItems || [];
 
         const renderSlot = (item: CollageItem | undefined | null) => {
-            return item ? <CollageItemRenderer item={item} /> : <div className="w-full h-full bg-slate-800" />;
+            return item ? <CollageItemRenderer item={item} isPreloading={isPreloading} /> : <div className="w-full h-full bg-slate-800" />;
         };
 
         switch (post.collageLayout) {
@@ -1501,8 +1526,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             key={post.videoUrl} // FORCE REMOUNT ON URL CHANGE
                             ref={videoRef} 
                             src={post.videoUrl} 
-                            autoPlay 
+                            autoPlay={!isPreloading && !isForDownload}
                             muted 
+                            preload="auto"
                             playsInline 
                             onEnded={onVideoEnded} 
                             className={mediaBaseClasses} 
