@@ -122,6 +122,11 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const [lastClickTime, setLastClickTime] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
+
+  // --- BLOB CACHING ---
+  // Store mapped Blob URLs for videos to ensure smooth playback without network hits during transition
+  const [videoBlobs, setVideoBlobs] = useState<Record<string, string>>({});
+  const fetchingRefs = useRef<Set<string>>(new Set());
   
   /* Wake Lock */
   useEffect(() => {
@@ -176,6 +181,62 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       const nextIndex = (currentIndex + 1) % activePosts.length;
       return activePosts[nextIndex];
   }, [activePosts, currentPostId]);
+
+  /* --- BLOB PRELOADING LOGIC --- */
+  useEffect(() => {
+    const url = nextPost?.videoUrl;
+    // Only preload if: url exists, not already cached, not currently fetching, and is a remote url (not local file/data uri)
+    if (!url || videoBlobs[url] || fetchingRefs.current.has(url) || !url.startsWith('http')) return;
+
+    fetchingRefs.current.add(url);
+    
+    // Download video file to memory
+    fetch(url)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        setVideoBlobs(prev => ({ ...prev, [url]: objectUrl }));
+      })
+      .catch(err => {
+        console.error("Video preload failed:", url, err);
+      })
+      .finally(() => {
+        fetchingRefs.current.delete(url);
+      });
+  }, [nextPost?.videoUrl, videoBlobs]);
+
+  /* --- BLOB CLEANUP LOGIC --- */
+  useEffect(() => {
+    const activeUrls = new Set<string>();
+    if (currentPost?.videoUrl) activeUrls.add(currentPost.videoUrl);
+    if (nextPost?.videoUrl) activeUrls.add(nextPost.videoUrl);
+    if (exitingPost?.videoUrl) activeUrls.add(exitingPost.videoUrl);
+
+    setVideoBlobs(prev => {
+      const nextState = { ...prev };
+      let changed = false;
+      Object.keys(prev).forEach(url => {
+        // If a cached URL is no longer needed for current, next, or exiting post -> revoke it
+        if (!activeUrls.has(url)) {
+          URL.revokeObjectURL(prev[url]);
+          delete nextState[url];
+          changed = true;
+        }
+      });
+      return changed ? nextState : prev;
+    });
+  }, [currentPost?.id, nextPost?.id, exitingPost?.id, currentPost?.videoUrl, nextPost?.videoUrl, exitingPost?.videoUrl]);
+
+  // Helper to inject blob URL into post object
+  const getPostWithCachedVideo = useCallback((p: DisplayPost | null) => {
+      if (!p) return null;
+      if (p.videoUrl && videoBlobs[p.videoUrl]) {
+          return { ...p, videoUrl: videoBlobs[p.videoUrl] };
+      }
+      return p;
+  }, [videoBlobs]);
+
 
   /* Ensure we have a valid ID if posts are loaded but no ID selected */
   useEffect(() => {
@@ -314,7 +375,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       {nextPost && nextPost.id !== currentPost?.id && (
         <div className="absolute inset-0 opacity-0 pointer-events-none -z-10" aria-hidden="true">
             <DisplayPostRenderer 
-                post={nextPost} 
+                // We don't necessarily need the blob for the invisible preloader itself (since it just fetches), 
+                // but passing it keeps logic consistent. The important part is the `useEffect` above fetching the blob.
+                post={getPostWithCachedVideo(nextPost)!} 
                 allTags={selectedOrganization.tags} 
                 primaryColor={selectedOrganization.primaryColor}
                 organization={selectedOrganization}
@@ -328,7 +391,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       {exitingPost && (
         <PostWrapper
           key={`${exitingPost.id}-${cycleCount - 1}`}
-          post={exitingPost}
+          post={getPostWithCachedVideo(exitingPost)!}
           state="exiting"
           transitionType={exitingPost.transitionToNext}
           allTags={selectedOrganization.tags}
@@ -342,7 +405,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       {currentPost ? (
         <PostWrapper
           key={`${currentPost.id}-${cycleCount}`}
-          post={currentPost}
+          post={getPostWithCachedVideo(currentPost)!}
           state={isTransitioning ? 'entering' : 'idle'}
           transitionType={exitingPost?.transitionToNext || 'fade'}
           allTags={selectedOrganization.tags}
