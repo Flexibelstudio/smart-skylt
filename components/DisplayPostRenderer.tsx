@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { DisplayPost, Tag, Organization, DisplayScreen } from '../types';
+import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
+import { MoveIcon } from './icons'; // Se till att du har denna import kvar
 
-// --- DESIGN HELPER FUNCTIONS (Återställda) ---
+// --- HELPER FUNCTIONS ---
 
 const resolveColor = (colorKey: string | undefined, fallback: string, organization?: Organization, primaryColorFromProp?: string): string => {
     if (!colorKey) return fallback;
@@ -37,7 +38,7 @@ const mapLegacySize = (size?: string): number => {
 
 const mapLegacyPosition = (position?: string) => ({ x: 90, y: 90 });
 
-// --- STYLE GENERATORS (Återställda för korrekt utseende) ---
+// --- STYLE GENERATORS ---
 
 const isPreviewMode = (mode?: 'preview' | 'live') => mode === 'preview';
 
@@ -95,7 +96,7 @@ const getBodyFontSizeClass = (size?: string, mode?: string) => {
     }
 };
 
-// --- COMPONENTS ---
+// --- INTERACTIVE COMPONENTS (Restored Drag & Drop) ---
 
 const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
     const [dataUrl, setDataUrl] = useState('');
@@ -109,41 +110,115 @@ const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, c
     return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', display: 'block' }} />;
 };
 
-const DraggableQrCode: React.FC<any> = ({ url, x, y, width }) => {
+const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdatePosition, onUpdateWidth }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
+
+    // --- DRAG LOGIC ---
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        setIsDragging(true);
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const initialOverride = { x, y }; 
+
+        const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
+            const dx = moveClientX - initialX;
+            const dy = moveClientY - initialY;
+            const dxPercent = (dx / parentRect.width) * 100;
+            const dyPercent = (dy / parentRect.height) * 100;
+            onUpdatePosition({
+                x: Math.max(0, Math.min(100, initialOverride.x + dxPercent)),
+                y: Math.max(0, Math.min(100, initialOverride.y + dyPercent))
+            });
+        };
+        const onDragEnd = () => {
+             setIsDragging(false);
+             window.removeEventListener('mousemove', onDragMove as any);
+             window.removeEventListener('mouseup', onDragEnd);
+             window.removeEventListener('touchmove', onDragMove as any);
+             window.removeEventListener('touchend', onDragEnd);
+        };
+        if ('touches' in e) {
+             window.addEventListener('touchmove', onDragMove as any);
+             window.addEventListener('touchend', onDragEnd, { once: true });
+        } else {
+             window.addEventListener('mousemove', onDragMove as any);
+             window.addEventListener('mouseup', onDragEnd, { once: true });
+        }
+    };
+
+    // --- RESIZE LOGIC ---
+    const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialWidth = containerRef.current.offsetWidth;
+        
+        const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const dx = moveClientX - initialX;
+            const newWidthPx = initialWidth + dx;
+            const newWidthPercent = (newWidthPx / parentRect.width) * 100;
+            onUpdateWidth(Math.max(5, Math.min(50, newWidthPercent)));
+        };
+        const onResizeEnd = () => {
+            window.removeEventListener('mousemove', onResizeMove as any);
+            window.removeEventListener('mouseup', onResizeEnd);
+            window.removeEventListener('touchmove', onResizeMove as any);
+            window.removeEventListener('touchend', onResizeEnd);
+        };
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onResizeMove as any);
+            window.addEventListener('touchend', onResizeEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onResizeMove as any);
+            window.addEventListener('mouseup', onResizeEnd, { once: true });
+        }
+    };
+
     return (
-        <div style={{
-            position: 'absolute',
-            left: `${x}%`,
-            top: `${y}%`,
-            width: `${width}%`,
-            transform: 'translate(-50%, -50%)',
-            zIndex: 50,
-            aspectRatio: '1/1',
-        }}>
-            <div className="bg-white p-2 rounded-lg shadow-lg w-full h-full flex items-center justify-center">
+        <div ref={containerRef} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined}
+             style={{
+                position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${width}%`,
+                transform: 'translate(-50%, -50%)', zIndex: 50, aspectRatio: '1/1',
+                cursor: isDraggable ? 'move' : 'default',
+                opacity: isDragging ? 0.7 : 1
+             }}>
+            <div className="bg-white p-2 rounded-lg shadow-lg w-full h-full flex items-center justify-center relative group">
                 <QrCodeComponent url={url} className="w-full h-full" />
+                {isDraggable && (
+                     <div onMouseDown={handleResizeStart} onTouchStart={handleResizeStart}
+                        className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border-2 border-teal-500 rounded-full cursor-se-resize flex items-center justify-center shadow-md z-30 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-2 h-2 bg-teal-500 rounded-full" />
+                     </div>
+                )}
             </div>
         </div>
     );
 };
 
-// Återställd Markdown-renderare för listor etc.
 const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
     const renderMarkdown = useMemo(() => {
         if (!content) return { __html: '' };
         const lines = content.split('\n');
         const htmlLines: string[] = [];
         let inList: 'ul' | 'ol' | false = false;
-
-        const closeListIfNeeded = () => {
-            if (inList) { htmlLines.push(`</${inList}>`); inList = false; }
-        };
+        const closeListIfNeeded = () => { if (inList) { htmlLines.push(`</${inList}>`); inList = false; } };
 
         for (const line of lines) {
             let safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                                .replace(/_(.*?)_/g, '<em>$1</em>');
-
             if (line.match(/^\d+\.\s/)) {
                 if (inList !== 'ol') { closeListIfNeeded(); htmlLines.push('<ol class="list-decimal list-inside space-y-1 my-2">'); inList = 'ol'; }
                 htmlLines.push(`<li>${safeLine.replace(/^\d+\.\s/, '')}</li>`);
@@ -158,12 +233,86 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = 
         closeListIfNeeded();
         return { __html: htmlLines.join('\n') };
     }, [content]);
-
     return <div className={className} dangerouslySetInnerHTML={renderMarkdown} />;
 };
 
-const TextContent: React.FC<any> = ({ post, mode, organization }) => {
-    // Återställd logik för textplacering
+const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable, onUpdateTextPosition, onUpdateTextWidth }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
+
+    // --- DRAG LOGIC ---
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isTextDraggable || !onUpdateTextPosition || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        setIsDragging(true);
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const initialOverride = { x: post.textPositionX || 50, y: post.textPositionY || 50 };
+
+        const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
+            const dx = moveClientX - initialX;
+            const dy = moveClientY - initialY;
+            const dxPercent = (dx / parentRect.width) * 100;
+            const dyPercent = (dy / parentRect.height) * 100;
+            onUpdateTextPosition({
+                x: Math.max(0, Math.min(100, initialOverride.x + dxPercent)),
+                y: Math.max(0, Math.min(100, initialOverride.y + dyPercent))
+            });
+        };
+        const onDragEnd = () => {
+             setIsDragging(false);
+             window.removeEventListener('mousemove', onDragMove as any);
+             window.removeEventListener('mouseup', onDragEnd);
+             window.removeEventListener('touchmove', onDragMove as any);
+             window.removeEventListener('touchend', onDragEnd);
+        };
+        if ('touches' in e) {
+             window.addEventListener('touchmove', onDragMove as any);
+             window.addEventListener('touchend', onDragEnd, { once: true });
+        } else {
+             window.addEventListener('mousemove', onDragMove as any);
+             window.addEventListener('mouseup', onDragEnd, { once: true });
+        }
+    };
+
+    // --- RESIZE LOGIC (Width) ---
+    const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, direction: 'left' | 'right') => {
+        if (!isTextDraggable || !onUpdateTextWidth || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialWidth = containerRef.current.offsetWidth;
+        
+        const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const dx = moveClientX - initialX;
+            const newWidthPx = direction === 'right' ? initialWidth + dx : initialWidth - dx;
+            const newWidthPercent = (newWidthPx / parentRect.width) * 100;
+            onUpdateTextWidth(Math.max(10, Math.min(100, newWidthPercent)));
+        };
+        const onResizeEnd = () => {
+            window.removeEventListener('mousemove', onResizeMove as any);
+            window.removeEventListener('mouseup', onResizeEnd);
+            window.removeEventListener('touchmove', onResizeMove as any);
+            window.removeEventListener('touchend', onResizeEnd);
+        };
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onResizeMove as any);
+            window.addEventListener('touchend', onResizeEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onResizeMove as any);
+            window.addEventListener('mouseup', onResizeEnd, { once: true });
+        }
+    };
+
     const style: React.CSSProperties = {
         position: 'absolute',
         top: post.textPositionY ? `${post.textPositionY}%` : '50%',
@@ -173,16 +322,31 @@ const TextContent: React.FC<any> = ({ post, mode, organization }) => {
         textAlign: post.textAlign || 'center',
         zIndex: 40,
         color: resolveColor(post.textColor, '#ffffff', organization),
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center'
+        display: 'flex', flexDirection: 'column',
+        justifyContent: post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center',
+        cursor: isTextDraggable ? 'move' : 'default',
+        opacity: isDragging ? 0.7 : 1
     };
-
     const headlineClass = `${getHeadlineFontSizeClass(post.headlineFontSize, mode)} font-bold leading-tight drop-shadow-md break-words ${post.headlineFontFamily ? `font-${post.headlineFontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`;
     const bodyClass = `${getBodyFontSizeClass(post.bodyFontSize, mode)} mt-4 break-words drop-shadow-md ${post.bodyFontFamily ? `font-${post.bodyFontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
 
     return (
-        <div style={style}>
+        <div ref={containerRef} style={style} onMouseDown={isTextDraggable ? handleDragStart : undefined} onTouchStart={isTextDraggable ? handleDragStart : undefined} className="group">
+            {isTextDraggable && (
+                <>
+                     <div className="absolute -top-3 -right-3 p-2 bg-teal-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                        <MoveIcon className="w-5 h-5" />
+                     </div>
+                     <div onMouseDown={(e) => handleResizeStart(e, 'left')} onTouchStart={(e) => handleResizeStart(e, 'left')}
+                          className="absolute -left-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-start opacity-0 group-hover:opacity-100 z-50">
+                        <div className="w-1 h-8 bg-teal-500 rounded-full shadow-lg"/>
+                     </div>
+                     <div onMouseDown={(e) => handleResizeStart(e, 'right')} onTouchStart={(e) => handleResizeStart(e, 'right')}
+                          className="absolute -right-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-end opacity-0 group-hover:opacity-100 z-50">
+                        <div className="w-1 h-8 bg-teal-500 rounded-full shadow-lg"/>
+                     </div>
+                </>
+            )}
             <div className={post.textBackgroundEnabled ? "bg-black/50 p-6 rounded-xl backdrop-blur-md" : ""}>
                 {post.headline && <h1 className={headlineClass}>{post.headline}</h1>}
                 {post.body && <PostMarkdownRenderer content={post.body} className={bodyClass} />}
@@ -191,7 +355,48 @@ const TextContent: React.FC<any> = ({ post, mode, organization }) => {
     );
 };
 
-const DraggableTag: React.FC<any> = ({ tag, override, mode }) => {
+const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) => {
+     const tagRef = useRef<HTMLDivElement>(null);
+     const isDraggable = !!onUpdatePosition;
+
+     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdatePosition || !tagRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        const parent = tagRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const initialOverride = override || { x: 50, y: 50, rotation: 0 }; 
+
+        const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
+            const dx = moveClientX - initialX;
+            const dy = moveClientY - initialY;
+            const dxPercent = (dx / parentRect.width) * 100;
+            const dyPercent = (dy / parentRect.height) * 100;
+            onUpdatePosition(tag.id, {
+                x: Math.max(0, Math.min(100, initialOverride.x + dxPercent)),
+                y: Math.max(0, Math.min(100, initialOverride.y + dyPercent)),
+                rotation: initialOverride.rotation
+            });
+        };
+        const onDragEnd = () => {
+             window.removeEventListener('mousemove', onDragMove as any);
+             window.removeEventListener('mouseup', onDragEnd);
+             window.removeEventListener('touchmove', onDragMove as any);
+             window.removeEventListener('touchend', onDragEnd);
+        };
+        if ('touches' in e) {
+             window.addEventListener('touchmove', onDragMove as any);
+             window.addEventListener('touchend', onDragEnd, { once: true });
+        } else {
+             window.addEventListener('mousemove', onDragMove as any);
+             window.addEventListener('mouseup', onDragEnd, { once: true });
+        }
+    };
+
      const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x || 50}%`,
@@ -204,11 +409,13 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode }) => {
         borderRadius: '999px',
         fontWeight: 'bold',
         whiteSpace: 'nowrap',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+        cursor: isDraggable ? 'grab' : 'default'
      };
 
      return (
-         <div style={style} className={`flex items-center gap-2 ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
+         <div ref={tagRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
+              className={`flex items-center gap-2 ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
              {tag.text}
              {tag.url && (
                  <div className="bg-white p-0.5 rounded-sm w-[1.5em] h-[1.5em] flex-shrink-0">
@@ -238,7 +445,7 @@ export interface DisplayPostRendererProps {
     onLoadReady?: () => void;
     onLoadError?: () => void;
     
-    // Legacy props
+    // Interactive Props
     onUpdateTagPosition?: any; onUpdateTextPosition?: any; onUpdateTextWidth?: any;
     onUpdateQrPosition?: any; onUpdateQrWidth?: any; isTextDraggable?: any; isForDownload?: any;
 }
@@ -256,7 +463,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     isPreloading = false,
     isBridgeOnly = false,
     onLoadReady,
-    onLoadError
+    onLoadError,
+    // Interactive props
+    onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
@@ -271,7 +480,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         }
     }, [onLoadReady]);
 
-    // Safety Timer
     useEffect(() => {
         if (!post.videoUrl && !post.imageUrl) signalReady();
         const t = setTimeout(() => { if (!hasSignaled.current) signalReady(); }, 1000);
@@ -355,23 +563,31 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {post.imageOverlayEnabled && <div className="absolute inset-0 z-10" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
             
             {/* TEXT */}
-            {(post.headline || post.body) && <TextContent post={post} mode={mode} organization={organization} />}
+            {(post.headline || post.body) && (
+                <TextContent 
+                    post={post} mode={mode} organization={organization} 
+                    isTextDraggable={isTextDraggable}
+                    onUpdateTextPosition={onUpdateTextPosition}
+                    onUpdateTextWidth={onUpdateTextWidth}
+                />
+            )}
             
             {/* TAGS */}
             {showTags && post.tagIds?.map(tagId => {
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
                 const override = post.tagPositionOverrides?.find(o => o.tagId === tagId);
-                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} />;
+                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} />;
             })}
 
             {/* QR CODE */}
             {post.qrCodeUrl && (
                 <DraggableQrCode 
                     url={post.qrCodeUrl} 
-                    x={qrX} 
-                    y={qrY} 
-                    width={qrW} 
+                    x={qrX} y={qrY} width={qrW}
+                    isDraggable={isTextDraggable}
+                    onUpdatePosition={onUpdateQrPosition}
+                    onUpdateWidth={onUpdateQrWidth}
                 />
             )}
         </div>
