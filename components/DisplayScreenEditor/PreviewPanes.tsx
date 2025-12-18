@@ -18,12 +18,19 @@ const SinglePostPreview: React.FC<{
     screen: DisplayScreen, 
     organization: Organization,
     onUpdateTagPosition: (tagId: string, newPosition: { x: number, y: number, rotation: number }) => void,
-    onUpdateTextPosition: (pos: { x: number, y: number }) => void,
-    onUpdateTextWidth: (width: number) => void,
+    onUpdateHeadlinePosition: (pos: { x: number, y: number }) => void,
+    onUpdateHeadlineWidth: (width: number) => void,
+    onUpdateBodyPosition: (pos: { x: number, y: number }) => void,
+    onUpdateBodyWidth: (width: number) => void,
     onUpdateQrPosition?: (pos: { x: number, y: number }) => void,
     onUpdateQrWidth?: (width: number) => void,
     isTextDraggable?: boolean,
-}> = ({ post, screen, organization, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable }) => {
+}> = ({ 
+    post, screen, organization, onUpdateTagPosition, 
+    onUpdateHeadlinePosition, onUpdateHeadlineWidth,
+    onUpdateBodyPosition, onUpdateBodyWidth,
+    onUpdateQrPosition, onUpdateQrWidth, isTextDraggable 
+}) => {
     const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
     const branding = screen.branding;
     const logoUrl = organization?.logoUrlDark || organization?.logoUrlLight;
@@ -38,15 +45,24 @@ const SinglePostPreview: React.FC<{
 
     return (
         <div className="space-y-4">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Förhandsgranskning (enskilt inlägg)</h3>
+            <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Förhandsgranskning</h3>
+                {isTextDraggable && (
+                    <span className="bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold px-2 py-1 rounded-full animate-pulse">
+                        Interaktivt läge: Dra i texten
+                    </span>
+                )}
+            </div>
             <div className={`${getAspectRatioClass(screen.aspectRatio)} ${isPortrait ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
                 <DisplayPostRenderer 
                     post={post} 
                     allTags={organization.tags} 
                     primaryColor={organization.primaryColor}
                     onUpdateTagPosition={onUpdateTagPosition}
-                    onUpdateTextPosition={onUpdateTextPosition}
-                    onUpdateTextWidth={onUpdateTextWidth}
+                    onUpdateHeadlinePosition={onUpdateHeadlinePosition}
+                    onUpdateHeadlineWidth={onUpdateHeadlineWidth}
+                    onUpdateBodyPosition={onUpdateBodyPosition}
+                    onUpdateBodyWidth={onUpdateBodyWidth}
                     onUpdateQrPosition={onUpdateQrPosition}
                     onUpdateQrWidth={onUpdateQrWidth}
                     isTextDraggable={isTextDraggable}
@@ -62,7 +78,7 @@ const SinglePostPreview: React.FC<{
                     </div>
                 )}
             </div>
-            <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text, QR-kod och taggar för att placera dem fritt. Dra i handtagen på textrutan eller QR-koden för att ändra storlek.</p>
+            <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text, QR-kod och taggar för att placera dem fritt. Dra i handtagen på sidorna av rutorna för att ändra bredd.</p>
         </div>
     );
 };
@@ -181,13 +197,20 @@ interface PreviewPaneProps {
     screen: DisplayScreen;
     organization: Organization;
     onUpdateTagPosition: (tagId: string, pos: {x: number, y: number, rotation: number}) => void;
-    onUpdateTextPosition: (pos: {x: number, y: number}) => void;
-    onUpdateTextWidth: (width: number) => void;
+    onUpdateHeadlinePosition: (pos: {x: number, y: number}) => void;
+    onUpdateHeadlineWidth: (width: number) => void;
+    onUpdateBodyPosition: (pos: {x: number, y: number}) => void;
+    onUpdateBodyWidth: (width: number) => void;
     onUpdateQrPosition?: (pos: {x: number, y: number}) => void;
     onUpdateQrWidth?: (width: number) => void;
     isTextDraggable?: boolean;
 }
-export const PreviewPane: React.FC<PreviewPaneProps> = ({ editingPost, screen, organization, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable }) => {
+export const PreviewPane: React.FC<PreviewPaneProps> = ({ 
+    editingPost, screen, organization, onUpdateTagPosition, 
+    onUpdateHeadlinePosition, onUpdateHeadlineWidth,
+    onUpdateBodyPosition, onUpdateBodyWidth,
+    onUpdateQrPosition, onUpdateQrWidth, isTextDraggable 
+}) => {
     if (editingPost) {
         return (
             <SinglePostPreview
@@ -195,8 +218,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ editingPost, screen, o
                 screen={screen}
                 organization={organization}
                 onUpdateTagPosition={onUpdateTagPosition}
-                onUpdateTextPosition={onUpdateTextPosition}
-                onUpdateTextWidth={onUpdateTextWidth}
+                onUpdateHeadlinePosition={onUpdateHeadlinePosition}
+                onUpdateHeadlineWidth={onUpdateHeadlineWidth}
+                onUpdateBodyPosition={onUpdateBodyPosition}
+                onUpdateBodyWidth={onUpdateBodyWidth}
                 onUpdateQrPosition={onUpdateQrPosition}
                 onUpdateQrWidth={onUpdateQrWidth}
                 isTextDraggable={isTextDraggable}

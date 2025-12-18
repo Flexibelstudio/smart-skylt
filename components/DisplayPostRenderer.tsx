@@ -123,7 +123,7 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
         const parentRect = parent.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const initialOverride = { x, y }; 
+        const initialOverride = { x: x ?? 90, y: y ?? 90 }; 
 
         const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
@@ -187,7 +187,7 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
     return (
         <div ref={containerRef} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined}
              style={{
-                position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${width}%`,
+                position: 'absolute', left: `${x ?? 90}%`, top: `${y ?? 90}%`, width: `${width ?? 15}%`,
                 transform: 'translate(-50%, -50%)', zIndex: 50, aspectRatio: '1/1',
                 cursor: isDraggable ? 'move' : 'default',
                 opacity: isDragging ? 0.7 : 1
@@ -251,7 +251,7 @@ const DraggableTextElement: React.FC<any> = ({
         const parentRect = parent.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const initialOverride = { x: x || 50, y: y || 50 };
+        const initialOverride = { x: x ?? 50, y: y ?? 50 };
 
         const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
@@ -314,10 +314,10 @@ const DraggableTextElement: React.FC<any> = ({
 
     const style: React.CSSProperties = {
         position: 'absolute',
-        top: `${y || 50}%`,
-        left: `${x || 50}%`,
+        top: `${y ?? 50}%`,
+        left: `${x ?? 50}%`,
         transform: 'translate(-50%, -50%)',
-        width: `${width || 80}%`,
+        width: `${width ?? 80}%`,
         textAlign: textAlign || 'center',
         zIndex: 40,
         color: resolveColor(color, '#ffffff', organization),
@@ -362,10 +362,14 @@ const DraggableTextElement: React.FC<any> = ({
 const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) => {
      const tagRef = useRef<HTMLDivElement>(null);
      const isDraggable = !!onUpdatePosition;
+     // FIX: Lade till isDragging-state för att lösa kompileringsfelet "Cannot find name 'setIsDragging'" och möjliggöra visuell feedback
+     const [isDragging, setIsDragging] = useState(false);
 
      const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !tagRef.current) return;
         e.preventDefault(); e.stopPropagation();
+        // FIX: Sätt isDragging till true när användaren börjar dra taggen
+        setIsDragging(true);
         const parent = tagRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
@@ -387,6 +391,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
             });
         };
         const onDragEnd = () => {
+             // FIX: Sätt isDragging till false när användaren släpper taggen
              setIsDragging(false);
              window.removeEventListener('mousemove', onDragMove as any);
              window.removeEventListener('mouseup', onDragEnd);
@@ -404,8 +409,8 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
 
      const style: React.CSSProperties = {
         position: 'absolute',
-        left: `${override?.x || 50}%`,
-        top: `${override?.y || 50}%`,
+        left: `${override?.x ?? 50}%`,
+        top: `${override?.y ?? 50}%`,
         transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg)`,
         zIndex: 40,
         backgroundColor: tag.backgroundColor,
@@ -415,7 +420,9 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         fontWeight: 'bold',
         whiteSpace: 'nowrap',
         boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-        cursor: isDraggable ? 'grab' : 'default'
+        cursor: isDraggable ? 'grab' : 'default',
+        // FIX: Använd isDragging för att sänka opaciteten under dragning
+        opacity: isDragging ? 0.7 : 1
      };
 
      return (
@@ -542,6 +549,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const isMedia = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
     
     // QR Calc
+    // FIX: qrCodePosition och qrCodeSize har nu lagts till i DisplayPost-gränssnittet i types/content.ts för att stödja denna legacy-beräkning
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
     const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
