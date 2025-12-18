@@ -45,13 +45,13 @@ const isPreviewMode = (mode?: 'preview' | 'live') => mode === 'preview';
 const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') => {
     const isPreview = isPreviewMode(mode);
     switch (size) {
-        case 'sm': return isPreview ? 'text-[6px]' : 'text-sm';
-        case 'md': return isPreview ? 'text-[7px]' : 'text-base';
-        case 'lg': return isPreview ? 'text-[8px]' : 'text-lg';
-        case 'xl': return isPreview ? 'text-[9px]' : 'text-xl';
-        case '2xl': return isPreview ? 'text-[10px]' : 'text-2xl';
-        case '3xl': return isPreview ? 'text-xs' : 'text-3xl';
-        default: return isPreview ? 'text-[7px]' : 'text-base';
+        case 'sm': return isPreview ? 'text-[8px]' : 'text-sm';
+        case 'md': return isPreview ? 'text-[10px]' : 'text-base';
+        case 'lg': return isPreview ? 'text-xs' : 'text-lg';
+        case 'xl': return isPreview ? 'text-sm' : 'text-xl';
+        case '2xl': return isPreview ? 'text-base' : 'text-2xl';
+        case '3xl': return isPreview ? 'text-lg' : 'text-3xl';
+        default: return isPreview ? 'text-[10px]' : 'text-base';
     }
 };
 
@@ -84,25 +84,23 @@ const getHeadlineFontSizeClass = (size?: string, mode?: string) => {
 
 const getBodyFontSizeClass = (size?: string, mode?: string) => {
     const isPreview = isPreviewMode(mode as any);
-    if (isPreview) return 'text-xs';
     switch (size) {
-        case 'xs': return 'text-base';
-        case 'sm': return 'text-lg';
-        case 'md': return 'text-xl';
-        case 'lg': return 'text-2xl';
-        case 'xl': return 'text-3xl';
-        case '2xl': return 'text-4xl';
-        default: return 'text-xl';
+        case 'xs': return isPreview ? 'text-[8px]' : 'text-base';
+        case 'sm': return isPreview ? 'text-[10px]' : 'text-lg';
+        case 'md': return isPreview ? 'text-xs' : 'text-xl';
+        case 'lg': return isPreview ? 'text-sm' : 'text-2xl';
+        case 'xl': return isPreview ? 'text-base' : 'text-3xl';
+        case '2xl': return isPreview ? 'text-lg' : 'text-4xl';
+        default: return isPreview ? 'text-xs' : 'text-xl';
     }
 };
 
-// --- INTERACTIVE COMPONENTS ---
+// --- COMPONENTS ---
 
 const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
     const [dataUrl, setDataUrl] = useState('');
     useEffect(() => {
         if (url) {
-            // Note: margin: 1 is kept for scan reliability, but container padding is reduced below.
             QRCode.toDataURL(url, { width: 512, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
                   .then(setDataUrl).catch(() => {});
         }
@@ -155,7 +153,7 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
         }
     };
 
-    // --- RESIZE LOGIC (Width) ---
+    // --- RESIZE LOGIC ---
     const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
@@ -195,8 +193,8 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
                 cursor: isDraggable ? 'move' : 'default',
                 opacity: isDragging ? 0.7 : 1
              }}>
-            {/* CHANGED p-2 TO p-0.5 HERE for tighter white box */}
-            <div className="bg-white p-0.5 rounded-lg shadow-lg w-full h-full flex items-center justify-center relative group">
+            {/* ÄNDRAT: p-1.5 ger en lagom vit ram */}
+            <div className="bg-white p-1.5 rounded-lg shadow-lg w-full h-full flex items-center justify-center relative group">
                 <QrCodeComponent url={url} className="w-full h-full" />
                 {isDraggable && (
                      <div onMouseDown={handleResizeStart} onTouchStart={handleResizeStart}
@@ -250,6 +248,7 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
         const parent = containerRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
+        const containerRect = containerRef.current.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
         const initialOverride = { x: post.textPositionX || 50, y: post.textPositionY || 50 };
@@ -328,8 +327,13 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
         cursor: isTextDraggable ? 'move' : 'default',
         opacity: isDragging ? 0.7 : 1
     };
+    
+    // Använd rätt font-klasser även i preview
     const headlineClass = `${getHeadlineFontSizeClass(post.headlineFontSize, mode)} font-bold leading-tight drop-shadow-md break-words ${post.headlineFontFamily ? `font-${post.headlineFontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`;
     const bodyClass = `${getBodyFontSizeClass(post.bodyFontSize, mode)} mt-4 break-words drop-shadow-md ${post.bodyFontFamily ? `font-${post.bodyFontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
+
+    // Skala ner paddingen i preview-mode så texten inte knuffas iväg
+    const paddingClass = isPreviewMode(mode) ? 'p-2 rounded-md' : 'p-6 rounded-xl';
 
     return (
         <div ref={containerRef} style={style} onMouseDown={isTextDraggable ? handleDragStart : undefined} onTouchStart={isTextDraggable ? handleDragStart : undefined} className="group">
@@ -348,7 +352,7 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
                      </div>
                 </>
             )}
-            <div className={post.textBackgroundEnabled ? "bg-black/50 p-6 rounded-xl backdrop-blur-md" : ""}>
+            <div className={post.textBackgroundEnabled ? `bg-black/50 ${paddingClass} backdrop-blur-md` : ""}>
                 {post.headline && <h1 className={headlineClass}>{post.headline}</h1>}
                 {post.body && <PostMarkdownRenderer content={post.body} className={bodyClass} />}
             </div>
@@ -406,7 +410,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         zIndex: 40,
         backgroundColor: tag.backgroundColor,
         color: tag.textColor,
-        padding: '0.5rem 1rem',
+        padding: isPreviewMode(mode) ? '0.25rem 0.5rem' : '0.5rem 1rem',
         borderRadius: '999px',
         fontWeight: 'bold',
         whiteSpace: 'nowrap',
@@ -419,7 +423,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
               className={`flex items-center gap-2 ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
              {tag.text}
              {tag.url && (
-                 <div className="bg-white p-0.5 rounded-sm w-[1.5em] h-[1.5em] flex-shrink-0">
+                 <div className={`bg-white rounded-sm flex-shrink-0 ${isPreviewMode(mode) ? 'p-0.5 w-[1.2em] h-[1.2em]' : 'p-0.5 w-[1.5em] h-[1.5em]'}`}>
                      <QrCodeComponent url={tag.url} className="w-full h-full" />
                  </div>
              )}
