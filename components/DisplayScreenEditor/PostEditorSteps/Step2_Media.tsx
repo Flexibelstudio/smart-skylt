@@ -336,8 +336,8 @@ const SingleMediaEditor: React.FC<{
 
             const newVariant: AiImageVariant = {
                 id: `variant-${Date.now()}`,
-                url: newDataUri,
-                prompt: editPrompt,
+                url: post.imageUrl, // Spara den NUVARANDE bilden som en variant innan vi byter ut den
+                prompt: post.aiImagePrompt || '',
                 createdAt: new Date().toISOString(),
                 createdByUid: currentUser.uid,
             };
@@ -357,6 +357,22 @@ const SingleMediaEditor: React.FC<{
         } finally {
             setAiLoading(false);
         }
+    };
+
+    const handleUndoImageEdit = () => {
+        if (!post.aiImageVariants || post.aiImageVariants.length === 0) return;
+        
+        const variants = [...post.aiImageVariants];
+        const lastVariant = variants.pop()!;
+        
+        onPostChange({
+            ...post,
+            imageUrl: lastVariant.url,
+            aiImagePrompt: lastVariant.prompt,
+            aiImageVariants: variants,
+        });
+        
+        showToast({ message: 'Bild återställd till föregående version.', type: 'info' });
     };
 
     const handleMicClick = () => {
@@ -468,11 +484,18 @@ const SingleMediaEditor: React.FC<{
                                 </button>
                             </div>
                         </div>
-                        {post.imageUrl && (
-                             <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
-                                <PencilIcon className="h-4 w-4"/> Redigera bild med AI
-                            </button>
-                        )}
+                        <div className="flex flex-wrap gap-2">
+                            {post.imageUrl && (
+                                <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
+                                    <PencilIcon className="h-4 w-4"/> Redigera bild med AI
+                                </button>
+                            )}
+                            {post.aiImageVariants && post.aiImageVariants.length > 0 && (
+                                <button type="button" onClick={handleUndoImageEdit} className="flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
+                                    <ArrowUturnLeftIcon className="h-4 w-4"/> Backa ett steg
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
