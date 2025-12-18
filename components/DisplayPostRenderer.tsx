@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride } from '../types';
+import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride, CollageItem } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
 import { MoveIcon } from './icons';
@@ -94,6 +94,28 @@ const getBodyFontSizeClass = (size?: string, mode?: string) => {
         case '2xl': return isPreview ? 'text-lg' : 'text-4xl';
         default: return isPreview ? 'text-xs' : 'text-xl';
     }
+};
+
+const getCollageGridClass = (layout?: string) => {
+    switch (layout) {
+        case 'landscape-1-2': return 'grid grid-cols-2 grid-rows-2';
+        case 'landscape-3-horiz': return 'grid grid-cols-3';
+        case 'landscape-4-grid': return 'grid grid-cols-2 grid-rows-2';
+        case 'landscape-2-horiz': return 'grid grid-cols-2';
+        case 'landscape-2-vert': return 'grid grid-rows-2';
+        case 'portrait-1-2': return 'grid grid-cols-2 grid-rows-2';
+        case 'portrait-3-vert': return 'grid grid-rows-3';
+        case 'portrait-4-grid': return 'grid grid-cols-2 grid-rows-2';
+        case 'portrait-2-horiz': return 'grid grid-cols-2';
+        case 'portrait-2-vert': return 'grid grid-rows-2';
+        default: return 'grid grid-cols-2 grid-rows-2';
+    }
+};
+
+const getItemSpanClass = (layout: string | undefined, index: number) => {
+    if (layout === 'landscape-1-2' && index === 0) return 'row-span-2';
+    if (layout === 'portrait-1-2' && index === 0) return 'col-span-2';
+    return '';
 };
 
 // --- COMPONENTS ---
@@ -365,13 +387,11 @@ const DraggableTextElement: React.FC<any> = ({
 const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) => {
      const tagRef = useRef<HTMLDivElement>(null);
      const isDraggable = !!onUpdatePosition;
-     // FIX: Lade till isDragging-state för att lösa kompileringsfelet "Cannot find name 'setIsDragging'" och möjliggöra visuell feedback
      const [isDragging, setIsDragging] = useState(false);
 
      const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !tagRef.current) return;
         e.preventDefault(); e.stopPropagation();
-        // FIX: Sätt isDragging till true när användaren börjar dra taggen
         setIsDragging(true);
         const parent = tagRef.current.parentElement;
         if (!parent) return;
@@ -394,7 +414,6 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
             });
         };
         const onDragEnd = () => {
-             // FIX: Sätt isDragging till false när användaren släpper taggen
              setIsDragging(false);
              window.removeEventListener('mousemove', onDragMove as any);
              window.removeEventListener('mouseup', onDragEnd);
@@ -424,7 +443,6 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         whiteSpace: 'nowrap',
         boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
         cursor: isDraggable ? 'grab' : 'default',
-        // FIX: Använd isDragging för att sänka opaciteten under dragning
         opacity: isDragging ? 0.7 : 1
      };
 
@@ -507,8 +525,15 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     }, [onLoadReady]);
 
     useEffect(() => {
-        if (!post.videoUrl && !post.imageUrl) signalReady();
-        const t = setTimeout(() => { if (!hasSignaled.current) signalReady(); }, 1000);
+        const isCollage = post.layout === 'collage';
+        const hasMainMedia = !!(post.videoUrl || post.imageUrl);
+        const hasCollageMedia = isCollage && (post.collageItems?.length || 0) > 0;
+
+        if (!hasMainMedia && !hasCollageMedia) {
+            signalReady();
+        }
+
+        const t = setTimeout(() => { if (!hasSignaled.current) signalReady(); }, 3000); // 3s fallback för säkerhets skull
         return () => clearTimeout(t);
     }, [post, signalReady]);
 
@@ -532,13 +557,15 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
     const backgroundColor = resolveColor(post.backgroundColor, '#000000', organization, primaryColor);
     const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
+    const splitRatio = post.splitRatio ?? 50;
+
     const mediaStyle: React.CSSProperties = {
         position: 'absolute', 
         objectFit: 'cover', 
         zIndex: 1,
         ...((post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') ? { inset: 0, width: '100%', height: '100%' } :
-           (post.layout === 'image-left') ? { top: 0, left: 0, width: isPortrait ? '100%' : '50%', height: isPortrait ? '50%' : '100%' } :
-           (post.layout === 'image-right') ? { bottom: 0, right: 0, width: isPortrait ? '100%' : '50%', height: isPortrait ? '50%' : '100%' } : {})
+           (post.layout === 'image-left') ? { top: 0, left: 0, width: isPortrait ? '100%' : `${splitRatio}%`, height: isPortrait ? `${splitRatio}%` : '100%' } :
+           (post.layout === 'image-right') ? { bottom: 0, right: 0, width: isPortrait ? '100%' : `${100-splitRatio}%`, height: isPortrait ? `${100-splitRatio}%` : '100%' } : {})
     };
 
     if (isBridgeOnly && (post.layout === 'instagram-latest' || post.layout === 'webpage')) {
@@ -549,16 +576,14 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     if (post.layout === 'webpage' && post.webpageUrl) return <iframe src={ensureAbsoluteUrl(post.webpageUrl)} className="w-full h-full border-0" />;
     if (post.layout === 'instagram-stories' && organization?.id) return <InstagramStoryPost organizationId={organization.id} />;
 
-    const isMedia = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
+    const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right', 'collage'].includes(post.layout);
     
     // QR Calc
-    // FIX: qrCodePosition och qrCodeSize har nu lagts till i DisplayPost-gränssnittet i types/content.ts för att stödja denna legacy-beräkning
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
     const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
 
     // Headline & Body Defaults
-    // Fallback logic: Om headlinePositionX inte finns, använd gamla textPositionX för rubriken (för bakåtkompatibilitet)
     const hX = post.headlinePositionX ?? post.textPositionX ?? 50;
     const hY = post.headlinePositionY ?? post.textPositionY ?? 40;
     const hW = post.headlineWidth ?? post.textWidth ?? 80;
@@ -572,7 +597,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
     return (
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
-            {isMedia && (
+            {isMediaLayout && post.layout !== 'collage' && (
                 <>
                     {(post.imageUrl || isBridgeOnly) && (
                         <img 
@@ -599,6 +624,35 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         />
                     )}
                 </>
+            )}
+
+            {post.layout === 'collage' && (
+                <div className={`absolute inset-0 z-1 ${getCollageGridClass(post.collageLayout)}`}>
+                    {(post.collageItems || []).map((item, idx) => (
+                        <div key={item.id || idx} className={`relative overflow-hidden ${getItemSpanClass(post.collageLayout, idx)}`}>
+                            {item.imageUrl ? (
+                                <img 
+                                    src={item.imageUrl} 
+                                    className="w-full h-full object-cover" 
+                                    alt="" 
+                                    onLoad={idx === 0 ? signalReady : undefined}
+                                />
+                            ) : item.videoUrl ? (
+                                <video 
+                                    src={item.videoUrl} 
+                                    className="w-full h-full object-cover" 
+                                    muted 
+                                    playsInline 
+                                    autoPlay 
+                                    loop 
+                                    onLoadedData={idx === 0 ? signalReady : undefined}
+                                />
+                            ) : (
+                                <div className="w-full h-full bg-slate-800" />
+                            )}
+                        </div>
+                    ))}
+                </div>
             )}
 
             {post.imageOverlayEnabled && <div className="absolute inset-0 z-10" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
