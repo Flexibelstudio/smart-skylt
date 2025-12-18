@@ -33,25 +33,15 @@ import * as Schemas from './aiSchemas';
 // Init
 // -------------------------------------------------------------
 
-// @ts-ignore
-const API_KEY = undefined; // FORCE PROXY: process.env.API_KEY is ignored here to prevent client-side usage
+// Hämtar API-nyckeln direkt från process.env enligt riktlinjer.
+const getApiKey = () => process.env.API_KEY;
 
-let ai: GoogleGenAI | null = null;
-if (API_KEY) {
-  try {
-    ai = new GoogleGenAI({ apiKey: API_KEY });
-  } catch (e) {
-    console.warn("Local GoogleGenAI initialization failed:", e);
-  }
-}
-
-// Chat still needs a local instance for streaming if possible, but without key it fails.
-// We will handle chat separately or via a custom backend stream endpoint (voice-ws).
 const ensureAiInitialized = (): GoogleGenAI => {
-  if (!ai) {
-    throw new Error("AI-tjänsten är inte konfigurerad lokalt. Försök igen eller kontakta support.");
+  const key = getApiKey();
+  if (!key) {
+    throw new Error("AI-tjänsten är inte konfigurerad (API_KEY saknas).");
   }
-  return ai;
+  return new GoogleGenAI({ apiKey: key });
 };
 
 // -------------------------------------------------------------
@@ -206,18 +196,10 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
 // Exports
 // -------------------------------------------------------------
 
-// CHAT uses a direct connection if key exists, otherwise assumes backend stream logic elsewhere
 export async function initializeMarketingCoachChat(organization: Organization): Promise<Chat> {
-  // If no local key, we cannot init local chat. The Voice Chat component uses WebSocket backend.
-  // For text chat, we might need a similar backend proxy or just fail gracefully if no key.
-  if (!API_KEY) {
-      // Return a dummy object or throw? The UI should handle this.
-      // For now, we throw to signal that local chat isn't possible.
-      throw new Error("Chat requires backend connection.");
-  }
-  const ai = ensureAiInitialized();
+  const aiClient = ensureAiInitialized();
   const systemInstruction = Prompts.getMarketingCoachSystemInstruction(organization);
-  return ai.chats.create({
+  return aiClient.chats.create({
     model: "gemini-3-pro-preview",
     config: { systemInstruction },
     history: [],
@@ -334,7 +316,6 @@ export const generateCompletePost = (
     const prompt = Prompts.getCompletePostPrompt(userPrompt, organization, layout);
     const parts: any[] = [{ text: prompt }];
     
-    // Media logic kept simple for proxy - only send prompt
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiCompletePostResponse };
 
     let textGenResponse;
@@ -407,7 +388,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema).headlines;
+    return (safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema) as { headlines: string[] }).headlines;
   });
 
 export const generateBodySuggestions = (headline: string, existingBodies?: string[]): Promise<string[]> =>
@@ -417,11 +398,11 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-        return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
+        return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
     }
     const aiClient = ensureAiInitialized();
     const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-    return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
+    return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
   });
 
 export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string): Promise<{ headline: string; body: string }> =>
@@ -529,7 +510,6 @@ export const generateVideoFromPrompt = (prompt: string, organizationId: string, 
                 const res = await fn({ action: 'getVideosOperation', params: { operation: { name: operationName } } });
                 opResult = res.data;
             } else {
-                // Fallback impossible without key
                 throw new Error("Proxy required.");
             }
             
