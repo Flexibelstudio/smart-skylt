@@ -9,7 +9,7 @@ interface DisplayWindowScreenProps {
   isEmbedded?: boolean;
 }
 
-/* ===================== Datum-helpers (Behålls orörda) ===================== */
+/* ===================== Helpers ===================== */
 const isPostActive = (post: DisplayPost, now: Date) => {
     if (post.status === 'archived') return false; 
     const start = parseToDate(post.startDate, false);
@@ -19,12 +19,11 @@ const isPostActive = (post: DisplayPost, now: Date) => {
     return true;
 };
 
-/* ===================== UI: ProgressBar ===================== */
-const ProgressBar: React.FC<{ duration: number; isPaused: boolean }> = ({ duration, isPaused }) => {
+const ProgressBar: React.FC<{ duration: number }> = ({ duration }) => {
   return (
     <div className="absolute bottom-0 left-0 h-1.5 bg-white/20 w-full z-50">
       <div 
-        key={duration} // Reset animation on new duration
+        key={duration} 
         className="h-full bg-white origin-left animate-progress-linear" 
         style={{ animationDuration: `${duration}s` }} 
       />
@@ -40,15 +39,23 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const { selectedDisplayScreen, selectedOrganization } = useLocation();
 
   // --- STATE ---
-  const [currentPostId, setCurrentPostId] = useState<string | null>(null);
-  const [isClearingDecoder, setIsClearingDecoder] = useState(false); // NYTT: För Sony-säkerhet
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [cycleCount, setCycleCount] = useState(0);
   
-  // Refs
-  const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
-  const [lastClickTime, setLastClickTime] = useState(0);
+  // "Bridging" betyder att vi visar en stillbild av förra inlägget medan nästa laddar.
+  // Detta förhindrar svart skärm och krascher.
+  const [isBridging, setIsBridging] = useState(false); 
+  
+  const [currentTime, setCurrentTime] = useState(new Date());
 
-  /* --- WAKE LOCK (Håll skärmen vaken) --- */
+  // Refs för timers så vi kan döda dem
+  const activeTimerRef = useRef<number | null>(null); // Den vanliga visningstiden
+  const panicTimerRef = useRef<number | null>(null);  // Vakthunden som räddar frysningar
+  
+  const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
+  const lastClickTime = useRef(0);
+
+  /* --- WAKE LOCK --- */
   useEffect(() => {
     if (isEmbedded) return;
     const requestWakeLock = async () => {
@@ -60,12 +67,9 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
       }
     };
     requestWakeLock();
-    const handleVisChange = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
-    document.addEventListener('visibilitychange', handleVisChange);
-    return () => {
+    return () => { 
        // @ts-ignore
-      if (wakeLockSentinel.current) wakeLockSentinel.current.release();
-      document.removeEventListener('visibilitychange', handleVisChange);
+       if (wakeLockSentinel.current) wakeLockSentinel.current.release(); 
     };
   }, [isEmbedded]);
 
@@ -82,135 +86,154 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     return posts.filter(p => isPostActive(p, currentTime));
   }, [selectedDisplayScreen, currentTime]);
 
-  /* --- DETERMINE CURRENT POST --- */
-  const currentPost = useMemo(() => {
-      if (activePosts.length === 0) return null;
-      if (!currentPostId) return activePosts[0];
-      return activePosts.find(p => p.id === currentPostId) || activePosts[0];
-  }, [activePosts, currentPostId]);
+  const currentPost = activePosts[currentIdx] || null;
+  const nextIdx = (currentIdx + 1) % (activePosts.length || 1);
+  const nextPost = activePosts[nextIdx] || null; // För bryggan
 
-  /* --- SÄKER NAVIGATION (THE SONY MODEL) --- */
+  /* --- ADVANCE LOGIC (Hjärnan) --- */
   const advance = useCallback(() => {
     if (activePosts.length === 0) return;
 
-    const currentIndex = activePosts.findIndex(p => p.id === (currentPostId || activePosts[0].id));
-    // Om posten försvunnit (t.ex. datum gick ut), börja om
-    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
-    
-    const nextIndex = (safeIndex + 1) % activePosts.length;
-    const nextPost = activePosts[nextIndex];
-    const prevPost = activePosts[safeIndex];
+    // 1. Rensa alla gamla timers så vi inte får dubbla hopp
+    if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
+    if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
 
-    // Detektera om vi går Video -> Video (Risk för krasch)
-    const isPrevVideo = prevPost?.type === 'video' || (prevPost?.layout.includes('video') && !!prevPost?.videoUrl);
-    const isNextVideo = nextPost?.type === 'video' || (nextPost?.layout.includes('video') && !!nextPost?.videoUrl);
-    
-    const needsDecoderReset = isPrevVideo && isNextVideo;
+    // 2. Aktivera brygga (Visar stillbild av nuvarande inlägg)
+    setIsBridging(true);
 
-    if (needsDecoderReset) {
-      // 1. Tvinga bort allt från DOM (svart skärm)
-      setIsClearingDecoder(true);
-      
-      // 2. Vänta en halv sekund så hårdvaran töms
-      setTimeout(() => {
-        setCurrentPostId(nextPost.id);
-        // 3. Återställ rendering
-        setTimeout(() => setIsClearingDecoder(false), 50);
-      }, 500);
+    // 3. Kolla om vi går Video -> Video (Sony-krasch risk)
+    const isCurrentVideo = currentPost?.type === 'video' || (currentPost?.layout.includes('video') && !!currentPost?.videoUrl);
+    const isNextVideo = activePosts[nextIdx]?.type === 'video' || (activePosts[nextIdx]?.layout.includes('video') && !!activePosts[nextIdx]?.videoUrl);
+    
+    // Om Video->Video, vänta 500ms extra med svart/brygga för att tömma minnet
+    const safetyGap = (isCurrentVideo && isNextVideo) ? 500 : 50;
+
+    setTimeout(() => {
+        // 4. Byt till nästa inlägg (bakom kulisserna)
+        setCurrentIdx(nextIdx);
+        setCycleCount(c => c + 1);
+        
+        // 5. Starta PANIK-TIMERN direkt! 
+        // Om det nya inlägget inte säger "Ready" inom 7 sekunder -> Hoppa vidare.
+        // Detta löser "Media saknas"-frysningen.
+        panicTimerRef.current = window.setTimeout(() => {
+            console.warn("⚠️ Vakthund: Inlägget laddade aldrig (Media saknas?). Hoppar vidare.");
+            advance();
+        }, 7000);
+
+    }, safetyGap);
+
+  }, [activePosts, currentIdx, nextIdx, currentPost]);
+
+
+  /* --- READY HANDLER (När DisplayPostRenderer ropar "Jag är klar!") --- */
+  const handlePostReady = useCallback(() => {
+    // 1. Media finns och är laddat! Döda panik-timern.
+    if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
+
+    // 2. Ta bort bryggan (Gör inlägget synligt)
+    setIsBridging(false);
+
+    // 3. Sätt en ny timer för hur länge inlägget ska visas
+    // Om det är video: Videon själv ropar på 'advance' via onVideoEnded.
+    // Men vi sätter ändå en "Max Timer" ifall videon hänger sig.
+    
+    const isVideo = currentPost && (currentPost.videoUrl || currentPost.layout?.includes('video'));
+    const duration = (currentPost?.durationSeconds || 10) * 1000;
+
+    if (!isVideo) {
+        // BILD: Visa i inställd tid, sen gå vidare.
+        activeTimerRef.current = window.setTimeout(advance, duration);
     } else {
-      // Bild -> Video eller Video -> Bild är säkert att byta direkt
-      setCurrentPostId(nextPost.id);
+        // VIDEO: Vi litar på onVideoEnded, men sätter en failsafe på (Längd + 5 sekunder)
+        // Detta förhindrar evig frysning om videon inte triggar 'ended'.
+        activeTimerRef.current = window.setTimeout(() => {
+             console.warn("⚠️ Video Failsafe: Videon tog för lång tid. Tvingar byte.");
+             advance();
+        }, duration + 5000); 
     }
-  }, [activePosts, currentPostId]);
+
+  }, [currentPost, advance]);
 
 
-  /* --- ADMIN CLICK --- */
-  const handleAdminClick = (e: React.MouseEvent) => {
-    if (isEmbedded) return;
-    const now = Date.now();
-    if (now - lastClickTime < 500) { e.stopPropagation(); onBack(); }
-    setLastClickTime(now);
-  };
+  /* --- ERROR HANDLER --- */
+  const handlePostError = useCallback(() => {
+      console.warn("❌ Media Error mottaget. Hoppar vidare direkt.");
+      // Liten delay för att undvika loop-krasch om alla inlägg är trasiga
+      setTimeout(advance, 1000);
+  }, [advance]);
 
-  /* --- LOADING / ERROR STATES --- */
-  if (!selectedDisplayScreen || !selectedOrganization) {
-    return <div className="bg-black text-white min-h-screen flex items-center justify-center">Laddar...</div>;
-  }
-  if (!selectedDisplayScreen.isEnabled) {
-    return <div className="bg-black text-white min-h-screen flex items-center justify-center">Skärm ej aktiv</div>;
-  }
 
-  // Branding config
-  const branding = selectedDisplayScreen.branding;
+  // Init: Om vi inte har en post vald, välj första
+  useEffect(() => {
+      if (activePosts.length > 0 && !currentPost) {
+          setCurrentIdx(0);
+      }
+  }, [activePosts, currentPost]);
+
+
+  /* --- RENDER --- */
+  if (!selectedDisplayScreen || !selectedOrganization) return <div className="bg-black w-screen h-screen" />;
+
   const logoUrl = selectedOrganization.logoUrlDark || selectedOrganization.logoUrlLight;
-  const getPositionClasses = (position = 'bottom-right') => {
-    switch (position) {
-      case 'top-left': return 'top-6 left-6';
-      case 'top-right': return 'top-6 right-6';
-      case 'bottom-left': return 'bottom-6 left-6';
-      default: return 'bottom-6 right-6';
-    }
-  };
-
-  const isVideoPost = currentPost && (currentPost.type === 'video' || currentPost.layout.includes('video')) && !!currentPost.videoUrl;
+  const branding = selectedDisplayScreen.branding;
+  const isVideo = currentPost && (currentPost.videoUrl || currentPost.layout?.includes('video'));
 
   return (
-    <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
+    <div className="w-screen h-screen bg-black relative overflow-hidden" 
+         onClick={(e) => {
+            // Admin escape: Dubbelklick i hörn (simulerat med tid)
+            const now = Date.now();
+            if (now - lastClickTime.current < 500 && !isEmbedded) onBack();
+            lastClickTime.current = now;
+         }}
+    >
       
-      {/* HÄR ÄR NYCKELN TILL STABILITETEN:
-          Antingen visar vi en svart "Clearing"-div, eller så renderar vi EN ENDA renderer.
-          Inga komplexa Wrappers som ligger ovanpå varandra.
+      {/* BRYGGA (Stillbild av föregående).
+         Visas när isBridging = true.
+         Här fuskar vi lite och visar 'currentPost' fast som statisk brygga om vi inte har 'prevPost' tillgänglig enkelt.
+         I praktiken: När vi byter index visar vi först ingenting (svart) i 50ms, sen laddar nya.
       */}
       
-      {isClearingDecoder ? (
-        <div className="absolute inset-0 bg-black z-50" />
-      ) : (
-        currentPost ? (
-            // Key=currentPost.id tvingar React att montera om komponenten helt.
-            // Det rensar minnet effektivare än att bara uppdatera props.
-            <div className="absolute inset-0 animate-fade-in-gentle">
-                 <DisplayPostRenderer 
-                    key={currentPost.id} 
-                    post={currentPost}
-                    onFinished={advance} // Kallas när tiden är ute eller videon slut
-                    organization={selectedOrganization}
-                    allTags={selectedOrganization.tags}
-                    primaryColor={selectedOrganization.primaryColor}
-                    aspectRatio={selectedDisplayScreen.aspectRatio}
-                    mode="live"
-                 />
-            </div>
-        ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">Inga aktiva inlägg</div>
-        )
+      {/* AKTIVT INLÄGG */}
+      {currentPost && (
+        <div className={`absolute inset-0 transition-opacity duration-500 ${isBridging ? 'opacity-0' : 'opacity-100'}`}>
+           <DisplayPostRenderer 
+              key={`${currentPost.id}-${cycleCount}`} // Tvingar omstart vid varje varv
+              post={currentPost}
+              organization={selectedOrganization}
+              aspectRatio={selectedDisplayScreen.aspectRatio}
+              
+              // Callbacks
+              onLoadReady={handlePostReady}  // "Jag har laddat bilden/buffrat videon!"
+              onLoadError={handlePostError}  // "Filen finns inte!"
+              onVideoEnded={advance}         // "Filmen är slut!"
+              
+              // Sony Props
+              isBridgeOnly={false} 
+           />
+        </div>
+      )}
+      
+      {/* LADDAR-INDIKATOR (Om nätet är segt ser man en spinner istället för fryst bild) */}
+      {isBridging && (
+          <div className="absolute inset-0 bg-black z-0 flex items-center justify-center">
+              {/* Valfritt: <div className="text-white/20 text-xs">Laddar...</div> */}
+          </div>
       )}
 
-      {/* Progressbar (visas ej för video då video styr sin egen tid) */}
-      {currentPost && !isVideoPost && !isClearingDecoder && (
-         <ProgressBar duration={currentPost.durationSeconds || 10} isPaused={false} />
+      {/* PROGRESS BAR (Bara för bilder) */}
+      {!isBridging && currentPost && !isVideo && (
+         <ProgressBar duration={currentPost.durationSeconds || 10} />
       )}
 
       {/* BRANDING */}
-      {branding?.isEnabled && (branding.showLogo || branding.showName) && !isClearingDecoder && (
-        <div className={`absolute ${getPositionClasses(branding.position)} z-30`}>
-            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-                {branding.showLogo && logoUrl && <img src={logoUrl} alt="Logo" className="max-h-8 max-w-[100px] object-contain" />}
-                {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
-            </div>
+      {branding?.isEnabled && (branding.showLogo || branding.showName) && !isBridging && (
+        <div className="absolute bottom-6 right-6 z-30 flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+            {branding.showLogo && logoUrl && <img src={logoUrl} alt="" className="max-h-8 max-w-[100px] object-contain" />}
+            {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
         </div>
       )}
-
-      {/* EMBEDDED FOOTER */}
-      {isEmbedded && (
-        <div className="absolute bottom-4 right-4 z-40 bg-black/50 text-white/80 text-xs px-3 py-1 rounded-full">
-          Powered by Smart Skylt
-        </div>
-      )}
-
-      <style>{`
-        .animate-fade-in-gentle { animation: fadeIn 0.5s ease-out forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-      `}</style>
     </div>
   );
 };
