@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
-import { MoveIcon } from './icons'; // Se till att du har denna import kvar
+import { MoveIcon } from './icons';
 
 // --- HELPER FUNCTIONS ---
 
@@ -96,12 +96,13 @@ const getBodyFontSizeClass = (size?: string, mode?: string) => {
     }
 };
 
-// --- INTERACTIVE COMPONENTS (Restored Drag & Drop) ---
+// --- INTERACTIVE COMPONENTS ---
 
 const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
     const [dataUrl, setDataUrl] = useState('');
     useEffect(() => {
         if (url) {
+            // Note: margin: 1 is kept for scan reliability, but container padding is reduced below.
             QRCode.toDataURL(url, { width: 512, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
                   .then(setDataUrl).catch(() => {});
         }
@@ -154,7 +155,7 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
         }
     };
 
-    // --- RESIZE LOGIC ---
+    // --- RESIZE LOGIC (Width) ---
     const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
@@ -194,7 +195,8 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
                 cursor: isDraggable ? 'move' : 'default',
                 opacity: isDragging ? 0.7 : 1
              }}>
-            <div className="bg-white p-2 rounded-lg shadow-lg w-full h-full flex items-center justify-center relative group">
+            {/* CHANGED p-2 TO p-0.5 HERE for tighter white box */}
+            <div className="bg-white p-0.5 rounded-lg shadow-lg w-full h-full flex items-center justify-center relative group">
                 <QrCodeComponent url={url} className="w-full h-full" />
                 {isDraggable && (
                      <div onMouseDown={handleResizeStart} onTouchStart={handleResizeStart}
@@ -248,7 +250,6 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
         const parent = containerRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
-        const containerRect = containerRef.current.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
         const initialOverride = { x: post.textPositionX || 50, y: post.textPositionY || 50 };
@@ -445,7 +446,7 @@ export interface DisplayPostRendererProps {
     onLoadReady?: () => void;
     onLoadError?: () => void;
     
-    // Interactive Props
+    // Interactive props
     onUpdateTagPosition?: any; onUpdateTextPosition?: any; onUpdateTextWidth?: any;
     onUpdateQrPosition?: any; onUpdateQrWidth?: any; isTextDraggable?: any; isForDownload?: any;
 }
