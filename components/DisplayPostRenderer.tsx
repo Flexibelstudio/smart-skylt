@@ -3,7 +3,7 @@ import { DisplayPost, Tag, Organization, DisplayScreen } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
 
-// --- HELPER FUNCTIONS ---
+// --- DESIGN HELPER FUNCTIONS (Återställda) ---
 
 const resolveColor = (colorKey: string | undefined, fallback: string, organization?: Organization, primaryColorFromProp?: string): string => {
     if (!colorKey) return fallback;
@@ -26,7 +26,6 @@ const ensureAbsoluteUrl = (url: string | undefined): string => {
 };
 
 const mapLegacySize = (size?: string): number => {
-    // Mappar gamla text-storlekar till procentuella bredder
     switch(size) {
         case 'sm': return 10;
         case 'md': return 15;
@@ -38,38 +37,89 @@ const mapLegacySize = (size?: string): number => {
 
 const mapLegacyPosition = (position?: string) => ({ x: 90, y: 90 });
 
+// --- STYLE GENERATORS (Återställda för korrekt utseende) ---
+
+const isPreviewMode = (mode?: 'preview' | 'live') => mode === 'preview';
+
+const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') => {
+    const isPreview = isPreviewMode(mode);
+    switch (size) {
+        case 'sm': return isPreview ? 'text-[6px]' : 'text-sm';
+        case 'md': return isPreview ? 'text-[7px]' : 'text-base';
+        case 'lg': return isPreview ? 'text-[8px]' : 'text-lg';
+        case 'xl': return isPreview ? 'text-[9px]' : 'text-xl';
+        case '2xl': return isPreview ? 'text-[10px]' : 'text-2xl';
+        case '3xl': return isPreview ? 'text-xs' : 'text-3xl';
+        default: return isPreview ? 'text-[7px]' : 'text-base';
+    }
+};
+
+const getTagFontFamilyClass = (family?: Tag['fontFamily']) => {
+    switch (family) {
+        case 'display': return 'font-display';
+        case 'script': return 'font-logo';
+        case 'adscript': return 'font-adscript';
+        case 'sans': return 'font-sans';
+        default: return `font-${family || 'sans'}`;
+    }
+};
+
+const getHeadlineFontSizeClass = (size?: string, mode?: string) => {
+    const isPreview = isPreviewMode(mode as any);
+    if (isPreview) return 'text-sm';
+    switch (size) {
+        case 'sm': return 'text-xl';
+        case 'md': return 'text-2xl';
+        case 'lg': return 'text-3xl';
+        case 'xl': return 'text-4xl';
+        case '2xl': return 'text-5xl';
+        case '3xl': return 'text-6xl';
+        case '4xl': return 'text-7xl';
+        case '5xl': return 'text-8xl';
+        case '6xl': return 'text-9xl';
+        default: return 'text-5xl';
+    }
+};
+
+const getBodyFontSizeClass = (size?: string, mode?: string) => {
+    const isPreview = isPreviewMode(mode as any);
+    if (isPreview) return 'text-xs';
+    switch (size) {
+        case 'xs': return 'text-base';
+        case 'sm': return 'text-lg';
+        case 'md': return 'text-xl';
+        case 'lg': return 'text-2xl';
+        case 'xl': return 'text-3xl';
+        case '2xl': return 'text-4xl';
+        default: return 'text-xl';
+    }
+};
+
 // --- COMPONENTS ---
 
 const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
     const [dataUrl, setDataUrl] = useState('');
     useEffect(() => {
         if (url) {
-            QRCode.toDataURL(url, { 
-                width: 512, 
-                margin: 1, 
-                color: { dark: '#000000', light: '#ffffff' } 
-            }).then(setDataUrl).catch(() => {});
+            QRCode.toDataURL(url, { width: 512, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
+                  .then(setDataUrl).catch(() => {});
         }
     }, [url]);
-    
     if (!dataUrl) return null;
     return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', display: 'block' }} />;
 };
 
 const DraggableQrCode: React.FC<any> = ({ url, x, y, width }) => {
-    // Hårdkodad stil för att garantera att den syns oavsett Tailwind
-    const containerStyle: React.CSSProperties = {
-        position: 'absolute',
-        left: `${x}%`,
-        top: `${y}%`,
-        width: `${width}%`,
-        transform: 'translate(-50%, -50%)',
-        zIndex: 50, // Högt Z-index
-        aspectRatio: '1/1', // VIKTIGT: Tvingar den att vara kvadratisk även innan bild laddats
-    };
-
     return (
-        <div style={containerStyle}>
+        <div style={{
+            position: 'absolute',
+            left: `${x}%`,
+            top: `${y}%`,
+            width: `${width}%`,
+            transform: 'translate(-50%, -50%)',
+            zIndex: 50,
+            aspectRatio: '1/1',
+        }}>
             <div className="bg-white p-2 rounded-lg shadow-lg w-full h-full flex items-center justify-center">
                 <QrCodeComponent url={url} className="w-full h-full" />
             </div>
@@ -77,12 +127,43 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width }) => {
     );
 };
 
+// Återställd Markdown-renderare för listor etc.
 const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
-    const html = useMemo(() => ({ __html: content.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }), [content]);
-    return <div className={className} dangerouslySetInnerHTML={html} />;
+    const renderMarkdown = useMemo(() => {
+        if (!content) return { __html: '' };
+        const lines = content.split('\n');
+        const htmlLines: string[] = [];
+        let inList: 'ul' | 'ol' | false = false;
+
+        const closeListIfNeeded = () => {
+            if (inList) { htmlLines.push(`</${inList}>`); inList = false; }
+        };
+
+        for (const line of lines) {
+            let safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                               .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                               .replace(/_(.*?)_/g, '<em>$1</em>');
+
+            if (line.match(/^\d+\.\s/)) {
+                if (inList !== 'ol') { closeListIfNeeded(); htmlLines.push('<ol class="list-decimal list-inside space-y-1 my-2">'); inList = 'ol'; }
+                htmlLines.push(`<li>${safeLine.replace(/^\d+\.\s/, '')}</li>`);
+            } else if (line.startsWith('* ') || line.startsWith('- ')) {
+                if (inList !== 'ul') { closeListIfNeeded(); htmlLines.push('<ul class="list-disc list-inside space-y-1 my-2">'); inList = 'ul'; }
+                htmlLines.push(`<li>${safeLine.substring(2)}</li>`);
+            } else {
+                closeListIfNeeded();
+                if (line.trim() !== '') htmlLines.push(`<p class="my-2">${safeLine}</p>`);
+            }
+        }
+        closeListIfNeeded();
+        return { __html: htmlLines.join('\n') };
+    }, [content]);
+
+    return <div className={className} dangerouslySetInnerHTML={renderMarkdown} />;
 };
 
 const TextContent: React.FC<any> = ({ post, mode, organization }) => {
+    // Återställd logik för textplacering
     const style: React.CSSProperties = {
         position: 'absolute',
         top: post.textPositionY ? `${post.textPositionY}%` : '50%',
@@ -94,24 +175,23 @@ const TextContent: React.FC<any> = ({ post, mode, organization }) => {
         color: resolveColor(post.textColor, '#ffffff', organization),
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center'
+        justifyContent: post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center'
     };
+
+    const headlineClass = `${getHeadlineFontSizeClass(post.headlineFontSize, mode)} font-bold leading-tight drop-shadow-md break-words ${post.headlineFontFamily ? `font-${post.headlineFontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`;
+    const bodyClass = `${getBodyFontSizeClass(post.bodyFontSize, mode)} mt-4 break-words drop-shadow-md ${post.bodyFontFamily ? `font-${post.bodyFontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
 
     return (
         <div style={style}>
             <div className={post.textBackgroundEnabled ? "bg-black/50 p-6 rounded-xl backdrop-blur-md" : ""}>
-                {post.headline && <h1 className="font-bold mb-4 text-4xl md:text-6xl drop-shadow-md">{post.headline}</h1>}
-                {post.body && (
-                    <div className="text-xl md:text-3xl drop-shadow-md">
-                        <PostMarkdownRenderer content={post.body} />
-                    </div>
-                )}
+                {post.headline && <h1 className={headlineClass}>{post.headline}</h1>}
+                {post.body && <PostMarkdownRenderer content={post.body} className={bodyClass} />}
             </div>
         </div>
     );
 };
 
-const DraggableTag: React.FC<any> = ({ tag, override }) => {
+const DraggableTag: React.FC<any> = ({ tag, override, mode }) => {
      const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x || 50}%`,
@@ -128,10 +208,10 @@ const DraggableTag: React.FC<any> = ({ tag, override }) => {
      };
 
      return (
-         <div style={style} className="flex items-center gap-2 text-base md:text-xl">
+         <div style={style} className={`flex items-center gap-2 ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
              {tag.text}
              {tag.url && (
-                 <div className="bg-white p-1 rounded-sm w-8 h-8 flex-shrink-0">
+                 <div className="bg-white p-0.5 rounded-sm w-[1.5em] h-[1.5em] flex-shrink-0">
                      <QrCodeComponent url={tag.url} className="w-full h-full" />
                  </div>
              )}
@@ -158,7 +238,7 @@ export interface DisplayPostRendererProps {
     onLoadReady?: () => void;
     onLoadError?: () => void;
     
-    // Legacy props (ignored but kept for TS compatibility)
+    // Legacy props
     onUpdateTagPosition?: any; onUpdateTextPosition?: any; onUpdateTextWidth?: any;
     onUpdateQrPosition?: any; onUpdateQrWidth?: any; isTextDraggable?: any; isForDownload?: any;
 }
@@ -191,7 +271,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         }
     }, [onLoadReady]);
 
-    // Säkerhetstimer
+    // Safety Timer
     useEffect(() => {
         if (!post.videoUrl && !post.imageUrl) signalReady();
         const t = setTimeout(() => { if (!hasSignaled.current) signalReady(); }, 1000);
@@ -205,10 +285,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             video.currentTime = 0;
             const playPromise = video.play();
             if (playPromise !== undefined) {
-                playPromise.catch(() => {
-                    // Om autoplay blockeras, signalera fel så vi hoppar vidare
-                    if (onLoadError) onLoadError();
-                });
+                playPromise.catch(() => { if (onLoadError) onLoadError(); });
             }
         }
     }, [post.videoUrl, cycleCount]); 
@@ -236,10 +313,10 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
     const isMedia = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
     
-    // QR Positionering
+    // QR Calc
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
-    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15); // Default 15% bredd
+    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
 
     return (
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
@@ -285,10 +362,10 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
                 const override = post.tagPositionOverrides?.find(o => o.tagId === tagId);
-                return <DraggableTag key={tagId} tag={tag} override={override} />;
+                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} />;
             })}
 
-            {/* QR CODE - Här renderas den! */}
+            {/* QR CODE */}
             {post.qrCodeUrl && (
                 <DraggableQrCode 
                     url={post.qrCodeUrl} 
