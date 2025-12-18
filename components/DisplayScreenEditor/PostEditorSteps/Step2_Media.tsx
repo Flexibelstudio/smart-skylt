@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
@@ -191,6 +190,7 @@ const SingleMediaEditor: React.FC<{
     const { showToast } = useToast();
     const [videoProgressText, setVideoProgressText] = useState("");
     const [useImageForVideo, setUseImageForVideo] = useState(false);
+    const [isImageAliveEnabled, setIsImageAliveEnabled] = useState(false);
 
     const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
@@ -209,10 +209,11 @@ const SingleMediaEditor: React.FC<{
         }
     }, [speechError, showToast]);
     
-    // Reset "use image" toggle if image is removed
+    // Reset toggles if image is removed
     useEffect(() => {
         if (!post.imageUrl) {
             setUseImageForVideo(false);
+            setIsImageAliveEnabled(false);
         }
     }, [post.imageUrl]);
 
@@ -256,11 +257,17 @@ const SingleMediaEditor: React.FC<{
     };
 
     const handleGenerateVideo = async () => {
-        if (!post.aiVideoPrompt || !post.aiVideoPrompt.trim() || !currentUser) return;
+        if (!post.aiVideoPrompt && !isImageAliveEnabled) {
+            showToast({ message: "Skriv en beskrivning av videon först.", type: 'info' });
+            return;
+        }
+        if (!currentUser) return;
         
         let imagePayload = undefined;
         // Check if we should use existing image as starting frame
-        if (useImageForVideo && post.imageUrl) {
+        const shouldAnimateImage = (useImageForVideo || isImageAliveEnabled) && post.imageUrl;
+
+        if (shouldAnimateImage) {
              try {
                  setAiLoading('preparing-image');
                  const { mimeType, data } = await urlToBase64(post.imageUrl);
@@ -273,12 +280,18 @@ const SingleMediaEditor: React.FC<{
              }
         }
 
+        let finalPrompt = post.aiVideoPrompt || '';
+        if (isImageAliveEnabled) {
+            const aliveSuffix = "Add subtle, looping ambient motion. Maintain absolute consistency with the starting frame. If there is liquid, add ripples or steam. If there is vegetation, add a gentle breeze. If there are lights, add subtle glimmers. The result should be a high-quality cinematic cinemagraph.";
+            finalPrompt = finalPrompt ? `${finalPrompt}. ${aliveSuffix}` : aliveSuffix;
+        }
+
         setAiLoading('generate-video');
         setVideoProgressText("Startar...");
 
         try {
             const videoUrl = await generateVideoFromPrompt(
-                post.aiVideoPrompt,
+                finalPrompt,
                 organization.id,
                 screen.id,
                 post.id,
@@ -479,30 +492,45 @@ const SingleMediaEditor: React.FC<{
                     ) : (
                         <>
                             {post.imageUrl && (
-                                <div className="flex items-center gap-2 mb-1 p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-md border border-indigo-200 dark:border-indigo-700/50">
-                                    <input
-                                        type="checkbox"
-                                        id="useImageForVideo"
-                                        checked={useImageForVideo}
-                                        onChange={(e) => setUseImageForVideo(e.target.checked)}
-                                        className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
-                                        disabled={!!aiLoading}
-                                    />
-                                    <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
-                                        Använd inläggets bild som startbild
-                                    </label>
+                                <div className="space-y-2 mb-1 p-3 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg border border-indigo-200 dark:border-indigo-700/50">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="useImageForVideo"
+                                            checked={useImageForVideo}
+                                            onChange={(e) => setUseImageForVideo(e.target.checked)}
+                                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
+                                            disabled={!!aiLoading}
+                                        />
+                                        <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
+                                            Använd inläggets bild som startbild
+                                        </label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="makeImageAlive"
+                                            checked={isImageAliveEnabled}
+                                            onChange={(e) => setIsImageAliveEnabled(e.target.checked)}
+                                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
+                                            disabled={!!aiLoading}
+                                        />
+                                        <label htmlFor="makeImageAlive" className="text-sm font-bold text-indigo-900 dark:text-white cursor-pointer select-none flex items-center gap-1">
+                                            ✨ Gör bilden levande (rök, vind, ljusblänk)
+                                        </label>
+                                    </div>
                                 </div>
                             )}
                             <textarea
                                 value={post.aiVideoPrompt || ''}
                                 onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
-                                placeholder={useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa..."}
+                                placeholder={isImageAliveEnabled ? "Skriv inget här för automatisk 'liv', eller beskriv rörelsen själv..." : (useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa...")}
                                 rows={3}
                                 className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
                                 disabled={!!aiLoading}
                             />
-                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim() || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
-                                {useImageForVideo ? "Animera bild" : "Generera video"}
+                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={(!post.aiVideoPrompt?.trim() && !isImageAliveEnabled) || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
+                                {isImageAliveEnabled ? "Skapa magisk rörelse" : (useImageForVideo ? "Animera bild" : "Generera video")}
                             </PrimaryButton>
                         </>
                     )}
