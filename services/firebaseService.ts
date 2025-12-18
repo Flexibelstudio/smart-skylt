@@ -1,4 +1,3 @@
-
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
 import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, InstagramStory, VideoOperation, PostTemplate, Tag, DisplayPost, MediaItem } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
@@ -662,13 +661,5 @@ export const callTestFunction = async (): Promise<any> => {
     if (!functions) return;
     const fn = functions.httpsCallable('testFunction');
     const result = await fn();
-    return result.data;
-};
-
-export const runOrgCollectionsMigration = async (payload: any) => {
-    if (isOffline) return { message: 'Offline migration simulated' };
-    if (!functions) return;
-    const fn = functions.httpsCallable('migrateOrgCollections');
-    const result = await fn(payload);
     return result.data;
 };

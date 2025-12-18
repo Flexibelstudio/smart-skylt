@@ -1,4 +1,3 @@
-
 // functions/index.js
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -17,86 +16,6 @@ db.settings({ ignoreUndefinedProperties: true });
 
 const storage = getStorage(app);
 const auth = getAuth(app);
-
-/* ------------------------------------------------------------------ */
-/*                       Engångs-migrering (callable)                  */
-/* ------------------------------------------------------------------ */
-
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-export const migrateOrgCollections = onCall({ cors: true, timeoutSeconds: 540 }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
-
-  const payload = request.data || {};
-  const onlyOrgId = payload.orgId;
-  const migrateChannels = !!payload.migrateChannels;
-  const dryRun = !!payload.dryRun;
-
-  let orgDocs = [];
-  if (onlyOrgId) {
-    const doc = await db.collection("organizations").doc(onlyOrgId).get();
-    if (!doc.exists) throw new HttpsError("not-found", `Organization ${onlyOrgId} not found.`);
-    orgDocs = [doc];
-  } else {
-    const snap = await db.collection("organizations").get();
-    orgDocs = snap.docs;
-  }
-
-  const results = [];
-
-  for (const orgDoc of orgDocs) {
-    const orgId = orgDoc.id;
-    const org = orgDoc.data() || {};
-    const screensArr = Array.isArray(org.displayScreens)
-      ? org.displayScreens.filter((s) => s && s.id)
-      : [];
-    const channelsArr = Array.isArray(org.channels)
-      ? org.channels.filter((c) => c && c.id)
-      : [];
-
-    let screensMigrated = 0;
-    let channelsMigrated = 0;
-
-    // Skärmar -> subcollection
-    if (screensArr.length) {
-      for (const group of chunk(screensArr, 450)) {
-        const batch = db.batch();
-        for (const s of group) {
-          const ref = db.collection("organizations").doc(orgId).collection("displayScreens").doc(String(s.id));
-          batch.set(ref, s, { merge: true });
-        }
-        if (!dryRun) await batch.commit();
-        screensMigrated += group.length;
-      }
-    }
-
-    // Kanaler -> subcollection
-    if (migrateChannels && channelsArr.length) {
-      for (const group of chunk(channelsArr, 450)) {
-        const batch = db.batch();
-        for (const c of group) {
-          const ref = db.collection("organizations").doc(orgId).collection("channels").doc(String(c.id));
-          batch.set(ref, c, { merge: true });
-        }
-        if (!dryRun) await batch.commit();
-        channelsMigrated += group.length;
-      }
-    }
-
-    results.push({ orgId, screensMigrated, ...(migrateChannels ? { channelsMigrated } : {}) });
-    console.log(`[migrateOrgCollections] ${orgId}: screens=${screensMigrated}`);
-  }
-
-  return {
-    dryRun,
-    organizations: results,
-    message: dryRun ? "Dry-run klart. Inga writes gjordes." : "Migrering klar.",
-  };
-});
 
 /* ------------------------------------------------------------------ */
 /*                            Hjälpfunktioner                          */
