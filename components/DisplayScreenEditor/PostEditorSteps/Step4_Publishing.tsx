@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { DisplayPost, Organization } from '../../../types';
-import { StyledInput, StyledSelect } from '../../Forms';
+import { StyledInput } from '../../Forms'; // Tog bort StyledSelect då den inte används längre
 
 const toDateTimeLocal = (isoString?: string): string => {
     if (!isoString) return '';
@@ -42,18 +41,12 @@ export const Step4_Publishing: React.FC<{
                     <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
                     <StyledInput type="number" min="5" value={String(post.durationSeconds)} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10))} />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Övergångseffekt</label>
-                    <StyledSelect 
-                        value={post.transitionToNext || 'fade'} 
-                        onChange={e => handleFieldChange('transitionToNext', e.target.value)}
-                    >
-                        <option value="fade">Tona (Standard)</option>
-                        <option value="slide">Glid (Slide)</option>
-                        <option value="dissolve">Lös upp (Dissolve)</option>
-                    </StyledSelect>
-                    <p className="text-xs text-slate-500 mt-1">Välj hur detta inlägg ska övergå till nästa.</p>
-                </div>
+                
+                {/* BORTTAGET: Övergångseffekt. 
+                   Vi kör nu alltid "Hard Cut" för att garantera stabilitet på Sony-skärmar.
+                   Koden är raderad för att inte förvirra användaren.
+                */}
+
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Startdatum</label>
