@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Chat, GenerateContentResponse, FunctionDeclaration, Type } from '@google/genai';
 import { ChatMessage, Organization, DisplayPost, DisplayScreen } from '../types';
-import { initializeMarketingCoachChat, fileToBase64, generateCompletePost } from '../services/geminiService';
+import { initializeMarketingCoachChat, fileToBase64, generateCompletePost, createDisplayPostFunctionDeclaration } from '../services/geminiService';
 import { getVoiceServerConfig } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from './icons';
@@ -24,7 +25,6 @@ const TypingIndicator: React.FC = () => (
   </div>
 );
 
-/** Viktigt: mellanslaget ligger UTANFÖR span så inline-block inte “äter” spacing */
 const AnimatedSentence: React.FC<{ text: string }> = ({ text }) => (
   <>
     {text.split(' ').map((word, i) => (
@@ -94,7 +94,6 @@ async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: 
 
 /* ---------------------- helpers för textmellanrum ------------------- */
 
-/** Lägger in mellanslag snyggt, undviker space före skiljetecken osv. */
 function smartAppend(prev: string, chunk: string) {
   const a = prev || '';
   const b = (chunk || '').trim();
@@ -134,11 +133,8 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-  
-  // New state for maximizing the chat window
   const [isMaximized, setIsMaximized] = useState(false);
 
-  // Skydda mot parallella stream-svar
   const streamingRef = useRef(false);
 
   // Voice chat
@@ -151,7 +147,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const nextStartTimeRef = useRef(0);
   const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
   const isClosingIntentionally = useRef(false);
-  // FIX: Initialize useRef with `undefined` to satisfy the requirement of providing an initial value.
   const retryTimeoutRef = useRef<number | undefined>(undefined);
 
   const [currentUserTranscription, setCurrentUserTranscription] = useState('');
@@ -188,7 +183,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading, isMaximized]); // Added isMaximized to scroll on resize
+  }, [messages, isLoading, isMaximized]);
 
   useEffect(() => {
     return () => { if (attachmentPreview) URL.revokeObjectURL(attachmentPreview); };
@@ -222,8 +217,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
       setAttachmentPreview(URL.createObjectURL(file));
     }
   };
-
-  /* ------------- immutabla/defensiva uppdateringshjälpare --------- */
 
   const safeSet = (updater: (prev: ChatMessage[]) => ChatMessage[]) =>
     setMessages((prev) => (Array.isArray(prev) ? updater(prev) : []));
@@ -291,88 +284,50 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     appendUserMessage(partsForState);
     ensureAssistantRow();
 
-    const finish = () => {
-      setIsLoading(false);
-      streamingRef.current = false;
-    };
-
-    const payload: any =
-      partsForApi.length === 1 && 'text' in partsForApi[0]
-        ? (partsForApi[0] as any).text
-        : partsForApi;
-
-    const toContent = (p: any) =>
-      Array.isArray(p)
-        ? { role: 'user', parts: p }
-        : typeof p === 'string'
-        ? { role: 'user', parts: [{ text: p }] }
-        : p;
-
-    async function sendStreamRobust(chat: any, p: any) {
-      try { return await chat.sendMessageStream(p); } catch (_) {}
-      try { return await chat.sendMessageStream({ message: p }); } catch (_) {}
-      return await chat.sendMessageStream({ contents: [toContent(p)] });
-    }
-
-    async function sendOnceRobust(chat: any, p: any) {
-      try { return await chat.sendMessage(p); } catch (_) {}
-      try { return await chat.sendMessage({ message: p }); } catch (_) {}
-      return await chat.sendMessage({ contents: [toContent(p)] });
-    }
-
     try {
-      const stream: AsyncGenerator<GenerateContentResponse> =
-        await sendStreamRobust(textChat as any, payload);
+      const stream = await textChat.sendMessageStream({ message: text });
 
       let sawAnyText = false;
       let functionCallHandled = false;
 
       for await (const chunk of stream) {
-        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-          for (const fc of chunk.functionCalls) {
-            if (fc.name === 'createDisplayPost') {
-              const { topic, offerDetails, product, validity } = fc.args as any;
-              let constructedPrompt = (topic as string) || '';
-              if (product) constructedPrompt += ` på ${product}`;
-              if (offerDetails) constructedPrompt += ` med ${offerDetails}`;
-              if (validity) constructedPrompt += ` som gäller ${validity}`;
-              
-              if (constructedPrompt) {
-                setPostPrompt(constructedPrompt);
+        // Kolla efter funktionsanrop i kandidaterna
+        const functionCalls = chunk.candidates?.[0]?.content?.parts?.filter(p => !!p.functionCall);
+        
+        if (functionCalls && functionCalls.length > 0) {
+          for (const p of functionCalls) {
+            const fc = p.functionCall;
+            if (fc && fc.name === 'createDisplayPost') {
+              const promptArg = fc.args.prompt;
+              if (promptArg && typeof promptArg === 'string') {
+                setPostPrompt(promptArg);
                 setIsChannelSelectOpen(true);
                 functionCallHandled = true;
-              } else {
-                showToast({ message: "AI:n försökte skapa ett inlägg men saknade en idé.", type: 'info' });
+                break;
               }
-              break; 
             }
           }
         }
         
         if (functionCallHandled) break;
 
-        const maybeText = (chunk as any)?.text;
-        const delta = typeof maybeText === 'function' ? maybeText() : (maybeText ?? '');
-        if (typeof delta === 'string' && delta) {
+        const delta = chunk.text; // Använd .text propertyn enligt riktlinjer
+        if (delta) {
           sawAnyText = true;
           appendToAssistant(delta);
         }
       }
 
       if (!sawAnyText && !functionCallHandled) {
-        const nonStream = await sendOnceRobust(textChat as any, payload);
-        const fullText =
-          typeof (nonStream as any)?.text === 'function'
-            ? (nonStream as any).text()
-            : (nonStream as any)?.text || '';
-        appendToAssistant(fullText || '\n\nUrsäkta, jag kunde inte generera ett svar den här gången.');
+          appendToAssistant('\n\nJag kunde inte generera ett svar just nu. Prova igen om en liten stund!');
       }
     } catch (err: any) {
       console.error('Error sending message:', err);
       const errMsg = (err?.message || String(err));
       appendToAssistant(`\n\nUrsäkta, något gick fel${errMsg ? `: ${errMsg}` : '.'}`);
     } finally {
-      finish();
+      setIsLoading(false);
+      streamingRef.current = false;
     }
   };
 
@@ -414,8 +369,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
 
   const handleMultiChannelSelect = async (screens: DisplayScreen[]) => {
     if (!postPrompt) {
-        // Fallback safety check. If prompt is missing, try to restore from last suggestion if possible, or error out safely.
-        console.error("Missing postPrompt in handleMultiChannelSelect");
         showToast({ message: "Kunde inte hitta instruktionerna för inlägget. Försök igen.", type: 'error' });
         return;
     }
@@ -429,8 +382,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     appendToAssistant(`Jag förstår! Jag skapar nu utkast för ${screenNames}... Det kan ta en liten stund.`);
 
     try {
-        // Run sequentially or with limited concurrency to avoid overwhelming the backend/quota if many screens
-        // Here we run parallel but the backend service has timeouts now.
         const results = await Promise.allSettled(screens.map(async (screen) => {
             const { postData, imageData } = await generateCompletePost(postPrompt, organization, screen.aspectRatio);
             const imageUrl = imageData ? `data:${imageData.mimeType};base64,${imageData.imageBytes}` : undefined;
@@ -460,15 +411,12 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
         }
         
         if (failureCount > 0) {
-             const failedReasons = results.filter(r => r.status === 'rejected').map(r => (r as PromiseRejectedResult).reason.message).join(', ');
-             appendToAssistant(`\n\nOBS: ${failureCount} inlägg kunde inte skapas. Fel: ${failedReasons}`);
+             appendToAssistant(`\n\nOBS: Några inlägg kunde tyvärr inte skapas. Prova gärna igen för de kanalerna.`);
         }
 
     } catch (e) {
         console.error("Multi-channel post creation failed", e);
-        const errorMsg = e instanceof Error ? e.message : 'Ett okänt fel inträffade.';
-        appendToAssistant(`\n\nUrsäkta, ett kritiskt fel inträffade: ${errorMsg}`);
-        showToast({ message: `Kunde inte skapa inlägg: ${errorMsg}`, type: 'error' });
+        appendToAssistant(`\n\nUrsäkta, ett fel inträffade när jag försökte skapa inläggen. Prova att fråga igen!`);
     } finally {
         setIsLoading(false);
         setPostPrompt(null);
@@ -479,21 +427,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     if (!currentUser) { showToast({ message: 'Du måste vara inloggad.', type: 'error' }); return; }
     isClosingIntentionally.current = false;
     setConnectionState('connecting');
-
-    const createDisplayPost: FunctionDeclaration = {
-        name: 'createDisplayPost',
-        description: "Används för att skapa ett komplett utkast till ett inlägg för en digital skylt, inklusive text och bild, baserat på användarens önskemål. Anropa denna när användaren säger något i stil med 'skapa ett inlägg om...'.",
-        parameters: {
-            type: Type.OBJECT,
-            properties: {
-                prompt: {
-                    type: Type.STRING,
-                    description: 'En detaljerad beskrivning av vad inlägget ska handla om, baserat på användarens konversation.'
-                }
-            },
-            required: ['prompt']
-        }
-    };
 
     try {
       const token = await currentUser.getIdToken();
@@ -520,7 +453,11 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
             for (let i = 0; i < input.length; i++) pcm[i] = input[i] * 32768;
             const base64 = encode(new Uint8Array(pcm.buffer));
             if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64, tools: [{ functionDeclarations: [createDisplayPost] }] }));
+              wsRef.current.send(JSON.stringify({ 
+                type: 'audio_chunk', 
+                data: base64, 
+                tools: [{ functionDeclarations: [createDisplayPostFunctionDeclaration] }] 
+              }));
             }
           };
 
@@ -528,7 +465,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
           proc.connect(inputAudioContextRef.current.destination);
         } catch (err) {
           console.error('Mic access error:', err);
-          showToast({ message: 'Kunde inte komma åt mikrofonen. Kontrollera behörigheter.', type: 'error' });
+          showToast({ message: 'Kunde inte komma åt mikrofonen.', type: 'error' });
           stopVoiceChat();
           setConnectionState('error');
         }
@@ -594,13 +531,10 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
             case 'tool_code': {
               const fc = m.data;
               if (fc.name === 'createDisplayPost') {
-                const prompt = fc.args.prompt;
-                // FIX: Add a type check to ensure `prompt` is a string before setting state.
-                if (prompt && typeof prompt === 'string') {
-                  setPostPrompt(prompt);
+                const promptVal = fc.args.prompt;
+                if (promptVal && typeof promptVal === 'string') {
+                  setPostPrompt(promptVal);
                   setIsChannelSelectOpen(true);
-                } else {
-                  showToast({ message: "AI:n försökte skapa ett inlägg men saknade en idé.", type: 'info' });
                 }
               }
               break;
@@ -613,7 +547,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
               break;
 
             case 'error':
-              console.error('Voice server error:', m.message);
               showToast({ message: m.message || 'Ett serverfel inträffade.', type: 'error' });
               break;
           }
@@ -622,13 +555,10 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
         }
       };
 
-      ws.onerror = (err) => { console.error('WebSocket error:', err); setConnectionState('error'); };
+      ws.onerror = () => setConnectionState('error');
       ws.onclose = (ev) => {
         if (!isClosingIntentionally.current && ev.code !== 1000) {
-          showToast({
-            message: ev.code === 1006 ? 'Anslutningen till röst-tjänsten misslyckades.' : 'Röstchatten avslutades oväntat.',
-            type: ev.code === 1006 ? 'error' : 'info'
-          });
+          showToast({ message: 'Anslutningen avslutades.', type: 'info' });
         }
         stopVoiceChat();
       };
@@ -637,7 +567,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
       showToast({ message: 'Kunde inte starta röstchatt.', type: 'error' });
       setConnectionState('error');
     }
-  }, [currentUser, showToast, stopVoiceChat, organization, onEditDisplayScreenFromBot]);
+  }, [currentUser, showToast, stopVoiceChat, organization]);
 
   const handleMicClick = useCallback(() => {
     if (connectionState === 'connected' || connectionState === 'connecting') stopVoiceChat();
@@ -686,9 +616,8 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
 
   /* ------------------------------ render --------------------------- */
 
-  // Define dynamic container classes based on maximization state
   const containerClasses = isMaximized
-    ? "fixed inset-4 md:inset-10 z-50 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col animate-fade-in"
+    ? "fixed inset-4 md:inset-10 z-50 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in flex flex-col"
     : "fixed bottom-24 right-6 w-[90vw] max-w-md h-[70vh] max-h-[600px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-fade-in";
 
   return (

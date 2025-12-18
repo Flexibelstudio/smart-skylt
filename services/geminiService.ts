@@ -33,15 +33,42 @@ import * as Schemas from './aiSchemas';
 // Init
 // -------------------------------------------------------------
 
-// Hämtar API-nyckeln direkt från process.env enligt riktlinjer.
-const getApiKey = () => process.env.API_KEY;
+// @ts-ignore
+const API_KEY = undefined; // FORCE PROXY: process.env.API_KEY is ignored here to prevent client-side usage
+
+let ai: GoogleGenAI | null = null;
+if (API_KEY) {
+  try {
+    ai = new GoogleGenAI({ apiKey: API_KEY });
+  } catch (e) {
+    console.warn("Local GoogleGenAI initialization failed:", e);
+  }
+}
 
 const ensureAiInitialized = (): GoogleGenAI => {
-  const key = getApiKey();
-  if (!key) {
-    throw new Error("AI-tjänsten är inte konfigurerad (API_KEY saknas).");
+  if (!ai) {
+    throw new Error("AI-tjänsten är inte konfigurerad lokalt. Försök igen eller kontakta support.");
   }
-  return new GoogleGenAI({ apiKey: key });
+  return ai;
+};
+
+// -------------------------------------------------------------
+// Tools Definitions
+// -------------------------------------------------------------
+
+export const createDisplayPostFunctionDeclaration: FunctionDeclaration = {
+  name: 'createDisplayPost',
+  parameters: {
+    type: Type.OBJECT,
+    description: 'Används för att skapa ett komplett utkast till ett inlägg för en digital skylt, inklusive text och bild, baserat på användarens önskemål. Anropa denna när användaren uttryckligen ber om det eller bekräftar en idé ni diskuterat.',
+    properties: {
+      prompt: {
+        type: Type.STRING,
+        description: 'En detaljerad beskrivning av vad inlägget ska handla om, baserat på användarens konversation. Inkludera önskad tonalitet och visuella detaljer.',
+      },
+    },
+    required: ['prompt'],
+  },
 };
 
 // -------------------------------------------------------------
@@ -155,14 +182,14 @@ async function getCachedAIResponse<T>(
 // Proxy Functions
 // -------------------------------------------------------------
 
-async function generateContentViaProxy(model: string, contents: any, config?: any): Promise<{ text: string }> {
+async function generateContentViaProxy(model: string, contents: any, config?: any): Promise<{ text: string, functionCalls?: any[] }> {
     if (!functions) throw new Error("Cloud functions not initialized.");
     const geminiFn = functions.httpsCallable('gemini');
     const result = await geminiFn({
         action: 'generateContent',
         params: { model, contents, config }
     });
-    return result.data as { text: string };
+    return result.data as { text: string, functionCalls?: any[] };
 }
 
 async function generateImagesViaProxy(model: string, prompt: string, config?: any): Promise<{ imageBytes: string, mimeType: string }> {
@@ -196,12 +223,23 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
 // Exports
 // -------------------------------------------------------------
 
+// CHAT uses a direct connection if key exists, annars kör vi proxy-baserad stream i framtiden.
 export async function initializeMarketingCoachChat(organization: Organization): Promise<Chat> {
-  const aiClient = ensureAiInitialized();
+  // Om ingen lokal nyckel finns kan vi inte initiera en lokal chatt-instans som stöder streaming enkelt.
+  // Men för att tillfredsställa gränssnittet i MarketingCoachBot returnerar vi en instans om möjligt.
+  if (!API_KEY) {
+      // Om vi kör via proxy behövs egentligen en annan arkitektur för Chat-objektet.
+      // Men vi antar här att API_KEY finns tillgänglig i miljön där detta körs (eller via proxy-logik).
+      throw new Error("Chat kräver API-nyckel eller backend-stream.");
+  }
+  const ai = ensureAiInitialized();
   const systemInstruction = Prompts.getMarketingCoachSystemInstruction(organization);
-  return aiClient.chats.create({
+  return ai.chats.create({
     model: "gemini-3-pro-preview",
-    config: { systemInstruction },
+    config: { 
+      systemInstruction,
+      tools: [{ functionDeclarations: [createDisplayPostFunctionDeclaration] }]
+    },
     history: [],
   });
 }
@@ -388,7 +426,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
-    return (safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema) as { headlines: string[] }).headlines;
+    return safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema).headlines;
   });
 
 export const generateBodySuggestions = (headline: string, existingBodies?: string[]): Promise<string[]> =>
@@ -398,11 +436,11 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-        return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
+        return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
     }
     const aiClient = ensureAiInitialized();
     const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-    return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
+    return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
   });
 
 export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string): Promise<{ headline: string; body: string }> =>
@@ -588,7 +626,7 @@ export const getSeasonalSuggestion = (posts: DisplayPost[], organization: Organi
   const cacheKey = `ai-seasonal-suggestion-${organization.id}-${now.getFullYear()}-${now.getMonth()}`;
   return getCachedAIResponse(cacheKey, 60 * 24, () =>
     handleAIError(async () => {
-      const relevantPosts = posts.slice(0, 5).map(p => `- ${p.internalTitle}`).join("\n"); // Simplified logic
+      const relevantPosts = posts.slice(0, 5).map(p => `- ${p.internalTitle}`).join("\n"); 
       if (!relevantPosts) return null;
 
       const prompt = Prompts.getSeasonalSuggestionPrompt(organization, relevantPosts, now.toLocaleDateString("sv-SE"));
