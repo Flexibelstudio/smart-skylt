@@ -235,6 +235,7 @@ const SingleMediaEditor: React.FC<{
 
         setAiLoading('generate-image');
         try {
+            // FIX: Destructure imageBytes and mimeType from the object returned by generateDisplayPostImage
             const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             
@@ -331,18 +332,21 @@ const SingleMediaEditor: React.FC<{
     
         try {
             const { mimeType, data } = await urlToBase64(post.imageUrl);
-            const { imageBytes: newImageBytes, mimeType: newMimeType } = await editDisplayPostImage(data, mimeType, editPrompt);
-            const newDataUri = `data:${newMimeType};base64,${newImageBytes}`;
-
-            const newVariant: AiImageVariant = {
+            
+            // Vi sparar den NUVARANDE bilden som en variant i historiken INNAN vi byter ut den
+            const currentVariant: AiImageVariant = {
                 id: `variant-${Date.now()}`,
-                url: post.imageUrl, // Spara den NUVARANDE bilden som en variant innan vi byter ut den
+                url: post.imageUrl,
                 prompt: post.aiImagePrompt || '',
                 createdAt: new Date().toISOString(),
                 createdByUid: currentUser.uid,
             };
-    
-            const newVariants = [...(post.aiImageVariants || []), newVariant];
+            
+            // FIX: Destructure imageBytes and mimeType from the object returned by editDisplayPostImage
+            const { imageBytes: newImageBytes, mimeType: newMimeType } = await editDisplayPostImage(data, mimeType, editPrompt);
+            const newDataUri = `data:${newMimeType};base64,${newImageBytes}`;
+
+            const newVariants = [...(post.aiImageVariants || []), currentVariant];
             onPostChange({ 
                 ...post, 
                 imageUrl: newDataUri, 
@@ -353,6 +357,7 @@ const SingleMediaEditor: React.FC<{
     
             showToast({ message: 'Ny bildvariant skapad!', type: 'success' });
         } catch (error) {
+            console.error("AI Edit failed:", error);
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte redigera bilden.', type: 'error' });
         } finally {
             setAiLoading(false);
@@ -372,7 +377,7 @@ const SingleMediaEditor: React.FC<{
             aiImageVariants: variants,
         });
         
-        showToast({ message: 'Bild återställd till föregående version.', type: 'info' });
+        showToast({ message: 'Återställde föregående bild.', type: 'info' });
     };
 
     const handleMicClick = () => {
@@ -598,6 +603,7 @@ const CollageMediaEditor: React.FC<{
         if (!fullPrompt.trim()) return;
         setAiLoading('generate-collage-image');
         try {
+            // FIX: Destructure imageBytes and mimeType from the object returned by generateDisplayPostImage
             const { imageBytes, mimeType } = await generateDisplayPostImage(fullPrompt.trim(), screen.aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             handleAddItem({
@@ -621,6 +627,7 @@ const CollageMediaEditor: React.FC<{
     
         try {
             const { mimeType, data } = await urlToBase64(editingCollageItem.imageUrl);
+            // FIX: Destructure imageBytes and mimeType from the object returned by editDisplayPostImage
             const { imageBytes: newImageBytes, mimeType: newMimeType } = await editDisplayPostImage(data, mimeType, editPrompt);
             const newDataUri = `data:${newMimeType};base64,${newImageBytes}`;
     
