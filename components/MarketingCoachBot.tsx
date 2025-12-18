@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Chat, GenerateContentResponse, FunctionDeclaration, Type } from '@google/genai';
 import { ChatMessage, Organization, DisplayPost, DisplayScreen } from '../types';
@@ -397,7 +396,6 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
                 ...(postData as Omit<DisplayPost, 'id' | 'internalTitle'>),
                 imageUrl,
                 isAiGeneratedImage: !!imageUrl,
-                isMotionEnabled: true, // Default to true for AI-created posts
             };
 
             const targetScreen = organization.displayScreens?.find(s => s.id === screen.id);

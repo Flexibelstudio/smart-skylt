@@ -6,7 +6,7 @@ import { PrimaryButton, SecondaryButton } from '../../Buttons';
 import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary, listenToVideoOperationForPost } from '../../../services/firebaseService';
-import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage, generateMotionDna } from '../../../services/geminiService';
+import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
@@ -191,7 +191,6 @@ const SingleMediaEditor: React.FC<{
     const { showToast } = useToast();
     const [videoProgressText, setVideoProgressText] = useState("");
     const [useImageForVideo, setUseImageForVideo] = useState(false);
-    const [showCustomVideoPrompt, setShowCustomVideoPrompt] = useState(false);
 
     const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
@@ -210,11 +209,10 @@ const SingleMediaEditor: React.FC<{
         }
     }, [speechError, showToast]);
     
-    // Reset state if image is removed
+    // Reset "use image" toggle if image is removed
     useEffect(() => {
         if (!post.imageUrl) {
             setUseImageForVideo(false);
-            setShowCustomVideoPrompt(false);
         }
     }, [post.imageUrl]);
 
@@ -231,38 +229,6 @@ const SingleMediaEditor: React.FC<{
         });
     };
     
-    const handleTriggerMotionDna = async (imgUrl: string) => {
-        if (!currentUser) return;
-        try {
-            setAiLoading('generate-video');
-            setVideoProgressText("Skapar Motion DNA...");
-            
-            const { mimeType, data } = await urlToBase64(imgUrl);
-            
-            const videoUrl = await generateMotionDna(
-                data,
-                mimeType,
-                organization,
-                screen.id,
-                post.id,
-                (status) => setVideoProgressText(status)
-            );
-            
-            onPostChange({
-                ...post,
-                videoUrl: videoUrl,
-                isAiGeneratedVideo: true,
-            });
-            showToast({ message: 'Motion DNA har skapats!', type: 'success' });
-        } catch (error) {
-            console.error("Motion DNA failed:", error);
-            showToast({ message: 'Kunde inte skapa Motion DNA.', type: 'error' });
-        } finally {
-            setAiLoading(false);
-            setVideoProgressText("");
-        }
-    };
-
     const handleGenerateImage = async () => {
         const promptToGenerate = post.aiImagePrompt;
         if (!promptToGenerate || !promptToGenerate.trim()) return;
@@ -280,7 +246,7 @@ const SingleMediaEditor: React.FC<{
                 videoUrl: undefined,
                 isAiGeneratedImage: true,
             });
-            showToast({ message: 'AI-bild genererad! Nu kan du välja att animera den under videosektionen.', type: 'success' });
+            showToast({ message: 'AI-bild genererad!', type: 'success' });
     
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte generera bild.', type: 'error' });
@@ -293,6 +259,7 @@ const SingleMediaEditor: React.FC<{
         if (!post.aiVideoPrompt || !post.aiVideoPrompt.trim() || !currentUser) return;
         
         let imagePayload = undefined;
+        // Check if we should use existing image as starting frame
         if (useImageForVideo && post.imageUrl) {
              try {
                  setAiLoading('preparing-image');
@@ -496,7 +463,7 @@ const SingleMediaEditor: React.FC<{
                 <div className="p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 space-y-3">
                     <label className="flex items-center gap-2 text-sm font-semibold text-indigo-800 dark:text-indigo-300">
                         <VideoCameraIcon className="w-5 h-5"/>
-                        Skapa video med AI (Text-to-Video)
+                        Skapa video med AI
                     </label>
                     {isVideoGenerating ? (
                         <div className="flex items-center gap-3 p-4 bg-indigo-600 dark:bg-indigo-700 rounded-lg text-white border border-indigo-500 shadow-xl animate-pulse">
@@ -510,67 +477,34 @@ const SingleMediaEditor: React.FC<{
                             </div>
                         </div>
                     ) : (
-                        <div className="space-y-3">
+                        <>
                             {post.imageUrl && (
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-2 p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-md border border-indigo-200 dark:border-indigo-700/50">
-                                        <input
-                                            type="checkbox"
-                                            id="useImageForVideo"
-                                            checked={useImageForVideo}
-                                            onChange={(e) => {
-                                                setUseImageForVideo(e.target.checked);
-                                                if (!e.target.checked) setShowCustomVideoPrompt(false);
-                                            }}
-                                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
-                                            disabled={!!aiLoading}
-                                        />
-                                        <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
-                                            Använd inläggets bild som startbild
-                                        </label>
-                                    </div>
-
-                                    {useImageForVideo && (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleTriggerMotionDna(post.imageUrl!)}
-                                                className="flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 border-2 border-indigo-500 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all group"
-                                            >
-                                                <SparklesIcon className="w-8 h-8 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
-                                                <span className="font-bold text-indigo-900 dark:text-white">Motion DNA</span>
-                                                <span className="text-[10px] text-slate-500 text-center mt-1">Automatisk magisk rörelse utifrån ditt varumärke</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowCustomVideoPrompt(true)}
-                                                className={`flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 border-2 rounded-xl transition-all group ${showCustomVideoPrompt ? 'border-primary bg-primary/5' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400'}`}
-                                            >
-                                                <PencilIcon className="w-8 h-8 text-slate-400 group-hover:text-indigo-400 mb-2 group-hover:scale-110 transition-transform" />
-                                                <span className="font-bold text-slate-800 dark:text-white">Anpassad rörelse</span>
-                                                <span className="text-[10px] text-slate-500 text-center mt-1">Beskriv själv hur bilden ska röra sig</span>
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {(!useImageForVideo || showCustomVideoPrompt) && (
-                                <div className="space-y-3 animate-fade-in">
-                                    <textarea
-                                        value={post.aiVideoPrompt || ''}
-                                        onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
-                                        placeholder={useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa..."}
-                                        rows={3}
-                                        className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+                                <div className="flex items-center gap-2 mb-1 p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-md border border-indigo-200 dark:border-indigo-700/50">
+                                    <input
+                                        type="checkbox"
+                                        id="useImageForVideo"
+                                        checked={useImageForVideo}
+                                        onChange={(e) => setUseImageForVideo(e.target.checked)}
+                                        className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
                                         disabled={!!aiLoading}
                                     />
-                                    <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim() || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
-                                        {useImageForVideo ? "Animera bild" : "Generera video"}
-                                    </PrimaryButton>
+                                    <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
+                                        Använd inläggets bild som startbild
+                                    </label>
                                 </div>
                             )}
-                        </div>
+                            <textarea
+                                value={post.aiVideoPrompt || ''}
+                                onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
+                                placeholder={useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa..."}
+                                rows={3}
+                                className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+                                disabled={!!aiLoading}
+                            />
+                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim() || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
+                                {useImageForVideo ? "Animera bild" : "Generera video"}
+                            </PrimaryButton>
+                        </>
                     )}
                 </div>
 

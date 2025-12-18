@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -294,7 +293,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             id: `new-${Date.now()}`,
             internalTitle: template ? template.templateName : 'Nytt inlägg',
             ...basePost,
-            isMotionEnabled: true, // Default Motion DNA to true for new posts
             headlineFontFamily: template?.postData.headlineFontFamily ?? organization.headlineFontFamily,
             bodyFontFamily: template?.postData.bodyFontFamily ?? organization.bodyFontFamily,
         };

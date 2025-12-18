@@ -143,8 +143,7 @@ export interface DisplayPost {
   sharedAt?: string; 
   suggestionOriginId?: string; 
   automationId?: string; 
-  status?: 'active' | 'archived';
-  isMotionEnabled?: boolean; // NEW: Controls whether to generate Motion DNA (Image-to-Video)
+  status?: 'active' | 'archived'; 
 }
 
 // A PostTemplate for creating reusable post layouts

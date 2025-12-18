@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
@@ -366,11 +365,13 @@ const DraggableTextElement: React.FC<any> = ({
 const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) => {
      const tagRef = useRef<HTMLDivElement>(null);
      const isDraggable = !!onUpdatePosition;
+     // FIX: Lade till isDragging-state för att lösa kompileringsfelet "Cannot find name 'setIsDragging'" och möjliggöra visuell feedback
      const [isDragging, setIsDragging] = useState(false);
 
      const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !tagRef.current) return;
         e.preventDefault(); e.stopPropagation();
+        // FIX: Sätt isDragging till true när användaren börjar dra taggen
         setIsDragging(true);
         const parent = tagRef.current.parentElement;
         if (!parent) return;
@@ -393,6 +394,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
             });
         };
         const onDragEnd = () => {
+             // FIX: Sätt isDragging till false när användaren släpper taggen
              setIsDragging(false);
              window.removeEventListener('mousemove', onDragMove as any);
              window.removeEventListener('mouseup', onDragEnd);
@@ -422,6 +424,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         whiteSpace: 'nowrap',
         boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
         cursor: isDraggable ? 'grab' : 'default',
+        // FIX: Använd isDragging för att sänka opaciteten under dragning
         opacity: isDragging ? 0.7 : 1
      };
 
@@ -532,6 +535,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const mediaStyle: React.CSSProperties = {
         position: 'absolute', 
         objectFit: 'cover', 
+        zIndex: 1,
         ...((post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') ? { inset: 0, width: '100%', height: '100%' } :
            (post.layout === 'image-left') ? { top: 0, left: 0, width: isPortrait ? '100%' : '50%', height: isPortrait ? '50%' : '100%' } :
            (post.layout === 'image-right') ? { bottom: 0, right: 0, width: isPortrait ? '100%' : '50%', height: isPortrait ? '50%' : '100%' } : {})
@@ -547,15 +551,20 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
     const isMedia = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
     
+    // QR Calc
+    // FIX: qrCodePosition och qrCodeSize har nu lagts till i DisplayPost-gränssnittet i types/content.ts för att stödja denna legacy-beräkning
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
     const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
 
+    // Headline & Body Defaults
+    // Fallback logic: Om headlinePositionX inte finns, använd gamla textPositionX för rubriken (för bakåtkompatibilitet)
     const hX = post.headlinePositionX ?? post.textPositionX ?? 50;
     const hY = post.headlinePositionY ?? post.textPositionY ?? 40;
     const hW = post.headlineWidth ?? post.textWidth ?? 80;
     const hAlign = post.headlineTextAlign ?? post.textAlign ?? 'center';
     
+    // Body fallbacks
     const bX = post.bodyPositionX ?? post.textPositionX ?? 50;
     const bY = post.bodyPositionY ?? (post.textPositionY ? post.textPositionY + 15 : 60);
     const bW = post.bodyWidth ?? post.textWidth ?? 80;
@@ -565,24 +574,22 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
             {isMedia && (
                 <>
-                    {/* Image is always rendered as the base/fallback layer */}
                     {(post.imageUrl || isBridgeOnly) && (
                         <img 
                             src={post.imageUrl || undefined} 
                             alt="" 
-                            className="absolute z-[1] w-full h-full" 
+                            className="absolute z-1 w-full h-full" 
                             style={mediaStyle}
                             onLoad={signalReady}
                             onError={() => !post.videoUrl && onLoadError && onLoadError()} 
                         />
                     )}
 
-                    {/* Video is rendered on top of the image layer */}
-                    {!isBridgeOnly && post.videoUrl && (
+                    {!isBridgeOnly && !post.imageUrl && post.videoUrl && (
                         <video 
                             ref={videoRef}
                             src={post.videoUrl}
-                            className="absolute z-[2] w-full h-full"
+                            className="absolute z-1 w-full h-full"
                             style={mediaStyle}
                             muted 
                             playsInline 
@@ -596,6 +603,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
             {post.imageOverlayEnabled && <div className="absolute inset-0 z-10" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
             
+            {/* Rubrik-låda */}
             {post.headline && (
                 <DraggableTextElement
                     type="headline"
@@ -615,6 +623,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 />
             )}
 
+            {/* Brödtext-låda */}
             {post.body && (
                 <DraggableTextElement
                     type="body"

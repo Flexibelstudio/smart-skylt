@@ -426,7 +426,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
-    return (safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema) as { headlines: string[] }).headlines;
+    return safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema).headlines;
   });
 
 export const generateBodySuggestions = (headline: string, existingBodies?: string[]): Promise<string[]> =>
@@ -436,11 +436,11 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-        return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
+        return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
     }
     const aiClient = ensureAiInitialized();
     const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-    return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
+    return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
   });
 
 export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string): Promise<{ headline: string; body: string }> =>
@@ -570,30 +570,6 @@ export const generateVideoFromPrompt = (prompt: string, organizationId: string, 
     const saveResult = await saveFn({ videoUri, orgId: organizationId, screenId, postId });
     return (saveResult.data as any).videoUrl;
   });
-};
-
-/**
- * NEW: Triggers Motion DNA Image-to-Video generation using Brand DNA prompts.
- */
-export const generateMotionDna = async (
-  base64Image: string,
-  mimeType: string,
-  organization: Organization,
-  screenId: string,
-  postId: string,
-  onProgress: (status: string) => void
-): Promise<string> => {
-  const styleProfile = organization.styleProfile || {};
-  const prompt = Prompts.getVeoMotionPrompt(styleProfile);
-  
-  return generateVideoFromPrompt(
-    prompt,
-    organization.id,
-    screenId,
-    postId,
-    onProgress,
-    { mimeType, data: base64Image }
-  );
 };
 
 export const generateEventReminderText = (event: { name: string; icon: string }, daysUntil: number, organization: Organization, hasExistingCampaign: boolean): Promise<{ headline: string; subtext: string }> => {
