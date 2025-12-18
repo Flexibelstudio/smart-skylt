@@ -66,63 +66,85 @@ export interface DisplayPost {
   internalTitle: string;
   layout: 'text-only' | 'image-fullscreen' | 'video-fullscreen' | 'image-left' | 'image-right' | 'webpage' | 'collage' | 'instagram-latest' | 'instagram-stories';
   collageLayout?: 'landscape-1-2' | 'landscape-3-horiz' | 'landscape-4-grid' | 'landscape-2-horiz' | 'landscape-2-vert' | 'portrait-1-2' | 'portrait-3-vert' | 'portrait-4-grid' | 'portrait-2-horiz' | 'portrait-2-vert';
+  
+  // Headline specific
   headline?: string;
-  rotatingHeadlines?: string[];
   headlineFontSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | '8xl' | '9xl';
   headlineFontFamily?: Tag['fontFamily'];
+  headlinePositionX?: number;
+  headlinePositionY?: number;
+  headlineWidth?: number;
+  headlineTextAlign?: 'left' | 'center' | 'right';
+  headlineBackgroundEnabled?: boolean;
+  headlineBackgroundColor?: string;
+  headlineTextColor?: string;
+
+  // Body specific
   body?: string;
   bodyFontSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
   bodyFontFamily?: Tag['fontFamily'];
+  bodyPositionX?: number;
+  bodyPositionY?: number;
+  bodyWidth?: number;
+  bodyTextAlign?: 'left' | 'center' | 'right';
+  bodyBackgroundEnabled?: boolean;
+  bodyBackgroundColor?: string;
+  bodyTextColor?: string;
+
+  // Legacy / Shared style fields (keep for compatibility)
   textPosition?: ContentPosition;
   textAlign?: 'left' | 'center' | 'right';
-  textPositionX?: number; // percentage from left
-  textPositionY?: number; // percentage from top
-  textWidth?: number; // percentage width
-  imageUrl?: string; // base64 data URI
-  videoUrl?: string; // e.g., URL to an MP4 file
-  webpageUrl?: string;
-  instagramUrl?: string;
+  textPositionX?: number; 
+  textPositionY?: number; 
+  textWidth?: number; 
+  backgroundColor?: 'white' | 'black' | 'primary' | 'secondary' | 'tertiary' | 'accent' | string;
+  textColor?: 'white' | 'black' | 'primary' | 'secondary' | 'tertiary' | 'accent' | string;
+  textBackgroundEnabled?: boolean;
+  textBackgroundColor?: string;
+
   durationSeconds: number;
   startDate?: string; // ISO string
   endDate?: string;   // ISO string
   tagIds?: string[]; // Array of Tag IDs
   tagPositionOverrides?: TagPositionOverride[];
   tagColorOverrides?: TagColorOverride[];
-  backgroundColor?: 'white' | 'black' | 'primary' | 'secondary' | 'tertiary' | 'accent' | string; // Can be a keyword or a hex color string
-  textColor?: 'white' | 'black' | 'primary' | 'secondary' | 'tertiary' | 'accent' | string; // Can be a keyword or a hex color string
+  imageUrl?: string; // base64 data URI
+  videoUrl?: string; // e.g., URL to an MP4 file
+  webpageUrl?: string;
+  instagramUrl?: string;
   subImages?: SubImage[];
-  collageItems?: CollageItem[]; // NEW: Use for collage layout to support mixed media
+  collageItems?: CollageItem[]; 
   subImageConfig?: SubImageConfig;
   imageOverlayEnabled?: boolean;
-  imageOverlayColor?: string; // NEW: Color for the media overlay (e.g., #000000B3)
-  textBackgroundEnabled?: boolean; // NEW: Enable a background box for text
-  textBackgroundColor?: string; // NEW: Color for the text background box (e.g., #00000080)
+  imageOverlayColor?: string; 
   backgroundEffect?: 'none' | 'confetti' | 'hearts';
-  shareToInspiration?: boolean; // NEW: Allow users to share their post design to the gallery
+  shareToInspiration?: boolean; 
   textAnimation?: 'none' | 'typewriter' | 'fade-up-word' | 'blur-in';
   imageEffect?: 'none' | 'ken-burns-slow' | 'ken-burns-fast';
   backgroundVideoUrl?: string;
   backgroundVideoOverlayEnabled?: boolean;
-  isAiGeneratedImage?: boolean; // NEW: Flag to track if the image was created by AI
-  isAiGeneratedVideo?: boolean; // NEW: Flag to track if the video was created by AI
-  aiImagePrompt?: string; // DEPRECATED in favor of structured prompt, but kept for compatibility.
-  structuredImagePrompt?: Partial<StructuredImagePrompt>; // NEW: The structured prompt for the AI image builder.
-  aiVideoPrompt?: string; // NEW: Prompt for AI video generation
-  aiImageVariants?: AiImageVariant[]; // NEW: To store AI-generated image variations
+  isAiGeneratedImage?: boolean; 
+  isAiGeneratedVideo?: boolean; 
+  aiImagePrompt?: string; 
+  structuredImagePrompt?: Partial<StructuredImagePrompt>; 
+  aiVideoPrompt?: string; 
+  aiImageVariants?: AiImageVariant[]; 
   transitionToNext?: 'fade' | 'slide' | 'dissolve';
   qrCodeUrl?: string;
-  qrCodePosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'; // Deprecated
-  qrCodeSize?: 'sm' | 'md' | 'lg' | 'xl'; // Deprecated
-  qrPositionX?: number; // percentage from left
-  qrPositionY?: number; // percentage from top
-  qrWidth?: number; // percentage of container width
-  splitRatio?: number; // % of space for image in split layouts (25-75)
-  sharedFrom?: string; // NEW: Renamed from sharedFromScreenId to track original channel ID.
-  sharedFromPostId?: string; // NEW: To link a shared post to its original post for syncing.
-  sharedAt?: string; // NEW: ISO string timestamp of when the post was shared.
-  suggestionOriginId?: string; // NEW: Temp field to link an edited post back to its suggestion.
-  automationId?: string; // NEW: Link post back to the automation that created it.
-  status?: 'active' | 'archived'; // NEW: Lifecycle status for automated posts.
+  // FIX: qrCodePosition och qrCodeSize har lagts till för att stödja legacy-beräkningar i DisplayPostRenderer.
+  qrCodePosition?: string;
+  qrCodeSize?: string;
+  qrPositionX?: number; 
+  qrPositionY?: number; 
+  qrWidth?: number; 
+  splitRatio?: number; 
+  sharedFrom?: string; 
+  sharedFromPostId?: string; 
+  sharedAt?: string; 
+  suggestionOriginId?: string; 
+  automationId?: string; 
+  status?: 'active' | 'archived';
+  isMotionEnabled?: boolean; // NEW: Controls whether to generate Motion DNA (Image-to-Video)
 }
 
 // A PostTemplate for creating reusable post layouts

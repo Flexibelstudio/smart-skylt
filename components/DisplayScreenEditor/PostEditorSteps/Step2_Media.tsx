@@ -6,7 +6,7 @@ import { PrimaryButton, SecondaryButton } from '../../Buttons';
 import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary, listenToVideoOperationForPost } from '../../../services/firebaseService';
-import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
+import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage, generateMotionDna } from '../../../services/geminiService';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
@@ -229,6 +229,36 @@ const SingleMediaEditor: React.FC<{
         });
     };
     
+    const handleTriggerMotionDna = async (imageBytes: string, mimeType: string) => {
+        try {
+            setAiLoading('generate-video');
+            setVideoProgressText("Skapar Motion DNA...");
+            
+            const videoUrl = await generateMotionDna(
+                imageBytes,
+                mimeType,
+                organization,
+                screen.id,
+                post.id,
+                (status) => setVideoProgressText(status)
+            );
+            
+            onPostChange({
+                ...post,
+                imageUrl: `data:${mimeType};base64,${imageBytes}`,
+                videoUrl: videoUrl,
+                isAiGeneratedVideo: true,
+            });
+            showToast({ message: 'Motion DNA har skapats!', type: 'success' });
+        } catch (error) {
+            console.error("Motion DNA failed:", error);
+            showToast({ message: 'Kunde inte skapa Motion DNA, behåller statisk bild.', type: 'info' });
+        } finally {
+            setAiLoading(false);
+            setVideoProgressText("");
+        }
+    };
+
     const handleGenerateImage = async () => {
         const promptToGenerate = post.aiImagePrompt;
         if (!promptToGenerate || !promptToGenerate.trim()) return;
@@ -240,6 +270,7 @@ const SingleMediaEditor: React.FC<{
             const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             
+            // First update post with static image
             onPostChange({
                 ...post,
                 imageUrl: dataUri,
@@ -247,10 +278,14 @@ const SingleMediaEditor: React.FC<{
                 isAiGeneratedImage: true,
             });
             showToast({ message: 'AI-bild genererad!', type: 'success' });
+            
+            // NEW: Automatically trigger Motion DNA if enabled
+            if (post.isMotionEnabled ?? true) {
+                await handleTriggerMotionDna(imageBytes, mimeType);
+            }
     
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte generera bild.', type: 'error' });
-        } finally {
             setAiLoading(false);
         }
     };
@@ -350,10 +385,15 @@ const SingleMediaEditor: React.FC<{
             });
     
             showToast({ message: 'Ny bildvariant skapad!', type: 'success' });
+
+            // NEW: Automatically trigger Motion DNA for edited image if enabled
+            if (post.isMotionEnabled ?? true) {
+                await handleTriggerMotionDna(newImageBytes, newMimeType);
+            }
+
         } catch (error) {
             console.error("AI Edit failed:", error);
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte redigera bilden.', type: 'error' });
-        } finally {
             setAiLoading(false);
         }
     };
@@ -453,6 +493,22 @@ const SingleMediaEditor: React.FC<{
                         isListening={isListening}
                         onSpeechClick={handleMicClick}
                     />
+
+                    {/* Motion DNA Toggle */}
+                    <div className="flex items-center gap-2 py-1">
+                        <input
+                            type="checkbox"
+                            id="isMotionEnabled"
+                            checked={post.isMotionEnabled ?? true}
+                            onChange={(e) => onPostChange({ ...post, isMotionEnabled: e.target.checked })}
+                            className="h-4 w-4 rounded text-primary focus:ring-primary border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <label htmlFor="isMotionEnabled" className="text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer select-none flex items-center gap-1.5">
+                            <SparklesIcon className="w-4 h-4 text-purple-500" />
+                            Gör bilden levande (Motion DNA)
+                        </label>
+                    </div>
+
                     <div className="flex gap-2 pt-2">
                         <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-image'} disabled={!post.aiImagePrompt?.trim() || !!aiLoading} className="bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-500/20">
                             Generera bild
@@ -463,7 +519,7 @@ const SingleMediaEditor: React.FC<{
                 <div className="p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 space-y-3">
                     <label className="flex items-center gap-2 text-sm font-semibold text-indigo-800 dark:text-indigo-300">
                         <VideoCameraIcon className="w-5 h-5"/>
-                        Skapa video med AI
+                        Skapa video med AI (Text-to-Video)
                     </label>
                     {isVideoGenerating ? (
                         <div className="flex items-center gap-3 p-4 bg-indigo-600 dark:bg-indigo-700 rounded-lg text-white border border-indigo-500 shadow-xl animate-pulse">

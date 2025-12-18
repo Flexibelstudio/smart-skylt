@@ -426,7 +426,8 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
-    return safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema).headlines;
+    // FIX: Explicitly cast the parsed JSON result to the expected type to resolve 'unknown' property access error.
+    return (safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema) as { headlines: string[] }).headlines;
   });
 
 export const generateBodySuggestions = (headline: string, existingBodies?: string[]): Promise<string[]> =>
@@ -436,11 +437,13 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-        return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
+        // FIX: Explicitly cast the parsed JSON result to the expected type to resolve 'unknown' property access error.
+        return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
     }
     const aiClient = ensureAiInitialized();
     const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-    return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
+    // FIX: Explicitly cast the parsed JSON result to the expected type to resolve 'unknown' property access error.
+    return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
   });
 
 export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string): Promise<{ headline: string; body: string }> =>
@@ -572,6 +575,30 @@ export const generateVideoFromPrompt = (prompt: string, organizationId: string, 
   });
 };
 
+/**
+ * NEW: Triggers Motion DNA Image-to-Video generation using Brand DNA prompts.
+ */
+export const generateMotionDna = async (
+  base64Image: string,
+  mimeType: string,
+  organization: Organization,
+  screenId: string,
+  postId: string,
+  onProgress: (status: string) => void
+): Promise<string> => {
+  const styleProfile = organization.styleProfile || {};
+  const prompt = Prompts.getVeoMotionPrompt(styleProfile);
+  
+  return generateVideoFromPrompt(
+    prompt,
+    organization.id,
+    screenId,
+    postId,
+    onProgress,
+    { mimeType, data: base64Image }
+  );
+};
+
 export const generateEventReminderText = (event: { name: string; icon: string }, daysUntil: number, organization: Organization, hasExistingCampaign: boolean): Promise<{ headline: string; subtext: string }> => {
   const cacheKey = `ai-event-reminder-${organization.id}-${event.name}-${daysUntil}`;
   return getCachedAIResponse(cacheKey, 60 * 6, () =>
@@ -580,11 +607,11 @@ export const generateEventReminderText = (event: { name: string; icon: string },
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiEventReminderSchema };
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-          return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
+          return safeParseJSON(response.text ?? "{}", Schemas.GenAiEventReminderSchema) as { headline: string; subtext: string };
       }
       const aiClient = ensureAiInitialized();
       const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-      return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
+      return safeParseJSON(response.text ?? "{}", Schemas.GenAiEventReminderSchema) as { headline: string; subtext: string };
     })
   );
 };
@@ -612,11 +639,11 @@ export const generateRhythmReminderText = (organization: Organization, analysis:
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiRhythmReminderSchema };
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-          return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
+          return safeParseJSON(response.text ?? "{}", Schemas.GenAiRhythmReminderSchema) as { headline: string; subtext: string };
       }
       const aiClient = ensureAiInitialized();
       const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-      return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
+      return safeParseJSON(response.text ?? "{}", Schemas.GenAiRhythmReminderSchema) as { headline: string; subtext: string };
     })
   );
 };

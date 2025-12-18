@@ -1,6 +1,5 @@
 
-
-import { Organization, DisplayScreen, DisplayPost } from '../types';
+import { Organization, DisplayScreen, DisplayPost, StyleProfile } from '../types';
 
 export const getMarketingCoachSystemInstruction = (
   organization: Organization
@@ -373,4 +372,31 @@ Nya lärdomar:
 ${learnLog.map(l => `- ${l}`).join("\n")}
 
 Skriv en ny, uppdaterad profiltext som integrerar de nya lärdomarna. Var koncis. Svara endast med texten.`;
+};
+
+/**
+ * NEW: Generates a motion prompt for Veo 3.1 based on a static image and brand DNA.
+ */
+export const getVeoMotionPrompt = (styleProfile: Partial<StyleProfile>): string => {
+  return `
+  You are the Motion Art Director for SmartSkylt. Your task is to transform a static retail image into a high-end 'Cinemagraph'.
+  
+  CORE RULES:
+  1. Preserve Integrity: Never morph, distort, or change the shape of the main product or the brand logo.
+  2. Subtlety First: Movement should be ambient and atmospheric (e.g., flowing steam, flickering candlelight, moving clouds, or lens flares).
+  3. Seamless Loop: The animation must feel continuous and professional for a digital storefront.
+  4. DNA Alignment: Match the 'speed' and 'intensity' of the motion to the provided Brand DNA Profile.
+
+  BRAND DNA CONTEXT:
+  - Tone: ${styleProfile.brandPersonality || 'Professional'} 
+  - Visual Style: ${styleProfile.visualStyle || 'High-end retail'}
+  
+  MOTION INSTRUCTIONS:
+  1. Identify the natural elements in the image. If liquid/food: add subtle rising steam. If nature: add a 2mph breeze.
+  2. Light: Add a slow "breathing" light effect or a soft lens flare.
+  3. Movement Speed: ${styleProfile.brandPersonality?.toLowerCase().includes('energetic') ? 'Moderate' : 'Slow and elegant'}.
+  
+  NEGATIVE PROMPT: 
+  No camera shakes, no fast cuts, no distortion of text or logos, no morphing of faces.
+  `.trim();
 };
