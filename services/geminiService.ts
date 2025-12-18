@@ -426,7 +426,6 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
-    // FIX: Explicitly cast the parsed JSON result to the expected type to resolve 'unknown' property access error.
     return (safeParseJSON(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema) as { headlines: string[] }).headlines;
   });
 
@@ -437,12 +436,10 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
 
     if (functions) {
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-        // FIX: Explicitly cast the parsed JSON result to the expected type to resolve 'unknown' property access error.
         return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
     }
     const aiClient = ensureAiInitialized();
     const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-    // FIX: Explicitly cast the parsed JSON result to the expected type to resolve 'unknown' property access error.
     return (safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema) as { bodies: string[] }).bodies;
   });
 
@@ -607,11 +604,11 @@ export const generateEventReminderText = (event: { name: string; icon: string },
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiEventReminderSchema };
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-          return safeParseJSON(response.text ?? "{}", Schemas.GenAiEventReminderSchema) as { headline: string; subtext: string };
+          return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
       }
       const aiClient = ensureAiInitialized();
       const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-      return safeParseJSON(response.text ?? "{}", Schemas.GenAiEventReminderSchema) as { headline: string; subtext: string };
+      return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
     })
   );
 };
@@ -639,11 +636,11 @@ export const generateRhythmReminderText = (organization: Organization, analysis:
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiRhythmReminderSchema };
       if (functions) {
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
-          return safeParseJSON(response.text ?? "{}", Schemas.GenAiRhythmReminderSchema) as { headline: string; subtext: string };
+          return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
       }
       const aiClient = ensureAiInitialized();
       const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
-      return safeParseJSON(response.text ?? "{}", Schemas.GenAiRhythmReminderSchema) as { headline: string; subtext: string };
+      return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
     })
   );
 };
