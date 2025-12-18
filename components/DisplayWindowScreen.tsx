@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from '../context/StudioContext';
-import { BrandingOptions, DisplayPost, Organization, Tag, DisplayScreen } from '../types';
+import { DisplayPost } from '../types';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
 import { parseToDate } from '../utils/dateUtils';
 
@@ -10,10 +9,11 @@ interface DisplayWindowScreenProps {
   isEmbedded?: boolean;
 }
 
+/* ===================== Datum-helpers (Behålls orörda) ===================== */
 const isPostActive = (post: DisplayPost, now: Date) => {
     if (post.status === 'archived') return false; 
     const start = parseToDate(post.startDate, false);
-    if (start && start > now) return false;
+    if (!start || start > now) return false;
     const end = parseToDate(post.endDate, true);
     if (end && end < now) return false;
     return true;
@@ -21,20 +21,16 @@ const isPostActive = (post: DisplayPost, now: Date) => {
 
 /* ===================== UI: ProgressBar ===================== */
 const ProgressBar: React.FC<{ duration: number; isPaused: boolean }> = ({ duration, isPaused }) => {
-  const style: React.CSSProperties = {
-    animationDuration: `${duration}s`,
-    animationPlayState: isPaused ? 'paused' : 'running',
-  };
   return (
     <div className="absolute bottom-0 left-0 h-1.5 bg-white/20 w-full z-50">
-      <div key={duration} className="h-full bg-white animate-progress-bar" style={style} />
-      <style>{`
-        @keyframes progress-bar-animation { from { width: 0% } to { width: 100% } }
-        .animate-progress-bar {
-          animation-name: progress-bar-animation;
-          animation-timing-function: linear;
-          animation-fill-mode: forwards;
-        }
+      <div 
+        key={duration} // Reset animation on new duration
+        className="h-full bg-white origin-left animate-progress-linear" 
+        style={{ animationDuration: `${duration}s` }} 
+      />
+       <style>{`
+        @keyframes progress-linear { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        .animate-progress-linear { animation: progress-linear linear forwards; }
       `}</style>
     </div>
   );
@@ -43,185 +39,178 @@ const ProgressBar: React.FC<{ duration: number; isPaused: boolean }> = ({ durati
 export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack, isEmbedded = false }) => {
   const { selectedDisplayScreen, selectedOrganization } = useLocation();
 
-  // --- Sequential Loop Management (Sony Sandwich Model) ---
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [cycleCount, setCycleCount] = useState(0);
-  
-  // playbackState determines which layer is active and how we bridge transitions
-  // 'playing' -> Active post visible (Z-20)
-  // 'bridging' -> Previous post static image visible (Z-10), active post removed to clear decoder
-  // 'loading_next' -> Next post rendering hidden (Z-20, opacity-0) to prepare
-  const [playbackState, setPlaybackState] = useState<'playing' | 'bridging' | 'loading_next'>('playing');
-  
+  // --- STATE ---
+  const [currentPostId, setCurrentPostId] = useState<string | null>(null);
+  const [isClearingDecoder, setIsClearingDecoder] = useState(false); // NYTT: För Sony-säkerhet
   const [currentTime, setCurrentTime] = useState(new Date());
-  const timerRef = useRef<number | null>(null);
-  const watchdogRef = useRef<number | null>(null);
-  const lastClickTime = useRef(0);
+  
+  // Refs
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
+  const [lastClickTime, setLastClickTime] = useState(0);
 
-  /* Wake Lock for TVs */
+  /* --- WAKE LOCK (Håll skärmen vaken) --- */
   useEffect(() => {
     if (isEmbedded) return;
     const requestWakeLock = async () => {
       if ('wakeLock' in navigator) {
-        try { wakeLockSentinel.current = await (navigator as any).wakeLock.request('screen'); } catch { }
+        try {
+          // @ts-ignore
+          wakeLockSentinel.current = await navigator.wakeLock.request('screen');
+        } catch { /* noop */ }
       }
     };
     requestWakeLock();
-    return () => { if (wakeLockSentinel.current) wakeLockSentinel.current.release(); };
+    const handleVisChange = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
+    document.addEventListener('visibilitychange', handleVisChange);
+    return () => {
+       // @ts-ignore
+      if (wakeLockSentinel.current) wakeLockSentinel.current.release();
+      document.removeEventListener('visibilitychange', handleVisChange);
+    };
   }, [isEmbedded]);
 
-  /* Time Tick for Schedule Check */
+  /* --- TIME TICK --- */
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(t);
   }, []);
 
-  /* Filter Active Posts */
+  /* --- FILTER ACTIVE POSTS --- */
   const activePosts = useMemo(() => {
     const posts = selectedDisplayScreen?.posts ?? [];
     if (!selectedDisplayScreen?.isEnabled || posts.length === 0) return [];
     return posts.filter(p => isPostActive(p, currentTime));
   }, [selectedDisplayScreen, currentTime]);
 
-  const currentPost = activePosts[currentIdx] || null;
-  const nextIdx = (currentIdx + 1) % (activePosts.length || 1);
-  const nextPost = activePosts[nextIdx] || null;
+  /* --- DETERMINE CURRENT POST --- */
+  const currentPost = useMemo(() => {
+      if (activePosts.length === 0) return null;
+      if (!currentPostId) return activePosts[0];
+      return activePosts.find(p => p.id === currentPostId) || activePosts[0];
+  }, [activePosts, currentPostId]);
 
-  /* ADVANCE LOGIC (The Sandwich Engine) */
+  /* --- SÄKER NAVIGATION (THE SONY MODEL) --- */
   const advance = useCallback(() => {
     if (activePosts.length === 0) return;
+
+    const currentIndex = activePosts.findIndex(p => p.id === (currentPostId || activePosts[0].id));
+    // Om posten försvunnit (t.ex. datum gick ut), börja om
+    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
     
-    // Clear all active durations and watchdogs
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    if (watchdogRef.current) window.clearTimeout(watchdogRef.current);
+    const nextIndex = (safeIndex + 1) % activePosts.length;
+    const nextPost = activePosts[nextIndex];
+    const prevPost = activePosts[safeIndex];
 
-    // 1. Switch to Bridging: Removes the active post (and its video decoder) 
-    // but keeps a static image of it as a bridge for the viewer.
-    setPlaybackState('bridging');
+    // Detektera om vi går Video -> Video (Risk för krasch)
+    const isPrevVideo = prevPost?.type === 'video' || (prevPost?.layout.includes('video') && !!prevPost?.videoUrl);
+    const isNextVideo = nextPost?.type === 'video' || (nextPost?.layout.includes('video') && !!nextPost?.videoUrl);
+    
+    const needsDecoderReset = isPrevVideo && isNextVideo;
 
-    // Sony Safe-Gap: Transitional pause if switching from Video to Video
-    const isVideoToVideo = (currentPost?.videoUrl || currentPost?.layout?.includes('video')) && 
-                           (nextPost?.videoUrl || nextPost?.layout?.includes('video'));
-    const pauseTime = isVideoToVideo ? 500 : 0;
-
-    window.setTimeout(() => {
-      // 2. Load the next post hidden (opacity-0)
-      setCurrentIdx(nextIdx);
-      setCycleCount(c => c + 1);
-      setPlaybackState('loading_next');
-
-      // 3. Sony Watchdog: Fail-fast if the next slide takes more than 7s to signal "ready"
-      watchdogRef.current = window.setTimeout(() => {
-        console.warn("Display: Media took too long to load. Advancing silently.");
-        advance();
-      }, 7000);
-    }, pauseTime);
-
-  }, [currentIdx, activePosts, nextIdx, currentPost, nextPost]);
-
-  /* READY HANDLER (Received from PostRenderer) */
-  const handleNextReady = useCallback(() => {
-    if (playbackState === 'loading_next') {
-      // Clear the loading watchdog
-      if (watchdogRef.current) window.clearTimeout(watchdogRef.current);
+    if (needsDecoderReset) {
+      // 1. Tvinga bort allt från DOM (svart skärm)
+      setIsClearingDecoder(true);
       
-      // Post is fully prepared (Image loaded or Video ready to play)
-      setPlaybackState('playing');
-      
-      // Setup duration timer for static content (videos use onEnded)
-      const isVideo = currentPost && (currentPost.videoUrl || currentPost.layout?.includes('video'));
-      if (!isVideo) {
-        timerRef.current = window.setTimeout(advance, (currentPost?.durationSeconds ?? 10) * 1000);
-      }
+      // 2. Vänta en halv sekund så hårdvaran töms
+      setTimeout(() => {
+        setCurrentPostId(nextPost.id);
+        // 3. Återställ rendering
+        setTimeout(() => setIsClearingDecoder(false), 50);
+      }, 500);
+    } else {
+      // Bild -> Video eller Video -> Bild är säkert att byta direkt
+      setCurrentPostId(nextPost.id);
     }
-  }, [playbackState, currentPost, advance]);
+  }, [activePosts, currentPostId]);
 
-  /* ERROR HANDLER (Fail-Fast) */
-  const handleLoadError = useCallback(() => {
-    console.warn("Display: Media error or stall detected. Skipping to next.");
-    advance();
-  }, [advance]);
 
-  // Initial jump to first active post if current becomes invalid
-  useEffect(() => {
-      if (activePosts.length > 0 && !currentPost) {
-          setCurrentIdx(0);
-      }
-  }, [activePosts, currentPost]);
-
-  /* Double click for Admin return */
+  /* --- ADMIN CLICK --- */
   const handleAdminClick = (e: React.MouseEvent) => {
     if (isEmbedded) return;
     const now = Date.now();
-    if (now - lastClickTime.current < 500) { onBack(); }
-    lastClickTime.current = now;
+    if (now - lastClickTime < 500) { e.stopPropagation(); onBack(); }
+    setLastClickTime(now);
   };
 
-  if (!selectedDisplayScreen || !selectedOrganization) return null;
+  /* --- LOADING / ERROR STATES --- */
+  if (!selectedDisplayScreen || !selectedOrganization) {
+    return <div className="bg-black text-white min-h-screen flex items-center justify-center">Laddar...</div>;
+  }
+  if (!selectedDisplayScreen.isEnabled) {
+    return <div className="bg-black text-white min-h-screen flex items-center justify-center">Skärm ej aktiv</div>;
+  }
 
-  const logoUrl = selectedOrganization.logoUrlDark || selectedOrganization.logoUrlLight;
+  // Branding config
   const branding = selectedDisplayScreen.branding;
+  const logoUrl = selectedOrganization.logoUrlDark || selectedOrganization.logoUrlLight;
+  const getPositionClasses = (position = 'bottom-right') => {
+    switch (position) {
+      case 'top-left': return 'top-6 left-6';
+      case 'top-right': return 'top-6 right-6';
+      case 'bottom-left': return 'bottom-6 left-6';
+      default: return 'bottom-6 right-6';
+    }
+  };
+
+  const isVideoPost = currentPost && (currentPost.type === 'video' || currentPost.layout.includes('video')) && !!currentPost.videoUrl;
 
   return (
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
       
-      {/* 
-          BRIDGE LAYER (Z-10): 
-          Shows a static image of the PREVIOUS post while the next one is 
-          removed from DOM (bridging) or loading in the background (loading_next).
+      {/* HÄR ÄR NYCKELN TILL STABILITETEN:
+          Antingen visar vi en svart "Clearing"-div, eller så renderar vi EN ENDA renderer.
+          Inga komplexa Wrappers som ligger ovanpå varandra.
       */}
-      {currentPost && (playbackState === 'bridging' || playbackState === 'loading_next') && (
-        <div className="absolute inset-0 z-10">
-          <DisplayPostRenderer
-            // Logic: we want to show the post that was just visible
-            post={activePosts[currentIdx === 0 ? activePosts.length - 1 : currentIdx - 1] || currentPost}
-            isBridgeOnly={true}
-            organization={selectedOrganization}
-            aspectRatio={selectedDisplayScreen.aspectRatio}
-          />
+      
+      {isClearingDecoder ? (
+        <div className="absolute inset-0 bg-black z-50" />
+      ) : (
+        currentPost ? (
+            // Key=currentPost.id tvingar React att montera om komponenten helt.
+            // Det rensar minnet effektivare än att bara uppdatera props.
+            <div className="absolute inset-0 animate-fade-in-gentle">
+                 <DisplayPostRenderer 
+                    key={currentPost.id} 
+                    post={currentPost}
+                    onFinished={advance} // Kallas när tiden är ute eller videon slut
+                    organization={selectedOrganization}
+                    allTags={selectedOrganization.tags}
+                    primaryColor={selectedOrganization.primaryColor}
+                    aspectRatio={selectedDisplayScreen.aspectRatio}
+                    mode="live"
+                 />
+            </div>
+        ) : (
+            <div className="flex items-center justify-center h-full text-gray-500">Inga aktiva inlägg</div>
+        )
+      )}
+
+      {/* Progressbar (visas ej för video då video styr sin egen tid) */}
+      {currentPost && !isVideoPost && !isClearingDecoder && (
+         <ProgressBar duration={currentPost.durationSeconds || 10} isPaused={false} />
+      )}
+
+      {/* BRANDING */}
+      {branding?.isEnabled && (branding.showLogo || branding.showName) && !isClearingDecoder && (
+        <div className={`absolute ${getPositionClasses(branding.position)} z-30`}>
+            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+                {branding.showLogo && logoUrl && <img src={logoUrl} alt="Logo" className="max-h-8 max-w-[100px] object-contain" />}
+                {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
+            </div>
         </div>
       )}
 
-      {/* 
-          ACTIVE LAYER (Z-20): 
-          This is where the actual rendering happens.
-          It's opacity-0 during 'loading_next' and fades in during 'playing'.
-      */}
-      {currentPost && (
-        <div className={`absolute inset-0 z-20 transition-opacity duration-700 ${playbackState === 'playing' ? 'opacity-100' : 'opacity-0'}`}>
-          <DisplayPostRenderer
-            key={`${currentPost.id}-${cycleCount}`}
-            post={currentPost}
-            onVideoEnded={advance}
-            onLoadReady={handleNextReady}
-            onLoadError={handleLoadError}
-            organization={selectedOrganization}
-            aspectRatio={selectedDisplayScreen.aspectRatio}
-            mode="live"
-          />
-        </div>
-      )}
-
-      {/* 
-          OVERLAY UI (Z-30+)
-      */}
-      {currentPost && playbackState === 'playing' && !currentPost.videoUrl && (
-        <ProgressBar duration={currentPost.durationSeconds ?? 10} isPaused={false} />
-      )}
-
-      {branding?.isEnabled && (branding.showLogo || branding.showName) && (
-        <div className="absolute bottom-6 right-6 z-30 flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-          {branding.showLogo && logoUrl && <img src={logoUrl} alt="" className="max-h-8 max-w-[100px] object-contain" />}
-          {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
-        </div>
-      )}
-
+      {/* EMBEDDED FOOTER */}
       {isEmbedded && (
-        <a href="https://smartskylt.se" target="_blank" rel="noopener noreferrer" className="absolute bottom-4 right-4 z-40 bg-black/50 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-sm no-underline">
+        <div className="absolute bottom-4 right-4 z-40 bg-black/50 text-white/80 text-xs px-3 py-1 rounded-full">
           Powered by Smart Skylt
-        </a>
+        </div>
       )}
+
+      <style>{`
+        .animate-fade-in-gentle { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      `}</style>
     </div>
   );
 };
