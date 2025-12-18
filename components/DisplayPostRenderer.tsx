@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { DisplayPost, Tag, CollageItem, Organization, DisplayScreen } from '../types';
+import { DisplayPost, Tag, Organization, DisplayScreen } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
 
 // --- HELPER FUNCTIONS ---
+
 const resolveColor = (colorKey: string | undefined, fallback: string, organization?: Organization, primaryColorFromProp?: string): string => {
     if (!colorKey) return fallback;
     if (colorKey.startsWith('#') || colorKey.startsWith('rgba')) return colorKey;
@@ -24,26 +25,52 @@ const ensureAbsoluteUrl = (url: string | undefined): string => {
     return `https://${url}`;
 };
 
-const mapLegacySize = (size?: string): number => size === 'lg' ? 20 : 12;
+const mapLegacySize = (size?: string): number => {
+    // Mappar gamla text-storlekar till procentuella bredder
+    switch(size) {
+        case 'sm': return 10;
+        case 'md': return 15;
+        case 'lg': return 20;
+        case 'xl': return 25;
+        default: return 15;
+    }
+};
+
 const mapLegacyPosition = (position?: string) => ({ x: 90, y: 90 });
 
-// --- SIMPLE COMPONENTS ---
+// --- COMPONENTS ---
 
 const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
     const [dataUrl, setDataUrl] = useState('');
     useEffect(() => {
-        if (url) QRCode.toDataURL(url, { width: 512, margin: 1, color: { dark: '#000', light: '#fff' } }).then(setDataUrl).catch(() => {});
+        if (url) {
+            QRCode.toDataURL(url, { 
+                width: 512, 
+                margin: 1, 
+                color: { dark: '#000000', light: '#ffffff' } 
+            }).then(setDataUrl).catch(() => {});
+        }
     }, [url]);
+    
     if (!dataUrl) return null;
-    return <img src={dataUrl} alt="QR" className={className} />;
+    return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', display: 'block' }} />;
 };
 
-const DraggableQrCode: React.FC<any> = ({ url, x, y, width, startDelay }) => {
+const DraggableQrCode: React.FC<any> = ({ url, x, y, width }) => {
+    // Hårdkodad stil för att garantera att den syns oavsett Tailwind
+    const containerStyle: React.CSSProperties = {
+        position: 'absolute',
+        left: `${x}%`,
+        top: `${y}%`,
+        width: `${width}%`,
+        transform: 'translate(-50%, -50%)',
+        zIndex: 50, // Högt Z-index
+        aspectRatio: '1/1', // VIKTIGT: Tvingar den att vara kvadratisk även innan bild laddats
+    };
+
     return (
-        <div style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${width}%`, transform: 'translate(-50%, -50%)', zIndex: 20 }} 
-             className={startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}
-             {...(startDelay > 0 ? { style: { animationDelay: `${startDelay}s`, animationFillMode: 'forwards' } } : {})}>
-            <div className="bg-white p-1 rounded-lg shadow-lg relative h-full">
+        <div style={containerStyle}>
+            <div className="bg-white p-2 rounded-lg shadow-lg w-full h-full flex items-center justify-center">
                 <QrCodeComponent url={url} className="w-full h-full" />
             </div>
         </div>
@@ -55,7 +82,7 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = 
     return <div className={className} dangerouslySetInnerHTML={html} />;
 };
 
-const TextContent: React.FC<any> = ({ post, mode, organization, startDelay }) => {
+const TextContent: React.FC<any> = ({ post, mode, organization }) => {
     const style: React.CSSProperties = {
         position: 'absolute',
         top: post.textPositionY ? `${post.textPositionY}%` : '50%',
@@ -63,18 +90,19 @@ const TextContent: React.FC<any> = ({ post, mode, organization, startDelay }) =>
         transform: 'translate(-50%, -50%)',
         width: post.textWidth ? `${post.textWidth}%` : '80%',
         textAlign: post.textAlign || 'center',
-        zIndex: 10,
-        color: resolveColor(post.textColor, '#ffffff', organization)
+        zIndex: 40,
+        color: resolveColor(post.textColor, '#ffffff', organization),
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center'
     };
-    const animClass = startDelay > 0 ? 'animate-fade-in-post opacity-0' : '';
-    const animStyle = startDelay > 0 ? { animationDelay: `${startDelay}s`, animationFillMode: 'forwards' } : {};
 
     return (
         <div style={style}>
-            <div className={post.textBackgroundEnabled ? "bg-black/50 p-6 rounded-xl backdrop-blur-sm" : ""}>
-                {post.headline && <h1 className={`font-bold mb-4 text-4xl font-display ${animClass}`} style={animStyle}>{post.headline}</h1>}
+            <div className={post.textBackgroundEnabled ? "bg-black/50 p-6 rounded-xl backdrop-blur-md" : ""}>
+                {post.headline && <h1 className="font-bold mb-4 text-4xl md:text-6xl drop-shadow-md">{post.headline}</h1>}
                 {post.body && (
-                    <div className={`text-xl font-sans ${animClass}`} style={{ ...animStyle, animationDelay: `${startDelay + 0.2}s` }}>
+                    <div className="text-xl md:text-3xl drop-shadow-md">
                         <PostMarkdownRenderer content={post.body} />
                     </div>
                 )}
@@ -83,26 +111,30 @@ const TextContent: React.FC<any> = ({ post, mode, organization, startDelay }) =>
     );
 };
 
-const DraggableTag: React.FC<any> = ({ tag, override, startDelay }) => {
+const DraggableTag: React.FC<any> = ({ tag, override }) => {
      const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x || 50}%`,
         top: `${override?.y || 50}%`,
         transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg)`,
-        zIndex: 20,
+        zIndex: 40,
         backgroundColor: tag.backgroundColor,
         color: tag.textColor,
         padding: '0.5rem 1rem',
         borderRadius: '999px',
-        fontWeight: 'bold'
+        fontWeight: 'bold',
+        whiteSpace: 'nowrap',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
      };
-     const animClass = startDelay > 0 ? 'animate-fade-in-post opacity-0' : '';
-     const animStyle = startDelay > 0 ? { animationDelay: `${startDelay}s`, animationFillMode: 'forwards' } : {};
 
      return (
-         <div style={style} className={`shadow-lg flex items-center gap-2 text-base font-sans ${animClass}`} style={animStyle}>
+         <div style={style} className="flex items-center gap-2 text-base md:text-xl">
              {tag.text}
-             {tag.url && <QrCodeComponent url={tag.url} className="w-6 h-6 bg-white p-0.5 rounded" />}
+             {tag.url && (
+                 <div className="bg-white p-1 rounded-sm w-8 h-8 flex-shrink-0">
+                     <QrCodeComponent url={tag.url} className="w-full h-full" />
+                 </div>
+             )}
          </div>
      );
 };
@@ -150,11 +182,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
     
-    // Enkel delay för texten
-    const startDelay = (mode === 'live' && !isBridgeOnly) ? 0.5 : 0;
-
     // --- SONY SIGNALING ---
-    // Vi skickar "Ready" så fort vi vet att något finns att visa
     const hasSignaled = useRef(false);
     const signalReady = useCallback(() => {
         if (!hasSignaled.current && onLoadReady) {
@@ -163,35 +191,29 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         }
     }, [onLoadReady]);
 
-    // Säkerhetstimer: Om inget media laddas inom 1s, signalera ändå för att undvika frysning
+    // Säkerhetstimer
     useEffect(() => {
-        // Om bara text -> Ready direkt
         if (!post.videoUrl && !post.imageUrl) signalReady();
-        
-        const t = setTimeout(() => {
-            if (!hasSignaled.current) signalReady();
-        }, 1000);
+        const t = setTimeout(() => { if (!hasSignaled.current) signalReady(); }, 1000);
         return () => clearTimeout(t);
     }, [post, signalReady]);
 
-    // --- VIDEO SETUP ---
+    // --- VIDEO CONTROL ---
     useEffect(() => {
         const video = videoRef.current;
         if (video) {
             video.currentTime = 0;
-            // Försök starta direkt. Om det misslyckas (autoplay policy), signalera error/nästa.
             const playPromise = video.play();
             if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.warn("Autoplay prevented:", error);
-                    // Om vi inte kan spela, måste vi gå vidare för att inte frysa skärmen
+                playPromise.catch(() => {
+                    // Om autoplay blockeras, signalera fel så vi hoppar vidare
                     if (onLoadError) onLoadError();
                 });
             }
         }
-    }, [post.videoUrl, cycleCount]); // Kör om vid ny URL eller nytt varv
+    }, [post.videoUrl, cycleCount]); 
 
-    // --- RENDER HELPERS ---
+    // --- STYLES ---
     const backgroundColor = resolveColor(post.backgroundColor, '#000000', organization, primaryColor);
     const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
     const mediaStyle: React.CSSProperties = {
@@ -204,69 +226,77 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     };
 
     // --- RENDER ---
-    // Om Bridge: Visa BARA statisk färg eller bild. Inga tunga grejer.
     if (isBridgeOnly && (post.layout === 'instagram-latest' || post.layout === 'webpage')) {
         return <div className="w-full h-full" style={{ backgroundColor }} />;
     }
     
-    // Instagram / Webpage
     if (post.layout === 'instagram-latest') return <div className="w-full h-full bg-black flex items-center justify-center text-white">Instagram (Placeholder)</div>;
     if (post.layout === 'webpage' && post.webpageUrl) return <iframe src={ensureAbsoluteUrl(post.webpageUrl)} className="w-full h-full border-0" />;
+    if (post.layout === 'instagram-stories' && organization?.id) return <InstagramStoryPost organizationId={organization.id} />;
 
     const isMedia = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
     
-    // QR
+    // QR Positionering
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
+    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15); // Default 15% bredd
 
     return (
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
             
-            {/* MEDIA LAYER */}
+            {/* MEDIA */}
             {isMedia && (
                 <>
-                    {/* BILD */}
                     {(post.imageUrl || isBridgeOnly) && (
                         <img 
                             src={post.imageUrl || undefined} 
                             alt="" 
-                            className="absolute z-1" 
+                            className="absolute z-1 w-full h-full" 
                             style={mediaStyle}
                             onLoad={signalReady}
                             onError={() => !post.videoUrl && onLoadError && onLoadError()} 
                         />
                     )}
 
-                    {/* VIDEO - RÅ TAGG UTAN WRAPPERS */}
                     {!isBridgeOnly && !post.imageUrl && post.videoUrl && (
                         <video 
                             ref={videoRef}
                             src={post.videoUrl}
-                            className="absolute z-1"
+                            className="absolute z-1 w-full h-full"
                             style={mediaStyle}
                             muted 
                             playsInline 
                             onEnded={onVideoEnded}
-                            onLoadedData={signalReady} // "Jag har bild!"
+                            onLoadedData={signalReady}
                             onError={() => onLoadError && onLoadError()}
                         />
                     )}
                 </>
             )}
 
-            {/* OVERLAY & CONTENT */}
-            {post.imageOverlayEnabled && <div className="absolute inset-0 z-3" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
+            {/* OVERLAY */}
+            {post.imageOverlayEnabled && <div className="absolute inset-0 z-10" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
             
-            {(post.headline || post.body) && <TextContent post={post} mode={mode} organization={organization} startDelay={startDelay} />}
+            {/* TEXT */}
+            {(post.headline || post.body) && <TextContent post={post} mode={mode} organization={organization} />}
             
+            {/* TAGS */}
             {showTags && post.tagIds?.map(tagId => {
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
                 const override = post.tagPositionOverrides?.find(o => o.tagId === tagId);
-                return <DraggableTag key={tagId} tag={tag} override={override} startDelay={startDelay} />;
+                return <DraggableTag key={tagId} tag={tag} override={override} />;
             })}
 
-            {post.qrCodeUrl && <DraggableQrCode url={post.qrCodeUrl} x={qrX} y={qrY} width={post.qrWidth || 12} startDelay={startDelay} />}
+            {/* QR CODE - Här renderas den! */}
+            {post.qrCodeUrl && (
+                <DraggableQrCode 
+                    url={post.qrCodeUrl} 
+                    x={qrX} 
+                    y={qrY} 
+                    width={qrW} 
+                />
+            )}
         </div>
     );
 };
