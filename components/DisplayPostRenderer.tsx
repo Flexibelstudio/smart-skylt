@@ -491,7 +491,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         return () => clearTimeout(t);
     }, [post, signalReady]);
 
-    // --- VIDEO CONTROL ---
+    // --- VIDEO CONTROL & CLEANUP ---
     useEffect(() => {
         const video = videoRef.current;
         if (video) {
@@ -501,6 +501,15 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 playPromise.catch(() => { if (onLoadError) onLoadError(); });
             }
         }
+
+        // DETTA ÄR DET NYA - STÄDNINGEN:
+        return () => {
+            if (video) {
+                video.pause(); // Stanna
+                video.removeAttribute('src'); // Ta bort källan
+                video.load(); // Tvinga webbläsaren att släppa minnet
+            }
+        };
     }, [post.videoUrl, cycleCount]); 
 
     // --- STYLES ---
