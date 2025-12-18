@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
@@ -281,9 +282,15 @@ const SingleMediaEditor: React.FC<{
         }
 
         let finalPrompt = post.aiVideoPrompt || '';
-        if (isImageAliveEnabled) {
-            const aliveSuffix = "Add subtle, looping ambient motion. Maintain absolute consistency with the starting frame. If there is liquid, add ripples or steam. If there is vegetation, add a gentle breeze. If there are lights, add subtle glimmers. The result should be a high-quality cinematic cinemagraph.";
-            finalPrompt = finalPrompt ? `${finalPrompt}. ${aliveSuffix}` : aliveSuffix;
+        if (isImageAliveEnabled || useImageForVideo) {
+            const technicalConstraint = "Start instantly from the provided image at second zero. Zero tolerance for black frames, fade-ins, or cinematic openings. The first frame MUST be pixel-identical to the source image.";
+            const motionInstruction = isImageAliveEnabled 
+                ? "Add subtle, looping ambient motion and a very slow cinematic zoom-in. Maintain absolute consistency. If there is liquid, add ripples or steam. If there is vegetation, add a gentle breeze. If there are lights, add subtle glimmers. The result should be a high-quality cinemagraph."
+                : "Apply a slow, smooth cinematic zoom-in motion starting immediately from the first frame.";
+            
+            finalPrompt = finalPrompt 
+                ? `${finalPrompt}. ${technicalConstraint} ${motionInstruction}` 
+                : `${technicalConstraint} ${motionInstruction}`;
         }
 
         setAiLoading('generate-video');
@@ -455,7 +462,7 @@ const SingleMediaEditor: React.FC<{
                 
                 <div className="p-4 rounded-lg bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50 space-y-3">
                     <label className="flex items-center gap-2 text-sm font-semibold text-purple-800 dark:text-purple-300">
-                        <SparklesIcon className="w-5 h-5"/>
+                        <span className="text-lg">✨</span>
                         Skapa bild med AI
                     </label>
                     <StructuredAiPromptBuilder 
@@ -538,7 +545,7 @@ const SingleMediaEditor: React.FC<{
 
                 {isImageGenerating && (
                     <div className="flex items-center gap-3 p-4 bg-purple-600 dark:bg-purple-700 rounded-lg text-white border border-purple-500 shadow-xl animate-pulse">
-                        <SparklesIcon className="w-6 h-6 animate-spin" />
+                        <span className="text-xl animate-spin">✨</span>
                         <div>
                             <p className="font-bold flex items-center gap-2">
                                 Skylie genererar bild...
@@ -803,7 +810,9 @@ const CollageMediaEditor: React.FC<{
             <input type="file" ref={fileInputRef} onChange={e => e.target.files && handleAddFile(e.target.files[0])} className="hidden" accept="image/*,video/mp4,video/quicktime"/>
 
             <div className="p-4 rounded-lg bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50 space-y-3">
-                <label className="flex items-center gap-2 text-sm font-semibold text-purple-800 dark:text-purple-300"><SparklesIcon className="w-5 h-5"/> Skapa bild med AI</label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-purple-800 dark:text-purple-300">
+                    <span className="text-lg">✨</span> Skapa bild med AI
+                </label>
                 <StructuredAiPromptBuilder 
                     prompt={structuredPrompt}
                     onPromptChange={setStructuredPrompt}
