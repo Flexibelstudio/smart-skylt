@@ -212,11 +212,11 @@ const SingleMediaEditor: React.FC<{
     
     // Reset toggles if image is removed
     useEffect(() => {
-        if (!post.imageUrl) {
+        if (!post.imageUrl && !post.videoUrl) {
             setUseImageForVideo(false);
             setIsImageAliveEnabled(false);
         }
-    }, [post.imageUrl]);
+    }, [post.imageUrl, post.videoUrl]);
 
     const handleStructuredPromptChange = (newPrompt: Partial<StructuredImagePrompt>) => {
         const fullPrompt = [newPrompt.subject, newPrompt.style, newPrompt.colorTone, newPrompt.perspective, newPrompt.composition, newPrompt.story].filter(Boolean).join(', ');
@@ -271,7 +271,7 @@ const SingleMediaEditor: React.FC<{
         if (shouldAnimateImage) {
              try {
                  setAiLoading('preparing-image');
-                 const { mimeType, data } = await urlToBase64(post.imageUrl);
+                 const { mimeType, data } = await urlToBase64(post.imageUrl!);
                  imagePayload = { mimeType, data };
              } catch (e) {
                  console.error("Failed to process start image for video", e);
@@ -281,12 +281,25 @@ const SingleMediaEditor: React.FC<{
              }
         }
 
+        // --- Save state for undo before we potentially switch to video mode ---
+        const currentVariants = [...(post.aiImageVariants || [])];
+        if (post.imageUrl) {
+            currentVariants.push({
+                id: `history-${Date.now()}`,
+                url: post.imageUrl,
+                prompt: post.aiImagePrompt || '',
+                createdAt: new Date().toISOString(),
+                createdByUid: currentUser.uid
+            });
+        }
+
         let finalPrompt = post.aiVideoPrompt || '';
         if (isImageAliveEnabled || useImageForVideo) {
-            const technicalConstraint = "Start instantly from the provided image at second zero. Zero tolerance for black frames, fade-ins, or cinematic openings. The first frame MUST be pixel-identical to the source image.";
+            // Skärpta instruktioner mot svart ridå
+            const technicalConstraint = "No fade-in. No black start. No curtain transitions. Start instantly from frame zero. The first frame MUST be pixel-identical to the source image.";
             const motionInstruction = isImageAliveEnabled 
-                ? "Add subtle, looping ambient motion and a very slow cinematic zoom-in. Maintain absolute consistency. If there is liquid, add ripples or steam. If there is vegetation, add a gentle breeze. If there are lights, add subtle glimmers. The result should be a high-quality cinemagraph."
-                : "Apply a slow, smooth cinematic zoom-in motion starting immediately from the first frame.";
+                ? "Apply a very slow, continuous cinematic zoom-in immediately. Maintain absolute consistency with the source. If liquid, add ripples. If light, add glimmer. Zero black frames at the start."
+                : "Apply a smooth, slow cinematic zoom-in motion starting immediately from the first frame. Instant display.";
             
             finalPrompt = finalPrompt 
                 ? `${finalPrompt}. ${technicalConstraint} ${motionInstruction}` 
@@ -312,7 +325,8 @@ const SingleMediaEditor: React.FC<{
                 ...post,
                 videoUrl: videoUrl,
                 isAiGeneratedVideo: true,
-                imageUrl: undefined
+                imageUrl: undefined, // Transition to video
+                aiImageVariants: currentVariants // Pass along the history for undo
             });
 
         } catch (error) {
@@ -378,20 +392,24 @@ const SingleMediaEditor: React.FC<{
         }
     };
 
-    const handleUndoImageEdit = () => {
+    const handleUndoMedia = () => {
         if (!post.aiImageVariants || post.aiImageVariants.length === 0) return;
         
         const variants = [...post.aiImageVariants];
         const lastVariant = variants.pop()!;
         
+        // If we are undoing a video, we need to clear the video fields and restore image
         onPostChange({
             ...post,
             imageUrl: lastVariant.url,
+            videoUrl: undefined,
+            isAiGeneratedVideo: false,
             aiImagePrompt: lastVariant.prompt,
             aiImageVariants: variants,
+            isAiGeneratedImage: true
         });
         
-        showToast({ message: 'Återställde föregående bild.', type: 'info' });
+        showToast({ message: 'Återställde till föregående vy.', type: 'info' });
     };
 
     const handleMicClick = () => {
@@ -579,17 +597,17 @@ const SingleMediaEditor: React.FC<{
                                     <PencilIcon className="h-4 w-4"/> Redigera bild med AI
                                 </button>
                             )}
+
+                            {post.aiImageVariants && post.aiImageVariants.length > 0 && (
+                                <button type="button" onClick={handleUndoMedia} className="flex items-center gap-1 text-sm font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
+                                    <ArrowUturnLeftIcon className="h-4 w-4"/> Backa ett steg
+                                </button>
+                            )}
                             
                             <button type="button" onClick={handleSaveToGallery} disabled={!!aiLoading || isSavingToGallery} className="flex items-center gap-1 text-sm font-bold text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-50">
                                 {isSavingToGallery ? <LoadingSpinnerIcon className="w-4 h-4" /> : <StarIcon className="w-4 h-4" />}
                                 Spara i galleriet
                             </button>
-
-                            {post.aiImageVariants && post.aiImageVariants.length > 0 && (
-                                <button type="button" onClick={handleUndoImageEdit} className="flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
-                                    <ArrowUturnLeftIcon className="h-4 w-4"/> Backa ett steg
-                                </button>
-                            )}
                         </div>
                     </div>
                 )}
@@ -768,6 +786,7 @@ const CollageMediaEditor: React.FC<{
         setIsSavingToGalleryId(item.id);
         try {
             let finalUrl = mediaUrl;
+            let type: 'image' | 'video' = item.type;
             let createdBy: 'user' | 'ai' = (item.isAiGeneratedImage || item.isAiGeneratedVideo) ? 'ai' : 'user';
 
             if (mediaUrl.startsWith('data:')) {
