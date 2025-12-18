@@ -11,7 +11,7 @@ import { Step3_Design } from './PostEditorSteps/Step3_Design';
 import { Step4_Publishing } from './PostEditorSteps/Step4_Publishing';
 import { useToast } from '../../context/ToastContext';
 import { getSuggestedPostById, updateSuggestedPost, uploadMediaForGallery, uploadPostAsset } from '../../services/firebaseService';
-import { CreatePostModal } from './Modals'; // Assuming this is where it is
+import { CreatePostModal } from './Modals'; 
 import { useLocation } from '../../context/StudioContext';
 
 
@@ -94,7 +94,7 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
             headlineFontFamily: template?.postData.headlineFontFamily ?? organization.headlineFontFamily,
             bodyFontFamily: template?.postData.bodyFontFamily ?? organization.bodyFontFamily,
         };
-        onPostChange(newPost); // Update parent state
+        onPostChange(newPost); 
         setIsCreatePostModalOpen(false);
     };
 
@@ -106,9 +106,6 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     const handleSaveWrapper = async () => {
         setIsSaving(true);
         try {
-            // Simply pass the post to the parent handler.
-            // The parent handler (DisplayScreenEditorScreen) manages uploading data URIs 
-            // and adding them to the media library.
             await onSave(post);
         } catch (e) {
             showToast({ message: `Kunde inte spara: ${e instanceof Error ? e.message : "Okänt fel"}`, type: 'error' });
@@ -156,8 +153,10 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                     screen={screen}
                     organization={organization}
                     onUpdateTagPosition={(tagId, pos) => onPostChange({ ...post, tagPositionOverrides: [...(post.tagPositionOverrides || []).filter(o => o.tagId !== tagId), { tagId, ...pos }] })}
-                    onUpdateTextPosition={(pos) => onPostChange({ ...post, textPositionX: pos.x, textPositionY: pos.y })}
-                    onUpdateTextWidth={(width) => onPostChange({ ...post, textWidth: width })}
+                    onUpdateHeadlinePosition={(pos) => onPostChange({ ...post, headlinePositionX: pos.x, headlinePositionY: pos.y })}
+                    onUpdateHeadlineWidth={(width) => onPostChange({ ...post, headlineWidth: width })}
+                    onUpdateBodyPosition={(pos) => onPostChange({ ...post, bodyPositionX: pos.x, bodyPositionY: pos.y })}
+                    onUpdateBodyWidth={(width) => onPostChange({ ...post, bodyWidth: width })}
                     onUpdateQrPosition={(pos) => onPostChange({ ...post, qrPositionX: pos.x, qrPositionY: pos.y })}
                     onUpdateQrWidth={(width) => onPostChange({ ...post, qrWidth: width })}
                     isTextDraggable={true}

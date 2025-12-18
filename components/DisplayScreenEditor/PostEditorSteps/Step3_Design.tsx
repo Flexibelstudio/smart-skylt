@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+
+import React, { useMemo, useState } from 'react';
 import { DisplayPost, Organization, DisplayScreen } from '../../../types';
 import { StyledSelect, FontSelector } from '../../Forms';
-import { ToggleSwitch, LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon } from '../../icons';
+import { ToggleSwitch, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon } from '../../icons';
 
-// --- Color Components (moved from main file for better organization) ---
+// --- Color Components ---
 
 const resolveColor = (
     colorKey: string | undefined, 
@@ -97,14 +98,7 @@ const ColorOpacityControl: React.FC<{
                 return { color: s_value, opacity: 1 };
             }
         }
-
-        const keywords = ['primary', 'secondary', 'tertiary', 'accent', 'black', 'white'];
-        if (keywords.includes(s_value)) {
-            return { color: resolveColor(s_value, '#000000', organization), opacity: 0.5 };
-        }
-        
         return { color: resolveColor(s_value, '#000000', organization), opacity: 0.5 };
-
     }, [value, organization]);
 
     const handleColorChange = (newColor: string) => {
@@ -137,12 +131,112 @@ const ColorOpacityControl: React.FC<{
     );
 };
 
+interface ElementDesignProps {
+    type: 'headline' | 'body';
+    post: DisplayPost;
+    organization: Organization;
+    onFieldChange: (field: keyof DisplayPost, value: any) => void;
+}
+
+const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organization, onFieldChange }) => {
+    const isHeadline = type === 'headline';
+    const prefix = isHeadline ? 'headline' : 'body';
+    
+    // Resolve current values with fallbacks
+    const fontSize = post[`${prefix}FontSize`] || (isHeadline ? '4xl' : 'lg');
+    const fontFamily = post[`${prefix}FontFamily`] || organization[`${prefix}FontFamily`] || (isHeadline ? 'display' : 'sans');
+    const textAlign = post[`${prefix}TextAlign`] || post.textAlign || 'center';
+    const bgEnabled = post[`${prefix}BackgroundEnabled`] ?? post.textBackgroundEnabled ?? false;
+    const bgColor = post[`${prefix}BackgroundColor`] || post.textBackgroundColor || 'rgba(0,0,0,0.5)';
+    const textColor = post[`${prefix}TextColor`] || post.textColor || 'white';
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Typsnitt</label>
+                    <FontSelector value={fontFamily} onChange={font => onFieldChange(`${prefix}FontFamily` as any, font)} />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Storlek</label>
+                    <StyledSelect value={fontSize} onChange={e => onFieldChange(`${prefix}FontSize` as any, e.target.value)}>
+                        {isHeadline ? (
+                            <>
+                                <option value="sm">Extra Liten</option>
+                                <option value="md">Liten</option>
+                                <option value="lg">Mindre</option>
+                                <option value="xl">Normal</option>
+                                <option value="2xl">Större</option>
+                                <option value="3xl">Stor</option>
+                                <option value="4xl">Extra Stor</option>
+                                <option value="5xl">Jättestor</option>
+                                <option value="6xl">Enorm</option>
+                                <option value="7xl">Gigantisk</option>
+                                <option value="8xl">Massiv</option>
+                                <option value="9xl">Maximal</option>
+                            </>
+                        ) : (
+                            <>
+                                <option value="xs">Extra Liten</option>
+                                <option value="sm">Liten</option>
+                                <option value="md">Mindre</option>
+                                <option value="lg">Normal</option>
+                                <option value="xl">Större</option>
+                                <option value="2xl">Stor</option>
+                                <option value="3xl">Extra Stor</option>
+                            </>
+                        )}
+                    </StyledSelect>
+                </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Justering</label>
+                <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900/50 rounded-lg w-fit border border-slate-200 dark:border-slate-700">
+                    {[
+                        { id: 'left', icon: <TextAlignLeftIcon /> },
+                        { id: 'center', icon: <TextAlignCenterIcon /> },
+                        { id: 'right', icon: <TextAlignRightIcon /> }
+                    ].map(opt => (
+                        <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => onFieldChange(`${prefix}TextAlign` as any, opt.id)}
+                            className={`p-2.5 rounded-md transition-all ${textAlign === opt.id ? 'bg-white dark:bg-slate-700 shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                            {opt.icon}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ColorPaletteInput 
+                    label="Textfärg" 
+                    value={textColor} 
+                    onChange={(color: string) => onFieldChange(`${prefix}TextColor` as any, color)} 
+                    organization={organization} 
+                />
+                <div>
+                     <ToggleSwitch label="Textbakgrund" checked={bgEnabled} onChange={c => onFieldChange(`${prefix}BackgroundEnabled` as any, c)} />
+                     {bgEnabled && (
+                        <div className="mt-2">
+                             <ColorOpacityControl value={bgColor} onChange={(c: string) => onFieldChange(`${prefix}BackgroundColor` as any, c)} organization={organization} />
+                        </div>
+                     )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const Step3_Design: React.FC<{
     post: DisplayPost;
     onPostChange: (updatedPost: DisplayPost) => void;
     organization: Organization;
     screen: DisplayScreen;
 }> = ({ post, onPostChange, organization, screen }) => {
+    const [activeTab, setActiveTab] = useState<'general' | 'headline' | 'body'>('headline');
 
     const handleFieldChange = (field: keyof DisplayPost, value: any) => {
         onPostChange({ ...post, [field]: value });
@@ -150,70 +244,51 @@ export const Step3_Design: React.FC<{
 
     return (
         <div className="space-y-6">
-            <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <ColorPaletteInput label="Bakgrundsfärg" value={post.backgroundColor || 'black'} onChange={(color: string) => handleFieldChange('backgroundColor', color)} organization={organization} />
-                    <ColorPaletteInput label="Textfärg" value={post.textColor || 'white'} onChange={(color: string) => handleFieldChange('textColor', color)} organization={organization} />
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Typsnitt (Rubriker)</label>
-                        <FontSelector value={post.headlineFontFamily || organization.headlineFontFamily || 'display'} onChange={font => handleFieldChange('headlineFontFamily', font)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Typsnitt (Brödtext)</label>
-                        <FontSelector value={post.bodyFontFamily || organization.bodyFontFamily || 'sans'} onChange={font => handleFieldChange('bodyFontFamily', font)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Rubrikstorlek</label>
-                        <StyledSelect value={post.headlineFontSize || '4xl'} onChange={e => handleFieldChange('headlineFontSize', e.target.value as DisplayPost['headlineFontSize'])}>
-                            <option value="sm">Extra Liten</option>
-                            <option value="md">Liten</option>
-                            <option value="lg">Mindre</option>
-                            <option value="xl">Normal</option>
-                            <option value="2xl">Större</option>
-                            <option value="3xl">Stor</option>
-                            <option value="4xl">Extra Stor (standard)</option>
-                            <option value="5xl">Jättestor</option>
-                            <option value="6xl">Enorm</option>
-                            <option value="7xl">Gigantisk</option>
-                            <option value="8xl">Massiv</option>
-                            <option value="9xl">Maximal</option>
-                        </StyledSelect>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Brödtextstorlek</label>
-                        <StyledSelect value={post.bodyFontSize || 'lg'} onChange={e => handleFieldChange('bodyFontSize', e.target.value as DisplayPost['bodyFontSize'])}>
-                            <option value="xs">Extra Liten</option>
-                            <option value="sm">Liten</option>
-                            <option value="md">Mindre</option>
-                            <option value="lg">Normal (standard)</option>
-                            <option value="xl">Större</option>
-                            <option value="2xl">Stor</option>
-                            <option value="3xl">Extra Stor</option>
-                        </StyledSelect>
-                    </div>
-                </div>
+            <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto scrollbar-hide">
+                <button
+                    onClick={() => setActiveTab('headline')}
+                    className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'headline' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                    Rubrik
+                </button>
+                <button
+                    onClick={() => setActiveTab('body')}
+                    className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'body' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                    Brödtext
+                </button>
+                <button
+                    onClick={() => setActiveTab('general')}
+                    className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'general' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                    Kanal & Bakgrund
+                </button>
             </div>
 
-            <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <h4 className="font-semibold">Extra Effekter</h4>
-                <ToggleSwitch label="Toning över media" checked={post.imageOverlayEnabled ?? false} onChange={c => handleFieldChange('imageOverlayEnabled', c)} />
-                {post.imageOverlayEnabled && (
-                    <div className="pl-4">
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Toningsfärg & opacitet</label>
-                        <ColorOpacityControl value={post.imageOverlayColor || 'rgba(0, 0, 0, 0.5)'} onChange={(c: string) => handleFieldChange('imageOverlayColor', c)} organization={organization} />
+            {activeTab === 'headline' && (
+                <ElementDesignEditor type="headline" post={post} organization={organization} onFieldChange={handleFieldChange} />
+            )}
+
+            {activeTab === 'body' && (
+                <ElementDesignEditor type="body" post={post} organization={organization} onFieldChange={handleFieldChange} />
+            )}
+
+            {activeTab === 'general' && (
+                <div className="space-y-6 animate-fade-in">
+                    <ColorPaletteInput label="Övergripande Bakgrundsfärg" value={post.backgroundColor || 'black'} onChange={(color: string) => handleFieldChange('backgroundColor', color)} organization={organization} />
+                    
+                    <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <h4 className="font-semibold text-slate-900 dark:text-white">Media-effekter</h4>
+                        <ToggleSwitch label="Toning över bild/video" checked={post.imageOverlayEnabled ?? false} onChange={c => handleFieldChange('imageOverlayEnabled', c)} />
+                        {post.imageOverlayEnabled && (
+                            <div className="pl-4">
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Toningsfärg & opacitet</label>
+                                <ColorOpacityControl value={post.imageOverlayColor || 'rgba(0, 0, 0, 0.5)'} onChange={(c: string) => handleFieldChange('imageOverlayColor', c)} organization={organization} />
+                            </div>
+                        )}
                     </div>
-                )}
-                 <ToggleSwitch label="Textbakgrund" checked={post.textBackgroundEnabled ?? false} onChange={c => handleFieldChange('textBackgroundEnabled', c)} />
-                {post.textBackgroundEnabled && (
-                    <div className="pl-4">
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Färg & opacitet</label>
-                        <ColorOpacityControl value={post.textBackgroundColor || 'rgba(0, 0, 0, 0.5)'} onChange={(c: string) => handleFieldChange('textBackgroundColor', c)} organization={organization} />
-                    </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
@@ -113,7 +114,6 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
 
-    // --- DRAG LOGIC ---
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
@@ -153,7 +153,6 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
         }
     };
 
-    // --- RESIZE LOGIC ---
     const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
@@ -193,7 +192,6 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
                 cursor: isDraggable ? 'move' : 'default',
                 opacity: isDragging ? 0.7 : 1
              }}>
-            {/* ÄNDRAT: p-1.5 ger en lagom vit ram */}
             <div className="bg-white p-1.5 rounded-lg shadow-lg w-full h-full flex items-center justify-center relative group">
                 <QrCodeComponent url={url} className="w-full h-full" />
                 {isDraggable && (
@@ -236,22 +234,24 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = 
     return <div className={className} dangerouslySetInnerHTML={renderMarkdown} />;
 };
 
-const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable, onUpdateTextPosition, onUpdateTextWidth }) => {
+const DraggableTextElement: React.FC<any> = ({ 
+    type, text, x, y, width, textAlign, fontSize, fontFamily, color, 
+    bgEnabled, bgColor, mode, organization, isDraggable, 
+    onUpdatePosition, onUpdateWidth 
+}) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
 
-    // --- DRAG LOGIC ---
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isTextDraggable || !onUpdateTextPosition || !containerRef.current) return;
+        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
         setIsDragging(true);
         const parent = containerRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
-        const containerRect = containerRef.current.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const initialOverride = { x: post.textPositionX || 50, y: post.textPositionY || 50 };
+        const initialOverride = { x: x || 50, y: y || 50 };
 
         const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
@@ -260,7 +260,7 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
             const dy = moveClientY - initialY;
             const dxPercent = (dx / parentRect.width) * 100;
             const dyPercent = (dy / parentRect.height) * 100;
-            onUpdateTextPosition({
+            onUpdatePosition({
                 x: Math.max(0, Math.min(100, initialOverride.x + dxPercent)),
                 y: Math.max(0, Math.min(100, initialOverride.y + dyPercent))
             });
@@ -281,9 +281,8 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
         }
     };
 
-    // --- RESIZE LOGIC (Width) ---
     const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, direction: 'left' | 'right') => {
-        if (!isTextDraggable || !onUpdateTextWidth || !containerRef.current) return;
+        if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
         const parent = containerRef.current.parentElement;
         if (!parent) return;
@@ -296,7 +295,7 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
             const dx = moveClientX - initialX;
             const newWidthPx = direction === 'right' ? initialWidth + dx : initialWidth - dx;
             const newWidthPercent = (newWidthPx / parentRect.width) * 100;
-            onUpdateTextWidth(Math.max(10, Math.min(100, newWidthPercent)));
+            onUpdateWidth(Math.max(10, Math.min(100, newWidthPercent)));
         };
         const onResizeEnd = () => {
             window.removeEventListener('mousemove', onResizeMove as any);
@@ -315,46 +314,46 @@ const TextContent: React.FC<any> = ({ post, mode, organization, isTextDraggable,
 
     const style: React.CSSProperties = {
         position: 'absolute',
-        top: post.textPositionY ? `${post.textPositionY}%` : '50%',
-        left: post.textPositionX ? `${post.textPositionX}%` : '50%',
+        top: `${y || 50}%`,
+        left: `${x || 50}%`,
         transform: 'translate(-50%, -50%)',
-        width: post.textWidth ? `${post.textWidth}%` : '80%',
-        textAlign: post.textAlign || 'center',
+        width: `${width || 80}%`,
+        textAlign: textAlign || 'center',
         zIndex: 40,
-        color: resolveColor(post.textColor, '#ffffff', organization),
-        display: 'flex', flexDirection: 'column',
-        justifyContent: post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center',
-        cursor: isTextDraggable ? 'move' : 'default',
+        color: resolveColor(color, '#ffffff', organization),
+        cursor: isDraggable ? 'move' : 'default',
         opacity: isDragging ? 0.7 : 1
     };
     
-    // Använd rätt font-klasser även i preview
-    const headlineClass = `${getHeadlineFontSizeClass(post.headlineFontSize, mode)} font-bold leading-tight drop-shadow-md break-words ${post.headlineFontFamily ? `font-${post.headlineFontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`;
-    const bodyClass = `${getBodyFontSizeClass(post.bodyFontSize, mode)} mt-4 break-words drop-shadow-md ${post.bodyFontFamily ? `font-${post.bodyFontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
+    const fontClass = type === 'headline' 
+        ? `${getHeadlineFontSizeClass(fontSize, mode)} font-bold leading-tight drop-shadow-md break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
+        : `${getBodyFontSizeClass(fontSize, mode)} mt-4 break-words drop-shadow-md ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
 
-    // Skala ner paddingen i preview-mode så texten inte knuffas iväg
-    const paddingClass = isPreviewMode(mode) ? 'p-2 rounded-md' : 'p-6 rounded-xl';
+    const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-6 rounded-xl';
 
     return (
-        <div ref={containerRef} style={style} onMouseDown={isTextDraggable ? handleDragStart : undefined} onTouchStart={isTextDraggable ? handleDragStart : undefined} className="group">
-            {isTextDraggable && (
+        <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} className="group">
+            {isDraggable && (
                 <>
-                     <div className="absolute -top-3 -right-3 p-2 bg-teal-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                        <MoveIcon className="w-5 h-5" />
+                     <div className="absolute -top-3 -right-3 p-1.5 bg-teal-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                        <MoveIcon className="w-4 h-4" />
                      </div>
                      <div onMouseDown={(e) => handleResizeStart(e, 'left')} onTouchStart={(e) => handleResizeStart(e, 'left')}
                           className="absolute -left-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-start opacity-0 group-hover:opacity-100 z-50">
-                        <div className="w-1 h-8 bg-teal-500 rounded-full shadow-lg"/>
+                        <div className="w-1 h-6 bg-teal-500 rounded-full shadow-lg"/>
                      </div>
                      <div onMouseDown={(e) => handleResizeStart(e, 'right')} onTouchStart={(e) => handleResizeStart(e, 'right')}
                           className="absolute -right-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-end opacity-0 group-hover:opacity-100 z-50">
-                        <div className="w-1 h-8 bg-teal-500 rounded-full shadow-lg"/>
+                        <div className="w-1 h-6 bg-teal-500 rounded-full shadow-lg"/>
                      </div>
                 </>
             )}
-            <div className={post.textBackgroundEnabled ? `bg-black/50 ${paddingClass} backdrop-blur-md` : ""}>
-                {post.headline && <h1 className={headlineClass}>{post.headline}</h1>}
-                {post.body && <PostMarkdownRenderer content={post.body} className={bodyClass} />}
+            <div className={bgEnabled ? `bg-black/50 ${paddingClass} backdrop-blur-md` : ""}>
+                {type === 'headline' ? (
+                    <h1 className={fontClass}>{text}</h1>
+                ) : (
+                    <PostMarkdownRenderer content={text} className={fontClass} />
+                )}
             </div>
         </div>
     );
@@ -388,6 +387,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
             });
         };
         const onDragEnd = () => {
+             setIsDragging(false);
              window.removeEventListener('mousemove', onDragMove as any);
              window.removeEventListener('mouseup', onDragEnd);
              window.removeEventListener('touchmove', onDragMove as any);
@@ -451,8 +451,14 @@ export interface DisplayPostRendererProps {
     onLoadError?: () => void;
     
     // Interactive props
-    onUpdateTagPosition?: any; onUpdateTextPosition?: any; onUpdateTextWidth?: any;
-    onUpdateQrPosition?: any; onUpdateQrWidth?: any; isTextDraggable?: any; isForDownload?: any;
+    onUpdateTagPosition?: any; 
+    onUpdateHeadlinePosition?: any; onUpdateHeadlineWidth?: any;
+    onUpdateBodyPosition?: any; onUpdateBodyWidth?: any;
+    onUpdateQrPosition?: any; onUpdateQrWidth?: any; 
+    isTextDraggable?: any; isForDownload?: any;
+
+    // Legacy handler shim
+    onUpdateTextPosition?: any; onUpdateTextWidth?: any;
 }
 
 export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
@@ -470,13 +476,18 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     onLoadReady,
     onLoadError,
     // Interactive props
-    onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable
+    onUpdateTagPosition, 
+    onUpdateHeadlinePosition, onUpdateHeadlineWidth,
+    onUpdateBodyPosition, onUpdateBodyWidth,
+    onUpdateQrPosition, onUpdateQrWidth, 
+    isTextDraggable,
+    // Legacy support
+    onUpdateTextPosition, onUpdateTextWidth
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
     
-    // --- SONY SIGNALING ---
     const hasSignaled = useRef(false);
     const signalReady = useCallback(() => {
         if (!hasSignaled.current && onLoadReady) {
@@ -491,7 +502,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         return () => clearTimeout(t);
     }, [post, signalReady]);
 
-    // --- VIDEO CONTROL & CLEANUP ---
     useEffect(() => {
         const video = videoRef.current;
         if (video) {
@@ -501,18 +511,15 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 playPromise.catch(() => { if (onLoadError) onLoadError(); });
             }
         }
-
-        // DETTA ÄR DET NYA - STÄDNINGEN:
         return () => {
             if (video) {
-                video.pause(); // Stanna
-                video.removeAttribute('src'); // Ta bort källan
-                video.load(); // Tvinga webbläsaren att släppa minnet
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
             }
         };
     }, [post.videoUrl, cycleCount]); 
 
-    // --- STYLES ---
     const backgroundColor = resolveColor(post.backgroundColor, '#000000', organization, primaryColor);
     const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
     const mediaStyle: React.CSSProperties = {
@@ -524,7 +531,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
            (post.layout === 'image-right') ? { bottom: 0, right: 0, width: isPortrait ? '100%' : '50%', height: isPortrait ? '50%' : '100%' } : {})
     };
 
-    // --- RENDER ---
     if (isBridgeOnly && (post.layout === 'instagram-latest' || post.layout === 'webpage')) {
         return <div className="w-full h-full" style={{ backgroundColor }} />;
     }
@@ -540,10 +546,21 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
     const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
 
+    // Headline & Body Defaults
+    // Fallback logic: Om headlinePositionX inte finns, använd gamla textPositionX för rubriken (för bakåtkompatibilitet)
+    const hX = post.headlinePositionX ?? post.textPositionX ?? 50;
+    const hY = post.headlinePositionY ?? post.textPositionY ?? 40;
+    const hW = post.headlineWidth ?? post.textWidth ?? 80;
+    const hAlign = post.headlineTextAlign ?? post.textAlign ?? 'center';
+    
+    // Body fallbacks
+    const bX = post.bodyPositionX ?? post.textPositionX ?? 50;
+    const bY = post.bodyPositionY ?? (post.textPositionY ? post.textPositionY + 15 : 60);
+    const bW = post.bodyWidth ?? post.textWidth ?? 80;
+    const bAlign = post.bodyTextAlign ?? post.textAlign ?? 'center';
+
     return (
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
-            
-            {/* MEDIA */}
             {isMedia && (
                 <>
                     {(post.imageUrl || isBridgeOnly) && (
@@ -573,20 +590,48 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 </>
             )}
 
-            {/* OVERLAY */}
             {post.imageOverlayEnabled && <div className="absolute inset-0 z-10" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
             
-            {/* TEXT */}
-            {(post.headline || post.body) && (
-                <TextContent 
-                    post={post} mode={mode} organization={organization} 
-                    isTextDraggable={isTextDraggable}
-                    onUpdateTextPosition={onUpdateTextPosition}
-                    onUpdateTextWidth={onUpdateTextWidth}
+            {/* Rubrik-låda */}
+            {post.headline && (
+                <DraggableTextElement
+                    type="headline"
+                    text={post.headline}
+                    x={hX} y={hY} width={hW}
+                    textAlign={hAlign}
+                    fontSize={post.headlineFontSize}
+                    fontFamily={post.headlineFontFamily}
+                    color={post.headlineTextColor || post.textColor}
+                    bgEnabled={post.headlineBackgroundEnabled ?? post.textBackgroundEnabled}
+                    bgColor={post.headlineBackgroundColor || post.textBackgroundColor}
+                    mode={mode}
+                    organization={organization}
+                    isDraggable={isTextDraggable}
+                    onUpdatePosition={onUpdateHeadlinePosition || onUpdateTextPosition}
+                    onUpdateWidth={onUpdateHeadlineWidth || onUpdateTextWidth}
+                />
+            )}
+
+            {/* Brödtext-låda */}
+            {post.body && (
+                <DraggableTextElement
+                    type="body"
+                    text={post.body}
+                    x={bX} y={bY} width={bW}
+                    textAlign={bAlign}
+                    fontSize={post.bodyFontSize}
+                    fontFamily={post.bodyFontFamily}
+                    color={post.bodyTextColor || post.textColor}
+                    bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
+                    bgColor={post.bodyBackgroundColor || post.textBackgroundColor}
+                    mode={mode}
+                    organization={organization}
+                    isDraggable={isTextDraggable}
+                    onUpdatePosition={onUpdateBodyPosition}
+                    onUpdateWidth={onUpdateBodyWidth}
                 />
             )}
             
-            {/* TAGS */}
             {showTags && post.tagIds?.map(tagId => {
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
@@ -594,7 +639,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} />;
             })}
 
-            {/* QR CODE */}
             {post.qrCodeUrl && (
                 <DraggableQrCode 
                     url={post.qrCodeUrl} 
