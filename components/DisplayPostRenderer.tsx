@@ -5,93 +5,97 @@ import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { InstagramStoryPost } from './InstagramStoryPost';
 import { MoveIcon, ArrowUturnLeftIcon } from './icons';
 
-// --- HELPER COMPONENTS & FUNCTIONS ---
+// --- ROBUST MEDIA COMPONENTS (Sony Watchdogs) ---
 
-const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#E2E8F0"/><text x="50" y="50" font-family="sans-serif" font-size="10" fill="#94A3B8" text-anchor="middle" dominant-baseline="middle">Media saknas</text></svg>`;
+const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#000000"/></svg>`;
 const PLACEHOLDER_URL = `data:image/svg+xml;base64,${btoa(PLACEHOLDER_SVG)}`;
 
-const ImageWithFallback: React.FC<{ src?: string; alt: string; className: string; style: React.CSSProperties; }> = ({ src, alt, className, style }) => {
+const ImageWithFallback: React.FC<{ 
+    src?: string; 
+    alt: string; 
+    className: string; 
+    style: React.CSSProperties; 
+    onLoadReady?: () => void;
+    onLoadError?: () => void;
+}> = ({ src, alt, className, style, onLoadReady, onLoadError }) => {
     const [imgSrc, setImgSrc] = useState(src || PLACEHOLDER_URL);
-    const [errorCount, setErrorCount] = useState(0);
 
     useEffect(() => { 
         setImgSrc(src || PLACEHOLDER_URL); 
-        setErrorCount(0);
     }, [src]);
 
     const handleError = () => {
-        // If we have a source URL but it failed, try to retry a few times
-        if (src && errorCount < 3) {
-            const nextRetry = errorCount + 1;
-            setErrorCount(nextRetry);
-            
-            // Exponential backoff: 1s, 2s, 3s
-            setTimeout(() => {
-                // Add a cache-busting query param to force a network retry if it was a transient error
-                const separator = src.includes('?') ? '&' : '?';
-                setImgSrc(`${src}${separator}retry=${Date.now()}`);
-            }, 1000 * nextRetry);
-        } else {
-            setImgSrc(PLACEHOLDER_URL);
-        }
+        console.warn("Sony Image Watchdog: Failed to load (Silent skip):", src);
+        if (onLoadError) onLoadError();
     };
 
-    return <img src={imgSrc} onError={handleError} alt={alt} className={`${className} ${imgSrc === PLACEHOLDER_URL ? 'object-contain p-4 bg-slate-200 dark:bg-slate-700' : ''}`} style={style} />;
+    return (
+        <img 
+            src={imgSrc} 
+            onError={handleError} 
+            onLoad={onLoadReady}
+            alt={alt} 
+            className={className} 
+            style={style} 
+            crossOrigin="anonymous"
+        />
+    );
 };
 
-// Updated VideoWithFallback with Retry Logic
-const VideoWithFallback = forwardRef<HTMLVideoElement, React.ComponentProps<'video'> & { src?: string }>(({ src, ...props }, ref) => {
-    const [videoSrc, setVideoSrc] = useState(src);
-    const [errorCount, setErrorCount] = useState(0);
+const VideoWithFallback = forwardRef<HTMLVideoElement, React.ComponentProps<'video'> & { 
+    src?: string;
+    onLoadReady?: () => void;
+    onLoadError?: () => void;
+    onStall?: () => void;
+}>(({ src, onLoadReady, onLoadError, onStall, ...props }, ref) => {
     const internalRef = useRef<HTMLVideoElement>(null);
     const videoRef = (ref as React.RefObject<HTMLVideoElement>) || internalRef;
+    const stallTimerRef = useRef<number | null>(null);
 
-    useEffect(() => { 
-        setVideoSrc(src); 
-        setErrorCount(0);
-    }, [src]);
-    
-    // Simple effect to ensure play is called if autoplay is true but browser paused it
+    // Sony Watchdog: 7s initial load timeout
     useEffect(() => {
-        const video = videoRef.current;
-        if (video && props.autoPlay && video.paused) {
-            video.play().catch(() => { /* Autoplay prevented, waiting for interaction or mute */ });
-        }
-    }, [videoSrc, videoRef, props.autoPlay]);
+        if (!src) return;
+        const timeout = window.setTimeout(() => {
+            if (videoRef.current && videoRef.current.readyState < 3) {
+                console.warn("Sony Video Watchdog: Load timeout (7s) - Skipping:", src);
+                if (onLoadError) onLoadError();
+            }
+        }, 7000);
+        return () => window.clearTimeout(timeout);
+    }, [src, onLoadError]);
 
-    const handleError = (e: any) => {
-        const error = e.target?.error;
-        console.warn("Video failed to load:", src, "Error code:", error?.code, "Message:", error?.message, "Attempt:", errorCount + 1);
-        
-        if (errorCount < 3) {
-            // Retry logic: Wait 1s then reload
-            setTimeout(() => {
-                if (videoRef.current) {
-                    videoRef.current.load();
-                    // Attempt to play again if it was supposed to be playing
-                    if (props.autoPlay) {
-                        videoRef.current.play().catch(() => {});
-                    }
-                    setErrorCount(prev => prev + 1);
-                }
-            }, 1000);
-        } else {
-            // Give up after 3 attempts
-            setVideoSrc(undefined);
+    const handleWaiting = () => {
+        // Sony Watchdog: 10s stall detection
+        if (stallTimerRef.current) window.clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = window.setTimeout(() => {
+            console.warn("Sony Video Watchdog: Stalled for > 10s - Skipping:", src);
+            if (onStall) onStall();
+        }, 10000);
+    };
+
+    const handlePlaying = () => {
+        if (stallTimerRef.current) {
+            window.clearTimeout(stallTimerRef.current);
+            stallTimerRef.current = null;
         }
     };
-    
-    if (!videoSrc && errorCount >= 3) {
-        return <img src={PLACEHOLDER_URL} alt="Media saknas" className={props.className + ' object-contain p-4 bg-slate-200 dark:bg-slate-700'} style={props.style} />;
-    }
+
+    const handleError = (e: any) => {
+        console.warn("Sony Video Watchdog: Error (Silent skip):", src);
+        if (onLoadError) onLoadError();
+    };
 
     return (
         <video 
             ref={videoRef} 
-            src={videoSrc} 
+            src={src} 
             onError={handleError}
+            onCanPlay={onLoadReady}
+            onWaiting={handleWaiting}
+            onPlaying={handlePlaying}
             playsInline
             muted
+            crossOrigin="anonymous"
             preload="auto"
             {...props} 
         />
@@ -99,6 +103,7 @@ const VideoWithFallback = forwardRef<HTMLVideoElement, React.ComponentProps<'vid
 });
 VideoWithFallback.displayName = 'VideoWithFallback';
 
+// --- ALL EXISTING HELPERS & SUB-COMPONENTS ---
 
 declare global {
     interface Window {
@@ -108,19 +113,10 @@ declare global {
 
 const InstagramEmbed: React.FC<{ embedCode: string }> = ({ embedCode }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
-        const processInstagramEmbeds = () => {
-            if (window.instgrm) {
-                window.instgrm.Embeds.process();
-            }
-        };
-
+        const processInstagramEmbeds = () => { if (window.instgrm) window.instgrm.Embeds.process(); };
         const existingScript = document.querySelector('script[src="//www.instagram.com/embed.js"]');
-
-        if (existingScript) {
-            processInstagramEmbeds();
-        } else {
+        if (existingScript) { processInstagramEmbeds(); } else {
             const script = document.createElement('script');
             script.src = "//www.instagram.com/embed.js";
             script.async = true;
@@ -128,31 +124,16 @@ const InstagramEmbed: React.FC<{ embedCode: string }> = ({ embedCode }) => {
             document.body.appendChild(script);
         }
     }, [embedCode]);
-
-    return (
-        <div 
-            ref={containerRef} 
-            dangerouslySetInnerHTML={{ __html: embedCode }} 
-            className="w-full h-full flex justify-center items-center bg-white [&>blockquote]:!my-0" 
-        />
-    );
+    return <div ref={containerRef} dangerouslySetInnerHTML={{ __html: embedCode }} className="w-full h-full flex justify-center items-center bg-white [&>blockquote]:!my-0" />;
 };
-
 
 const ensureAbsoluteUrl = (url: string | undefined): string => {
     if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//')) {
-        return url;
-    }
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//')) return url;
     return `https://${url}`;
 };
 
-const resolveColor = (
-    colorKey: string | undefined, 
-    fallback: string, 
-    organization?: Organization, 
-    primaryColorFromProp?: string
-): string => {
+const resolveColor = (colorKey: string | undefined, fallback: string, organization?: Organization, primaryColorFromProp?: string): string => {
     if (!colorKey) return fallback;
     if (colorKey.startsWith('#') || colorKey.startsWith('rgba')) return colorKey;
     switch (colorKey) {
@@ -179,12 +160,7 @@ const ConfettiEffect: React.FC = () => {
             },
         }));
     }, []);
-
-    return (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-5">
-            {pieces.map(p => <div key={p.id} className="confetti-piece" style={p.style} />)}
-        </div>
-    );
+    return <div className="absolute inset-0 overflow-hidden pointer-events-none z-5">{pieces.map(p => <div key={p.id} className="confetti-piece" style={p.style} />)}</div>;
 };
 
 const HeartsEffect: React.FC = () => {
@@ -199,105 +175,52 @@ const HeartsEffect: React.FC = () => {
             },
         }));
     }, []);
-
-    return (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-5">
-            {pieces.map(p => <div key={p.id} className="heart-piece" style={p.style}>❤️</div>)}
-        </div>
-    );
+    return <div className="absolute inset-0 overflow-hidden pointer-events-none z-5">{pieces.map(p => <div key={p.id} className="heart-piece" style={p.style}>❤️</div>)}</div>;
 };
 
 const BackgroundEffects: React.FC<{ effect: DisplayPost['backgroundEffect'] }> = ({ effect }) => {
-    if (effect === 'confetti') {
-        return <ConfettiEffect />;
-    }
-    if (effect === 'hearts') {
-        return <HeartsEffect />;
-    }
+    if (effect === 'confetti') return <ConfettiEffect />;
+    if (effect === 'hearts') return <HeartsEffect />;
     return null;
 };
 
 const QrCodeComponent: React.FC<{ url: string; color?: { dark: string; light: string }; className?: string; style?: React.CSSProperties }> = ({ url, color = { dark: '#000000', light: '#FFFFFF' }, className, style }) => {
     const [dataUrl, setDataUrl] = useState('');
-
     useEffect(() => {
         if (url) {
-            // High resolution for scaling
-            QRCode.toDataURL(url, { width: 512, margin: 1, color })
-                .then(setDataUrl)
-                .catch(err => {
-                    console.error("QR Code generation failed:", err);
-                });
-        } else {
-            setDataUrl('');
-        }
+            QRCode.toDataURL(url, { width: 512, margin: 1, color }).then(setDataUrl).catch(err => console.error("QR Code generation failed:", err));
+        } else { setDataUrl(''); }
     }, [url, color]);
-
     if (!dataUrl) return null;
-
     return <img src={dataUrl} alt="QR Code" className={className} style={style} />;
 };
 
 const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
     const renderMarkdown = useMemo(() => {
-        if (!content) {
-            return { __html: '' };
-        }
-
+        if (!content) return { __html: '' };
         const lines = content.split('\n');
         const htmlLines: string[] = [];
         let inList: 'ul' | 'ol' | false = false;
-
-        const closeListIfNeeded = () => {
-            if (inList) {
-                htmlLines.push(`</${inList}>`);
-                inList = false;
-            }
-        };
-
+        const closeListIfNeeded = () => { if (inList) { htmlLines.push(`</${inList}>`); inList = false; } };
         for (const line of lines) {
-            let safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            
-            safeLine = safeLine
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/_(.*?)_/g, '<em>$1</em>');
-
-            if (line.match(/^\d+\.\s/)) { // Numbered list
-                if (inList !== 'ol') {
-                    closeListIfNeeded();
-                    htmlLines.push('<ol class="list-decimal list-inside space-y-1 my-2">');
-                    inList = 'ol';
-                }
+            let safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/_(.*?)_/g, '<em>$1</em>');
+            if (line.match(/^\d+\.\s/)) {
+                if (inList !== 'ol') { closeListIfNeeded(); htmlLines.push('<ol class="list-decimal list-inside space-y-1 my-2">'); inList = 'ol'; }
                 htmlLines.push(`<li>${safeLine.replace(/^\d+\.\s/, '')}</li>`);
             } else if (line.startsWith('* ') || line.startsWith('- ')) {
-                if (inList !== 'ul') {
-                    closeListIfNeeded();
-                    htmlLines.push('<ul class="list-disc list-inside space-y-1 my-2">');
-                    inList = 'ul';
-                }
+                if (inList !== 'ul') { closeListIfNeeded(); htmlLines.push('<ul class="list-disc list-inside space-y-1 my-2">'); inList = 'ul'; }
                 htmlLines.push(`<li>${safeLine.substring(2)}</li>`);
             } else {
                 closeListIfNeeded();
-                if (line.trim() !== '') {
-                    htmlLines.push(`<p class="my-2">${safeLine}</p>`);
-                }
+                if (line.trim() !== '') htmlLines.push(`<p class="my-2">${safeLine}</p>`);
             }
         }
-
         closeListIfNeeded();
         return { __html: htmlLines.join('\n') };
     }, [content]);
-
-    return (
-        <div 
-            className={className}
-            dangerouslySetInnerHTML={renderMarkdown}
-        />
-    );
+    return <div className={className} dangerouslySetInnerHTML={renderMarkdown} />;
 };
 
-
-// Helper function to determine if we are in a preview/thumbnail mode
 const isPreviewMode = (mode?: 'preview' | 'live') => mode === 'preview';
 
 const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') => {
@@ -314,31 +237,31 @@ const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') 
         default: return isPreview ? 'text-[7px]' : 'text-base';
     }
 };
+
 const getTagFontFamilyClass = (family?: Tag['fontFamily']) => {
     switch (family) {
         case 'display': return 'font-display';
         case 'script': return 'font-logo';
         case 'adscript': return 'font-adscript';
         case 'sans': return 'font-sans';
-        case undefined: return 'font-sans';
-        default: return `font-${family}`;
+        default: return family ? `font-${family}` : 'font-sans';
     }
 };
+
 const getTagFontWeightClass = (weight?: Tag['fontWeight']) => (weight === 'black' ? 'font-black' : 'font-bold');
+
 const getTagAnimationClass = (animation?: Tag['animation'], displayType?: Tag['displayType'], hasOverride?: boolean) => {
     switch(animation) {
         case 'pulse':
-            if (displayType === 'stamp') {
-                return hasOverride ? 'animate-pulse-stamp-override' : 'animate-pulse-stamp';
-            }
+            if (displayType === 'stamp') return hasOverride ? 'animate-pulse-stamp-override' : 'animate-pulse-stamp';
             return 'animate-pulse-tag';
         case 'glow': return 'animate-glow-tag';
         default: return '';
     }
 };
+
 const getHeadlineFontSizeClass = (size?: DisplayPost['headlineFontSize'], mode?: 'preview' | 'live') => {
     const isPreview = isPreviewMode(mode);
-    // Drastically reduce font sizes for preview
     if (isPreview) {
         switch (size) {
             case 'sm': case 'md': return 'text-[10px]';
@@ -350,7 +273,6 @@ const getHeadlineFontSizeClass = (size?: DisplayPost['headlineFontSize'], mode?:
             default: return 'text-sm';
         }
     }
-    // Original sizes for live mode
     switch (size) {
         case 'sm': return 'text-lg';
         case 'md': return 'text-xl';
@@ -367,6 +289,7 @@ const getHeadlineFontSizeClass = (size?: DisplayPost['headlineFontSize'], mode?:
         default: return 'text-4xl';
     }
 };
+
 const getBodyFontSizeClass = (size?: DisplayPost['bodyFontSize'], mode?: 'preview' | 'live') => {
     const isPreview = isPreviewMode(mode);
     if (isPreview) {
@@ -393,26 +316,6 @@ const getBodyFontSizeClass = (size?: DisplayPost['bodyFontSize'], mode?: 'previe
     }
 };
 
-const mapLegacySize = (size?: DisplayPost['qrCodeSize']): number => {
-    switch (size) {
-        case 'sm': return 10;
-        case 'md': return 15;
-        case 'lg': return 20;
-        case 'xl': return 25;
-        default: return 12; // Fallback default
-    }
-};
-
-const mapLegacyPosition = (position?: DisplayPost['qrCodePosition']): { x: number, y: number } => {
-    switch (position) {
-        case 'top-left': return { x: 10, y: 10 };
-        case 'top-right': return { x: 90, y: 10 };
-        case 'bottom-left': return { x: 10, y: 90 };
-        case 'bottom-right': return { x: 90, y: 90 };
-        default: return { x: 90, y: 90 };
-    }
-};
-
 const DraggableQrCode: React.FC<{
     url: string;
     x: number;
@@ -428,140 +331,56 @@ const DraggableQrCode: React.FC<{
 
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(true);
-
+        e.preventDefault(); e.stopPropagation(); setIsDragging(true);
         const parent = containerRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
-        
-        // Use center of the element as the drag point relative to parent
         const containerRect = containerRef.current.getBoundingClientRect();
-        
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        
-        // Offset from the element's top-left corner
         const offsetX = clientX - containerRect.left;
         const offsetY = clientY - containerRect.top;
-
         const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
             const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
-            
-            // Calculate new top-left position
-            const newLeft = moveClientX - offsetX;
-            const newTop = moveClientY - offsetY;
-            
-            // Calculate center position relative to parent
-            const centerX = newLeft + containerRect.width / 2;
-            const centerY = newTop + containerRect.height / 2;
-
-            const xPercent = ((centerX - parentRect.left) / parentRect.width) * 100;
-            const yPercent = ((centerY - parentRect.top) / parentRect.height) * 100;
-
-            onUpdatePosition({ 
-                x: Math.max(0, Math.min(100, xPercent)), 
-                y: Math.max(0, Math.min(100, yPercent)) 
-            });
+            const xPercent = ((moveClientX - offsetX + containerRect.width / 2 - parentRect.left) / parentRect.width) * 100;
+            const yPercent = ((moveClientY - offsetY + containerRect.height / 2 - parentRect.top) / parentRect.height) * 100;
+            onUpdatePosition({ x: Math.max(0, Math.min(100, xPercent)), y: Math.max(0, Math.min(100, yPercent)) });
         };
-
         const onDragEnd = () => {
             setIsDragging(false);
-            window.removeEventListener('mousemove', onDragMove as any);
-            window.removeEventListener('mouseup', onDragEnd);
-            window.removeEventListener('touchmove', onDragMove as any);
-            window.removeEventListener('touchend', onDragEnd);
+            window.removeEventListener('mousemove', onDragMove as any); window.removeEventListener('mouseup', onDragEnd);
+            window.removeEventListener('touchmove', onDragMove as any); window.removeEventListener('touchend', onDragEnd);
         };
-        
-        if ('touches' in e) {
-            window.addEventListener('touchmove', onDragMove as any);
-            window.addEventListener('touchend', onDragEnd, { once: true });
-        } else {
-            window.addEventListener('mousemove', onDragMove as any);
-            window.addEventListener('mouseup', onDragEnd, { once: true });
-        }
+        if ('touches' in e) { window.addEventListener('touchmove', onDragMove as any); window.addEventListener('touchend', onDragEnd, { once: true }); }
+        else { window.addEventListener('mousemove', onDragMove as any); window.addEventListener('mouseup', onDragEnd, { once: true }); }
     };
 
     const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-
+        e.preventDefault(); e.stopPropagation();
         const parent = containerRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
-        
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialWidth = containerRef.current.offsetWidth;
-
         const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
-            const dx = moveClientX - initialX;
-            const newWidthPx = initialWidth + dx;
-            
-            // Convert back to percentage of parent width
-            const newWidthPercent = (newWidthPx / parentRect.width) * 100;
-            const clampedWidth = Math.max(5, Math.min(50, newWidthPercent));
-
-            onUpdateWidth(clampedWidth);
+            const newWidthPercent = ((initialWidth + (moveClientX - initialX)) / parentRect.width) * 100;
+            onUpdateWidth(Math.max(5, Math.min(50, newWidthPercent)));
         };
-
-        const onResizeEnd = () => {
-            window.removeEventListener('mousemove', onResizeMove as any);
-            window.removeEventListener('mouseup', onResizeEnd);
-            window.removeEventListener('touchmove', onResizeMove as any);
-            window.removeEventListener('touchend', onResizeEnd);
-        };
-        
-        if ('touches' in e) {
-            window.addEventListener('touchmove', onResizeMove as any);
-            window.addEventListener('touchend', onResizeEnd, { once: true });
-        } else {
-            window.addEventListener('mousemove', onResizeMove as any);
-            window.addEventListener('mouseup', onResizeEnd, { once: true });
-        }
+        const onResizeEnd = () => { window.removeEventListener('mousemove', onResizeMove as any); window.removeEventListener('mouseup', onResizeEnd); window.removeEventListener('touchmove', onResizeMove as any); window.removeEventListener('touchend', onResizeEnd); };
+        if ('touches' in e) { window.addEventListener('touchmove', onResizeMove as any); window.addEventListener('touchend', onResizeEnd, { once: true }); }
+        else { window.addEventListener('mousemove', onResizeMove as any); window.addEventListener('mouseup', onResizeEnd, { once: true }); }
     };
 
-    const positioningStyle: React.CSSProperties = {
-        position: 'absolute',
-        left: `${x}%`,
-        top: `${y}%`,
-        width: `${width}%`,
-        transform: 'translate(-50%, -50%)',
-        cursor: isDraggable ? 'move' : 'default',
-        zIndex: 20,
-    };
-
-    const animationStyle: React.CSSProperties = {
-        animationDelay: `${startDelay}s`,
-        animationFillMode: 'forwards',
-    };
-
+    const style: React.CSSProperties = { position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${width}%`, transform: 'translate(-50%, -50%)', cursor: isDraggable ? 'move' : 'default', zIndex: 20 };
     return (
-        <div 
-            ref={containerRef}
-            style={positioningStyle}
-            onMouseDown={isDraggable ? handleDragStart : undefined}
-            onTouchStart={isDraggable ? handleDragStart : undefined}
-            className={`group touch-none ${isDragging ? 'opacity-70' : ''}`}
-        >
-            <div 
-                className={`w-full h-full ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`} 
-                style={animationStyle}
-            >
+        <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} className={`group touch-none ${isDragging ? 'opacity-70' : ''}`}>
+            <div className={`w-full h-full ${startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''}`} style={{ animationDelay: `${startDelay}s`, animationFillMode: 'forwards' }}>
                 <div className="bg-white p-1 rounded-lg shadow-lg relative h-full">
                     <QrCodeComponent url={url} className="w-full h-full" />
-                    {isDraggable && (
-                        <div 
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
-                            className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border-2 border-primary rounded-full cursor-se-resize flex items-center justify-center shadow-md opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-none z-30"
-                        >
-                            <div className="w-2 h-2 bg-primary rounded-full" />
-                        </div>
-                    )}
+                    {isDraggable && <div onMouseDown={handleResizeStart} onTouchStart={handleResizeStart} className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border-2 border-primary rounded-full cursor-se-resize flex items-center justify-center shadow-md z-30"><div className="w-2 h-2 bg-primary rounded-full" /></div>}
                 </div>
             </div>
         </div>
@@ -570,115 +389,32 @@ const DraggableQrCode: React.FC<{
 
 const SubImageCarousel: React.FC<{ images: SubImage[], config: SubImageConfig, cycleCount: number }> = ({ images, config, cycleCount }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
-
-    // This key ensures that when the parent post changes (indicated by cycleCount), the carousel resets its state.
-    useEffect(() => {
-        setCurrentIndex(0);
-    }, [cycleCount]);
-
+    useEffect(() => { setCurrentIndex(0); }, [cycleCount]);
     useEffect(() => {
         if (config.animation !== 'fade' || images.length <= 1) return;
-
-        const interval = setInterval(() => {
-            setCurrentIndex(prev => (prev + 1) % images.length);
-        }, (config.intervalSeconds || 5) * 1000);
-
+        const interval = setInterval(() => { setCurrentIndex(prev => (prev + 1) % images.length); }, (config.intervalSeconds || 5) * 1000);
         return () => clearInterval(interval);
     }, [images, config, cycleCount]);
-
-    const getContainerStyle = (): React.CSSProperties => {
-        if (config.animation === 'scroll') {
-            return { '--scroll-duration': `${config.intervalSeconds || 30}s` } as React.CSSProperties;
-        }
-        return {};
-    };
 
     const getContainerClasses = () => {
         const classes = ['absolute', 'z-20'];
         if (config.animation === 'fade') {
             classes.push('p-2', 'bg-black/30', 'backdrop-blur-sm', 'rounded-lg', 'shadow-lg');
-            // position
-            switch (config.position) {
-                case 'top-left': classes.push('top-4 left-4'); break;
-                case 'top-right': classes.push('top-4 right-4'); break;
-                case 'bottom-left': classes.push('bottom-4 left-4'); break;
-                case 'bottom-right': classes.push('bottom-4 right-4'); break;
-                case 'center': classes.push('top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'); break;
-                // FIX: Added handlers for new grid positions to support the updated SubImageConfig.position type.
-                case 'top-center': classes.push('top-4 left-1/2 -translate-x-1/2'); break;
-                case 'center-left': classes.push('top-1/2 left-4 -translate-y-1/2'); break;
-                case 'center-right': classes.push('top-1/2 right-4 -translate-y-1/2'); break;
-                case 'bottom-center': classes.push('bottom-4 left-1/2 -translate-x-1/2'); break;
-                default: classes.push('bottom-4 right-4'); break;
-            }
-            // size
-            switch (config.size) {
-                case 'sm': classes.push('w-24 h-24'); break;
-                case 'md': classes.push('w-32 h-32'); break;
-                case 'lg': classes.push('w-48 h-48'); break;
-                case 'xl': classes.push('w-64 h-64'); break;
-                case '2xl': classes.push('w-80 h-80'); break;
-                default: classes.push('w-32 h-32'); break;
-            }
-        } else { // scroll
+            const pos = config.position;
+            if (pos === 'top-left') classes.push('top-4 left-4'); else if (pos === 'top-right') classes.push('top-4 right-4'); else if (pos === 'bottom-left') classes.push('bottom-4 left-4'); else if (pos === 'bottom-right') classes.push('bottom-4 right-4'); else if (pos === 'center') classes.push('top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'); else if (pos === 'top-center') classes.push('top-4 left-1/2 -translate-x-1/2'); else if (pos === 'center-left') classes.push('top-1/2 left-4 -translate-y-1/2'); else if (pos === 'center-right') classes.push('top-1/2 right-4 -translate-y-1/2'); else if (pos === 'bottom-center') classes.push('bottom-4 left-1/2 -translate-x-1/2'); else classes.push('bottom-4 right-4');
+            const s = config.size;
+            if (s === 'sm') classes.push('w-24 h-24'); else if (s === 'md') classes.push('w-32 h-32'); else if (s === 'lg') classes.push('w-48 h-48'); else if (s === 'xl') classes.push('w-64 h-64'); else if (s === '2xl') classes.push('w-80 h-80'); else classes.push('w-32 h-32');
+        } else {
             classes.push('left-0 right-0', 'overflow-hidden', 'p-2', 'bg-black/30', 'backdrop-blur-sm');
-            // position
-            switch (config.position) {
-                case 'top': classes.push('top-0'); break;
-                case 'middle': classes.push('top-1/2 -translate-y-1/2'); break;
-                case 'bottom': classes.push('bottom-0'); break;
-                default: classes.push('bottom-0'); break;
-            }
-             // size
-            switch (config.size) {
-                case 'sm': classes.push('h-20'); break;
-                case 'md': classes.push('h-28'); break;
-                case 'lg': classes.push('h-36'); break;
-                case 'xl': classes.push('h-48'); break;
-                case '2xl': classes.push('h-64'); break;
-                default: classes.push('h-28'); break;
-            }
+            if (config.position === 'top') classes.push('top-0'); else if (config.position === 'middle') classes.push('top-1/2 -translate-y-1/2'); else classes.push('bottom-0');
+            const s = config.size;
+            if (s === 'sm') classes.push('h-20'); else if (s === 'md') classes.push('h-28'); else if (s === 'lg') classes.push('h-36'); else if (s === 'xl') classes.push('h-48'); else if (s === '2xl') classes.push('h-64'); else classes.push('h-28');
         }
         return classes.join(' ');
     };
-
-    if (!images || images.length === 0) {
-        return null;
-    }
-
-    if (config.animation === 'scroll') {
-        return (
-            <div className={getContainerClasses()} style={getContainerStyle()}>
-                <div className="flex h-full animate-marquee">
-                    {[...images, ...images].map((image, index) => (
-                        <div key={`${image.id}-${index}`} className="h-full flex-shrink-0 mr-4">
-                             <ImageWithFallback
-                                src={image.imageUrl}
-                                alt={`Carousel image ${index + 1}`}
-                                className="h-full w-auto object-cover rounded"
-                                style={{}}
-                            />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
-    
-    // Fade animation
-    return (
-        <div className={getContainerClasses()}>
-            {images.map((image, index) => (
-                 <ImageWithFallback
-                    key={image.id}
-                    src={image.imageUrl}
-                    alt={`Carousel image ${index + 1}`}
-                    className={`absolute inset-2 w-[calc(100%-1rem)] h-[calc(100%-1rem)] object-contain rounded transition-opacity duration-1000 ${index === currentIndex ? 'opacity-100' : 'opacity-0'}`}
-                    style={{}}
-                />
-            ))}
-        </div>
-    );
+    if (!images || images.length === 0) return null;
+    if (config.animation === 'scroll') return <div className={getContainerClasses()} style={{ '--scroll-duration': `${config.intervalSeconds || 30}s` } as any}><div className="flex h-full animate-marquee">{[...images, ...images].map((image, index) => <div key={`${image.id}-${index}`} className="h-full flex-shrink-0 mr-4"><ImageWithFallback src={image.imageUrl} alt="" className="h-full w-auto object-cover rounded" style={{}} /></div>)}</div></div>;
+    return <div className={getContainerClasses()}>{images.map((image, index) => <ImageWithFallback key={image.id} src={image.imageUrl} alt="" className={`absolute inset-2 w-[calc(100%-1rem)] h-[calc(100%-1rem)] object-contain rounded transition-opacity duration-1000 ${index === currentIndex ? 'opacity-100' : 'opacity-0'}`} style={{}} />)}</div>;
 };
 
 interface TextContentProps {
@@ -694,900 +430,182 @@ interface TextContentProps {
     startDelay?: number;
 }
 
-const AnimatedLine: React.FC<{
-    line: string;
-    animation: DisplayPost['textAnimation'];
-    cycleCount: number;
-    delay: number;
-    baseAnimationDuration: number;
-}> = ({ line, animation, cycleCount, delay, baseAnimationDuration }) => {
+const AnimatedLine: React.FC<{ line: string; animation: DisplayPost['textAnimation']; cycleCount: number; delay: number; baseAnimationDuration: number; }> = ({ line, animation, cycleCount, delay, baseAnimationDuration }) => {
     const parseInline = (text: string) => text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/_(.*?)_/g, '<em>$1</em>');
-
-    if (animation === 'typewriter') {
-        const style = {
-            '--char-count': line.length,
-            '--type-duration': `${baseAnimationDuration}s`,
-            animationDelay: `${delay}s`,
-        } as React.CSSProperties;
-        // NOTE: Typewriter does not support Markdown rendering due to character counting for animation.
-        return (
-            <span className="block">
-                <span key={`${cycleCount}`} className="animate-typewriter" style={style}>
-                    {line}
-                </span>
-            </span>
-        );
-    }
-    
-    if (animation === 'fade-up-word') {
-        return (
-            <span className="block">
-                {line.split(/\s+/).map((word, i) => (
-                    <span 
-                        key={`${cycleCount}-${i}`} 
-                        className="animate-fade-up-word" 
-                        style={{ animationDelay: `${delay + i * 0.1}s` }}
-                        dangerouslySetInnerHTML={{ __html: parseInline(word) + '&nbsp;' }}
-                    />
-                ))}
-            </span>
-        );
-    }
-
-    // Determine animation class and style based on animation type.
-    // Use blur-in if specified, otherwise fall back to a simple delayed fade-in for 'none' or other types
-    // to ensure the delay logic (waiting for video) works visually.
-    const isBlur = animation === 'blur-in';
-    // If startDelay > 0, we use animate-fade-in-post which handles opacity: 0 -> 1.
-    // If no delay (preview), standard opacity classes might be safer, but fade-in is generally OK.
-    const animationClass = isBlur ? 'animate-blur-in' : 'animate-fade-in-post opacity-0';
-    const animationStyle = { animationDelay: `${delay}s`, animationFillMode: 'forwards' };
-
-    return (
-        <span 
-            className={`block ${animationClass}`} 
-            key={cycleCount}
-            style={animationStyle}
-            dangerouslySetInnerHTML={{ __html: parseInline(line) }}
-        />
-    );
+    if (animation === 'typewriter') return <span className="block"><span key={`${cycleCount}`} className="animate-typewriter" style={{ '--char-count': line.length, '--type-duration': `${baseAnimationDuration}s`, animationDelay: `${delay}s` } as any}>{line}</span></span>;
+    if (animation === 'fade-up-word') return <span className="block">{line.split(/\s+/).map((word, i) => <React.Fragment key={i}><span className="animate-fade-up-word" style={{ animationDelay: `${delay + i * 0.1}s` }} dangerouslySetInnerHTML={{ __html: parseInline(word) }} />{' '}</React.Fragment>)}</span>;
+    const animationClass = animation === 'blur-in' ? 'animate-blur-in' : 'animate-fade-in-post opacity-0';
+    return <span className={`block ${animationClass}`} key={cycleCount} style={{ animationDelay: `${delay}s`, animationFillMode: 'forwards' }} dangerouslySetInnerHTML={{ __html: parseInline(line) }} />;
 };
 
 const TextContent: React.FC<TextContentProps> = ({ post, mode, onUpdateTextPosition, isTextDraggable, cycleCount = 0, organization, aspectRatio, isForDownload, onUpdateTextWidth, startDelay = 0 }) => {
     const textContainerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
-    
-    // Headline rotation logic
     const allHeadlines = useMemo(() => [post.headline || '', ...(post.rotatingHeadlines || [])].filter(Boolean), [post.headline, post.rotatingHeadlines]);
     const headlineToShow = allHeadlines.length > 0 ? allHeadlines[cycleCount % allHeadlines.length] : '';
 
     const containerStyle = useMemo((): React.CSSProperties => {
-        const style: React.CSSProperties = {};
+        const style: React.CSSProperties = { position: 'absolute', transform: 'translate(-50%, -50%)', display: 'flex' };
         if (post.textPositionX !== undefined && post.textPositionY !== undefined) {
-            style.position = 'absolute';
-            style.left = `${post.textPositionX}%`;
-            style.top = `${post.textPositionY}%`;
-            style.transform = 'translate(-50%, -50%)';
+            style.left = `${post.textPositionX}%`; style.top = `${post.textPositionY}%`;
             style.width = post.textWidth ? `${post.textWidth}%` : '80%';
-            style.maxWidth = '1200px';
-            style.display = 'flex';
-            style.justifyContent = post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center';
-            return style;
-        }
-    
-        const isSplitLayout = post.layout === 'image-left' || post.layout === 'image-right';
-    
-        if (isSplitLayout) {
-            const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
-            const splitPercent = post.splitRatio || 50;
-            const textPercent = 100 - splitPercent;
-            
-            const imageCenter = splitPercent / 2;
-            const textCenter = splitPercent + (textPercent / 2);
-
-            let x = 50, y = 50, width = '90%';
-
-            if (isPortrait) {
-                y = post.layout === 'image-left' ? textCenter : imageCenter;
-                width = post.textWidth ? `${post.textWidth}%` : '90%';
-            } else { // Landscape
-                x = post.layout === 'image-left' ? textCenter : imageCenter;
-                width = post.textWidth ? `${post.textWidth}%` : `${textPercent - 10}%`;
+        } else {
+            const isSplit = post.layout === 'image-left' || post.layout === 'image-right';
+            if (isSplit) {
+                const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
+                const split = post.splitRatio || 50; const textCenter = split + (100 - split) / 2;
+                if (isPortrait) { style.left = '50%'; style.top = post.layout === 'image-left' ? `${textCenter}%` : `${(100 - split) / 2}%`; style.width = post.textWidth ? `${post.textWidth}%` : '90%'; }
+                else { style.left = post.layout === 'image-left' ? `${textCenter}%` : `${(100 - split) / 2}%`; style.top = '50%'; style.width = post.textWidth ? `${post.textWidth}%` : `${100 - split - 10}%`; }
+            } else {
+                const pos = post.textPosition || 'middle-center';
+                let x = 50, y = 50; if (pos.includes('top')) y = 15; if (pos.includes('bottom')) y = 85; if (pos.includes('left')) x = 25; if (pos.includes('right')) x = 75;
+                style.left = `${x}%`; style.top = `${y}%`; style.width = post.textWidth ? `${post.textWidth}%` : '80%';
             }
-            
-            style.position = 'absolute';
-            style.left = `${x}%`;
-            style.top = `${y}%`;
-            style.transform = 'translate(-50%, -50%)';
-            style.width = width;
-            style.display = 'flex';
-            style.justifyContent = post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center';
-            return style;
         }
-    
-        const pos = post.textPosition || 'middle-center';
-        let yPos = 50; if (pos.includes('top')) yPos = 15; if (pos.includes('bottom')) yPos = 85;
-        let xPos = 50; if (pos.includes('left')) xPos = 25; if (pos.includes('right')) xPos = 75;
-    
-        style.position = 'absolute';
-        style.left = `${xPos}%`;
-        style.top = `${yPos}%`;
-        style.transform = `translate(-50%, -50%)`;
-        style.width = post.textWidth ? `${post.textWidth}%` : '80%';
-        style.maxWidth = '1200px';
-        style.display = 'flex';
         style.justifyContent = post.textAlign === 'left' ? 'flex-start' : post.textAlign === 'right' ? 'flex-end' : 'center';
-
         return style;
     }, [post, aspectRatio]);
 
-
-    const contentBoxStyle: React.CSSProperties = {
-        textAlign: post.textAlign || 'center',
-        color: resolveColor(post.textColor, '#ffffff', organization),
-        padding: isPreviewMode(mode) ? '0.5rem' : '1.5rem',
-        ...(post.textBackgroundEnabled && {
-            backgroundColor: resolveColor(post.textBackgroundColor, 'rgba(0,0,0,0.5)', organization),
-            borderRadius: isPreviewMode(mode) ? '0.25rem' : '0.75rem',
-            backdropFilter: 'blur(4px)',
-        })
-    };
-    
-    // Special, simplified render path for html2canvas to ensure text wrapping works correctly.
-    if (isForDownload) {
-        return (
-            <div ref={textContainerRef} className={`z-10`} style={containerStyle} >
-                <div style={contentBoxStyle} className={post.textBackgroundEnabled ? '' : 'w-full'}>
-                    {headlineToShow && (
-                        <h1 className={`font-bold leading-tight drop-shadow-lg break-words whitespace-pre-wrap ${getHeadlineFontSizeClass(post.headlineFontSize, mode)} ${getTagFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`}>
-                            {headlineToShow}
-                        </h1>
-                    )}
-                    {post.body && (
-                        <div className={`mt-4 whitespace-pre-wrap break-words ${getBodyFontSizeClass(post.bodyFontSize, mode)} ${getTagFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`}>
-                            {post.body}
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
-    
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isTextDraggable || !onUpdateTextPosition || !textContainerRef.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(true);
-    
-        const parent = textContainerRef.current.parentElement;
-        if (!parent) return;
-        const parentRect = parent.getBoundingClientRect();
-        
-        const textRect = textContainerRef.current.getBoundingClientRect();
-    
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-        const offsetX = clientX - textRect.left;
-        const offsetY = clientY - textRect.top;
-    
-        const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
-            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
-            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
-            const newLeft = moveClientX - offsetX;
-            const newTop = moveClientY - offsetY;
-            
-            const newCenterX = newLeft + textRect.width / 2;
-            const newCenterY = newTop + textRect.height / 2;
-    
-            const xPercent = ((newCenterX - parentRect.left) / parentRect.width) * 100;
-            const yPercent = ((newCenterY - parentRect.top) / parentRect.height) * 100;
-    
-            onUpdateTextPosition({ 
-                x: Math.max(0, Math.min(100, xPercent)), 
-                y: Math.max(0, Math.min(100, yPercent)) 
-            });
+        e.preventDefault(); e.stopPropagation(); setIsDragging(true);
+        const parent = textContainerRef.current.parentElement; if (!parent) return;
+        const pRect = parent.getBoundingClientRect(); const tRect = textContainerRef.current.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX; const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const offX = clientX - tRect.left; const offY = clientY - tRect.top;
+        const onMove = (mv: MouseEvent | TouchEvent) => {
+            const mX = 'touches' in mv ? (mv as TouchEvent).touches[0].clientX : (mv as MouseEvent).clientX;
+            const mY = 'touches' in mv ? (mv as TouchEvent).touches[0].clientY : (mv as MouseEvent).clientY;
+            onUpdateTextPosition({ x: Math.max(0, Math.min(100, ((mX - offX + tRect.width / 2 - pRect.left) / pRect.width) * 100)), y: Math.max(0, Math.min(100, ((mY - offY + tRect.height / 2 - pRect.top) / pRect.height) * 100)) });
         };
-    
-        const onDragEnd = () => {
-            setIsDragging(false);
-            window.removeEventListener('mousemove', onDragMove as any);
-            window.removeEventListener('mouseup', onDragEnd);
-            window.removeEventListener('touchmove', onDragMove as any);
-            window.removeEventListener('touchend', onDragEnd);
-        };
-        
-        if ('touches' in e) {
-            window.addEventListener('touchmove', onDragMove as any);
-            window.addEventListener('touchend', onDragEnd, { once: true });
-        } else {
-            window.addEventListener('mousemove', onDragMove as any);
-            window.addEventListener('mouseup', onDragEnd, { once: true });
-        }
+        const onEnd = () => { setIsDragging(false); window.removeEventListener('mousemove', onMove as any); window.removeEventListener('mouseup', onEnd); window.removeEventListener('touchmove', onMove as any); window.removeEventListener('touchend', onEnd); };
+        if ('touches' in e) { window.addEventListener('touchmove', onMove as any); window.addEventListener('touchend', onEnd, { once: true }); }
+        else { window.addEventListener('mousemove', onMove as any); window.addEventListener('mouseup', onEnd, { once: true }); }
     };
 
-    const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, handle: 'left' | 'right') => {
+    const handleResize = (e: React.MouseEvent | React.TouchEvent, h: 'left' | 'right') => {
         if (!isTextDraggable || !onUpdateTextWidth || !textContainerRef.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-
-        const parent = textContainerRef.current.parentElement;
-        if (!parent) return;
-
-        const parentRect = parent.getBoundingClientRect();
-        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const initialWidth = textContainerRef.current.offsetWidth;
-
-        const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
-            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
-            const dx = moveClientX - initialX;
-            let newWidth;
-
-            if (handle === 'right') {
-                newWidth = initialWidth + dx;
-            } else { // left
-                newWidth = initialWidth - dx;
-            }
-
-            const newWidthPercent = (newWidth / parentRect.width) * 100;
-            const clampedWidth = Math.max(10, Math.min(100, newWidthPercent));
-
-            onUpdateTextWidth(clampedWidth);
+        e.preventDefault(); e.stopPropagation();
+        const parent = textContainerRef.current.parentElement; if (!parent) return;
+        const pRect = parent.getBoundingClientRect(); const initX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initW = textContainerRef.current.offsetWidth;
+        const onMove = (mv: MouseEvent | TouchEvent) => {
+            const mX = 'touches' in mv ? (mv as TouchEvent).touches[0].clientX : (mv as MouseEvent).clientX;
+            const nW = h === 'right' ? initW + (mX - initX) : initW - (mX - initX);
+            onUpdateTextWidth(Math.max(10, Math.min(100, (nW / pRect.width) * 100)));
         };
-
-        const onResizeEnd = () => {
-            window.removeEventListener('mousemove', onResizeMove as any);
-            window.removeEventListener('mouseup', onResizeEnd);
-            window.removeEventListener('touchmove', onResizeMove as any);
-            window.removeEventListener('touchend', onResizeEnd);
-        };
-        
-        if ('touches' in e) {
-            window.addEventListener('touchmove', onResizeMove as any);
-            window.addEventListener('touchend', onResizeEnd, { once: true });
-        } else {
-            window.addEventListener('mousemove', onResizeMove as any);
-            window.addEventListener('mouseup', onResizeEnd, { once: true });
-        }
+        const onEnd = () => { window.removeEventListener('mousemove', onMove as any); window.removeEventListener('mouseup', onEnd); window.removeEventListener('touchmove', onMove as any); window.removeEventListener('touchend', onEnd); };
+        if ('touches' in e) { window.addEventListener('touchmove', onMove as any); window.addEventListener('touchend', onEnd, { once: true }); }
+        else { window.addEventListener('mousemove', onMove as any); window.addEventListener('mouseup', onEnd, { once: true }); }
     };
 
-    const headlineLines = headlineToShow.split('\n');
-    
-    // START DELAY: Initial delay to let background settle.
-    let cumulativeDelay = startDelay;
+    const boxStyle: React.CSSProperties = { textAlign: post.textAlign || 'center', color: resolveColor(post.textColor, '#ffffff', organization), padding: isPreviewMode(mode) ? '0.5rem' : '1.5rem', ...(post.textBackgroundEnabled && { backgroundColor: resolveColor(post.textBackgroundColor, 'rgba(0,0,0,0.5)', organization), borderRadius: isPreviewMode(mode) ? '0.25rem' : '0.75rem', backdropFilter: 'blur(4px)' }) };
+    let delay = startDelay;
+    const getDur = (l: string, a: DisplayPost['textAnimation']) => (a === 'typewriter' ? Math.max(0.5, l.length * 0.08) : a === 'fade-up-word' ? (l.split(/\s+/).length * 0.1) + 0.5 : 0);
 
-    const calculateDuration = (line: string, animation: DisplayPost['textAnimation']) => {
-        if (!animation || animation === 'none') return 0;
-        if (animation === 'typewriter') return Math.max(0.5, line.length * 0.08);
-        if (animation === 'fade-up-word') return (line.split(/\s+/).length * 0.1) + 0.5;
-        if (animation === 'blur-in') return 0.8;
-        return 0;
-    };
-    
     return (
-        <div 
-            ref={textContainerRef}
-            onMouseDown={isTextDraggable ? handleDragStart : undefined}
-            onTouchStart={isTextDraggable ? handleDragStart : undefined}
-            className={`group z-10 ${isDragging ? 'opacity-70' : ''} ${isTextDraggable ? 'cursor-move' : ''}`}
-            style={containerStyle}
-        >
-            {isTextDraggable && (
-                <>
-                    <div
-                        className="absolute -top-3 -right-3 p-2 bg-primary text-white rounded-full shadow-lg touch-none opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 transition-opacity z-20 pointer-events-none"
-                        aria-label="Flytta textruta"
-                    >
-                        <MoveIcon className="w-5 h-5" />
-                    </div>
-
-                    <div 
-                        onMouseDown={e => handleResizeStart(e, 'left')}
-                        onTouchStart={e => handleResizeStart(e, 'left')}
-                        className="absolute -left-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-start opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-none z-20"
-                    >
-                        <div className="w-1 h-8 bg-primary rounded-full shadow-lg"></div>
-                    </div>
-                    <div 
-                        onMouseDown={e => handleResizeStart(e, 'right')}
-                        onTouchStart={e => handleResizeStart(e, 'right')}
-                        className="absolute -right-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-none z-20"
-                    >
-                        <div className="w-1 h-8 bg-primary rounded-full shadow-lg"></div>
-                    </div>
-                </>
-            )}
-            <div style={contentBoxStyle} className={post.textBackgroundEnabled ? '' : 'w-full'}>
-                { headlineToShow && (
-                    <h1 
-                        className={`font-bold leading-tight drop-shadow-lg break-words ${getHeadlineFontSizeClass(post.headlineFontSize, mode)} ${getTagFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`}
-                    >
-                        {headlineLines.map((line, i) => {
-                            const duration = calculateDuration(line, post.textAnimation);
-                            const currentDelay = cumulativeDelay;
-                            if (post.textAnimation === 'typewriter') {
-                                cumulativeDelay += duration;
-                            }
-                            return <AnimatedLine key={`${cycleCount}-h-${i}`} line={line} animation={post.textAnimation} cycleCount={cycleCount} delay={currentDelay} baseAnimationDuration={duration} />;
-                        })}
-                    </h1>
-                )}
-                { post.body && (
-                    <div 
-                        className="animate-fade-in-post opacity-0"
-                        style={{ 
-                            animationDelay: `${cumulativeDelay}s`,
-                            animationFillMode: 'forwards'
-                        }}
-                    >
-                        <PostMarkdownRenderer 
-                            content={post.body}
-                            className={`mt-4 break-words ${getBodyFontSizeClass(post.bodyFontSize, mode)} ${getTagFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`}
-                        />
-                    </div>
-                )}
+        <div ref={textContainerRef} onMouseDown={isTextDraggable ? handleDragStart : undefined} onTouchStart={isTextDraggable ? handleDragStart : undefined} className={`group z-10 ${isDragging ? 'opacity-70' : ''} ${isTextDraggable ? 'cursor-move' : ''}`} style={containerStyle}>
+            {isTextDraggable && <><div className="absolute -top-3 -right-3 p-2 bg-primary text-white rounded-full shadow-lg z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"><MoveIcon className="w-5 h-5" /></div><div onMouseDown={e => handleResize(e, 'left')} onTouchStart={e => handleResize(e, 'left')} className="absolute -left-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-start z-20 opacity-0 group-hover:opacity-100 transition-opacity"><div className="w-1 h-8 bg-primary rounded-full shadow-lg" /></div><div onMouseDown={e => handleResize(e, 'right')} onTouchStart={e => handleResize(e, 'right')} className="absolute -right-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-end z-20 opacity-0 group-hover:opacity-100 transition-opacity"><div className="w-1 h-8 bg-primary rounded-full shadow-lg" /></div></>}
+            <div style={boxStyle} className={post.textBackgroundEnabled ? '' : 'w-full'}>
+                {headlineToShow && <h1 className={`font-bold leading-tight drop-shadow-lg break-words ${getHeadlineFontSizeClass(post.headlineFontSize, mode)} ${getTagFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`}>{headlineToShow.split('\n').map((l, i) => { const d = getDur(l, post.textAnimation); const curD = delay; if (post.textAnimation === 'typewriter') delay += d; return <AnimatedLine key={`${cycleCount}-h-${i}`} line={l} animation={post.textAnimation} cycleCount={cycleCount} delay={curD} baseAnimationDuration={d} />; })}</h1>}
+                {post.body && <div className="animate-fade-in-post opacity-0" style={{ animationDelay: `${delay}s`, animationFillMode: 'forwards' }}><PostMarkdownRenderer content={post.body} className={`mt-4 break-words ${getBodyFontSizeClass(post.bodyFontSize, mode)} ${getTagFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} /></div>}
             </div>
         </div>
     );
 };
-
-interface DraggableTagProps {
-    tag: Tag;
-    override: TagPositionOverride | undefined;
-    mode: 'preview' | 'live';
-    onUpdatePosition?: (tagId: string, newPosition: { x: number; y: number; rotation: number }) => void;
-    startDelay?: number;
-}
 
 const hexToRgba = (hex: string, alpha: number = 1): string => {
-    if (!hex) return 'rgba(0,0,0,0)';
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) {
-        return hex; // return original if invalid hex
-    }
-    const r = parseInt(result[1], 16);
-    const g = parseInt(result[2], 16);
-    const b = parseInt(result[3], 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    return result ? `rgba(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}, ${alpha})` : hex;
 };
 
-const DraggableTag: React.FC<DraggableTagProps> = ({ tag, override, mode, onUpdatePosition, startDelay = 0 }) => {
+const DraggableTag: React.FC<{ tag: Tag; override: TagPositionOverride | undefined; mode: 'preview' | 'live'; onUpdatePosition?: (tagId: string, nP: { x: number; y: number; rotation: number }) => void; startDelay?: number; }> = ({ tag, override, mode, onUpdatePosition, startDelay = 0 }) => {
     const tagRef = useRef<HTMLDivElement>(null);
-    const isDraggable = !!onUpdatePosition;
-
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isDraggable || !tagRef.current || !onUpdatePosition) return;
-        e.preventDefault();
-        e.stopPropagation();
-
-        const parent = tagRef.current.closest('.w-full.h-full.relative.overflow-hidden');
-        if (!parent) return;
-        const parentRect = parent.getBoundingClientRect();
-        
-        const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        
-        let initialOverride: TagPositionOverride;
-        if (override) {
-            initialOverride = override;
-        } else {
-            const tagRect = tagRef.current.getBoundingClientRect();
-            initialOverride = {
-                tagId: tag.id,
-                x: ((tagRect.left + tagRect.width / 2) - parentRect.left) / parentRect.width * 100,
-                y: ((tagRect.top + tagRect.height / 2) - parentRect.top) / parentRect.height * 100,
-                rotation: 0,
-            };
-        }
-
-        const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
-            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
-            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
-            const dx = moveClientX - initialX;
-            const dy = moveClientY - initialY;
-            
-            const elementStartXPercent = initialOverride.x;
-            const elementStartYPercent = initialOverride.y;
-
-            const dxPercent = (dx / parentRect.width) * 100;
-            const dyPercent = (dy / parentRect.height) * 100;
-            
-            const newXPercent = elementStartXPercent + dxPercent;
-            const newYPercent = elementStartYPercent + dyPercent;
-
-            onUpdatePosition(tag.id, {
-                x: Math.max(0, Math.min(100, newXPercent)),
-                y: Math.max(0, Math.min(100, newYPercent)),
-                rotation: initialOverride.rotation,
-            });
+        if (!onUpdatePosition || !tagRef.current) return;
+        e.preventDefault(); e.stopPropagation(); const p = tagRef.current.closest('.w-full.h-full.relative.overflow-hidden'); if (!p) return;
+        const pRect = p.getBoundingClientRect(); const iX = 'touches' in e ? e.touches[0].clientX : e.clientX; const iY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const iP = override || { tagId: tag.id, x: 50, y: 50, rotation: 0 };
+        const onMove = (mv: MouseEvent | TouchEvent) => {
+            const mX = 'touches' in mv ? (mv as TouchEvent).touches[0].clientX : (mv as MouseEvent).clientX;
+            const mY = 'touches' in mv ? (mv as TouchEvent).touches[0].clientY : (mv as MouseEvent).clientY;
+            onUpdatePosition(tag.id, { x: Math.max(0, Math.min(100, iP.x + (mX - iX) / pRect.width * 100)), y: Math.max(0, Math.min(100, iP.y + (mY - iY) / pRect.height * 100)), rotation: iP.rotation });
         };
-
-        const onDragEnd = () => {
-            window.removeEventListener('mousemove', onDragMove as any);
-            window.removeEventListener('mouseup', onDragEnd);
-            window.removeEventListener('touchmove', onDragMove as any);
-            window.removeEventListener('touchend', onDragEnd);
-        };
-        
-        if ('touches' in e) {
-            window.addEventListener('touchmove', onDragMove as any);
-            window.addEventListener('touchend', onDragEnd, { once: true });
-        } else {
-            window.addEventListener('mousemove', onDragMove as any);
-            window.addEventListener('mouseup', onDragEnd, { once: true });
-        }
+        const onEnd = () => { window.removeEventListener('mousemove', onMove as any); window.removeEventListener('mouseup', onEnd); window.removeEventListener('touchmove', onMove as any); window.removeEventListener('touchend', onEnd); };
+        if ('touches' in e) { window.addEventListener('touchmove', onMove as any); window.addEventListener('touchend', onEnd, { once: true }); }
+        else { window.addEventListener('mousemove', onMove as any); window.addEventListener('mouseup', onEnd, { once: true }); }
     };
-
-
-    const isStamp = tag.displayType === 'stamp';
-    const isPreview = isPreviewMode(mode);
-    const shape = (isStamp && tag.shape) ? tag.shape : 'circle';
-    const useScaleVar = isStamp && tag.animation === 'pulse' && override;
-    
-    // Positioning style (applied to outer wrapper if absolute)
-    const positionStyle: React.CSSProperties = override
-        ? {
-              position: 'absolute',
-              left: `${override.x}%`,
-              top: `${override.y}%`,
-              transform: `translate(-50%, -50%) rotate(${override.rotation}deg)${useScaleVar ? ' scale(var(--scale, 1))' : ''}`,
-              cursor: isDraggable ? 'grab' : 'default',
-              zIndex: 20, // Ensure absolute tags are on top
-          }
-        : {};
-
-    const tagStyle: React.CSSProperties = {
-        color: tag.textColor,
-        ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {}),
-    };
-
-    let tagClassName = `inline-flex items-center touch-none ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType, !!override)} ${override ? '' : 'relative z-20'} `;
-
-    if (isStamp) {
-        tagClassName += ' justify-center text-center uppercase tracking-[2px] font-bold ';
-        tagStyle.background = `radial-gradient(circle at center, ${hexToRgba(tag.backgroundColor, tag.opacity ?? 1)} 0%, transparent 70%) no-repeat`;
-        tagStyle.filter = 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1)) contrast(1.1) saturate(0.9)';
-
-        if (shape === 'circle') {
-            tagClassName += ' rounded-full aspect-square ';
-        } else if (shape === 'square') {
-            tagClassName += ' rounded-lg aspect-square ';
-        } else { // rectangle
-            tagClassName += ' rounded-lg ';
-        }
-        
-        if (tag.border === 'solid') {
-            tagClassName += ' border-2 ';
-            tagStyle.borderColor = 'currentColor';
-        } else if (tag.border === 'dashed') {
-            tagClassName += ' border-2 border-dashed ';
-            tagStyle.borderColor = 'currentColor';
-        }
-    } else {
-        tagClassName += ` rounded-lg uppercase tracking-wider ${getTagFontWeightClass(tag.fontWeight)} `;
-        tagStyle.backgroundColor = tag.backgroundColor;
-    }
-
-    let paddingClass = '';
-    const isShapeVertical = isStamp && (shape === 'circle' || shape === 'square');
-    if (tag.url) {
-        paddingClass = isPreview ? 'p-0.5' : 'p-1';
-    } else if (isStamp) {
-        if (shape === 'circle' || shape === 'square') {
-            paddingClass = isPreview ? 'p-2' : 'p-4';
-        } else { // rectangle
-            paddingClass = isPreview ? 'px-2 py-1' : 'px-4 py-2';
-        }
-    } else { // tag
-        paddingClass = isPreview ? 'px-2 py-1' : 'px-4 py-2';
-    }
-    tagClassName += ` ${paddingClass}`;
-
-    // Helper to generate the actual tag content
-    const TagVisual = (
-        <div
-            ref={override ? undefined : tagRef} // If overridden, ref is on outer wrapper
-            style={tagStyle}
-            onMouseDown={(!override && isDraggable) ? handleDragStart : undefined}
-            onTouchStart={(!override && isDraggable) ? handleDragStart : undefined}
-            className={tagClassName.replace(/\s\s+/g, ' ')}
-        >
-            {tag.url ? (
-                <div className={`flex items-center ${isShapeVertical ? 'flex-col gap-1' : 'gap-2'}`}>
-                    <span>{tag.text || "Taggtext"}</span>
-                    <div className="bg-white p-0.5 rounded-sm">
-                        <QrCodeComponent url={tag.url} className={isPreview ? 'w-4 h-4' : 'w-6 h-6'} color={{ dark: '#000', light: '#fff' }} />
-                    </div>
-                </div>
-            ) : (
-                tag.text || "Taggtext"
-            )}
-        </div>
-    );
-    
-    // Case 1: Absolute Positioned Tag (Dragged or manually positioned)
-    if (override) {
-        return (
-            <div
-                ref={tagRef}
-                style={positionStyle}
-                onMouseDown={isDraggable ? handleDragStart : undefined}
-                onTouchStart={isDraggable ? handleDragStart : undefined}
-                className="group"
-            >
-                <div className={startDelay > 0 ? 'animate-fade-in-post opacity-0' : ''} style={{ animationDelay: `${startDelay}s`, animationFillMode: 'forwards' }}>
-                    {TagVisual}
-                </div>
-            </div>
-        );
-    }
-
-    // Case 2: Static Layout Tag (e.g. Centered by default flex/grid in parent)
-    // Note: If startDelay > 0, we simply wrap it to fade in. No position conflict here as we rely on normal flow.
-    if (startDelay > 0) {
-        return (
-            <div className={`relative z-20 animate-fade-in-post opacity-0`} style={{ animationDelay: `${startDelay}s`, animationFillMode: 'forwards' }}>
-                {TagVisual}
-            </div>
-        );
-    }
-
-    // Default return for static layout without delay
-    return TagVisual;
+    const isStamp = tag.displayType === 'stamp'; const shape = isStamp ? tag.shape || 'circle' : 'rectangle';
+    const style: React.CSSProperties = { color: tag.textColor, backgroundColor: isStamp ? undefined : tag.backgroundColor, ...(isStamp && { background: `radial-gradient(circle at center, ${hexToRgba(tag.backgroundColor, tag.opacity ?? 1)} 0%, transparent 70%)`, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1)) contrast(1.1) saturate(0.9)' }), ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {} as any), ...(override && { position: 'absolute', left: `${override.x}%`, top: `${override.y}%`, transform: `translate(-50%, -50%) rotate(${override.rotation}deg)`, cursor: onUpdatePosition ? 'grab' : 'default', zIndex: 20 }) };
+    let cls = `inline-flex items-center touch-none ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType, !!override)} `;
+    if (isStamp) { cls += ' justify-center text-center uppercase tracking-[2px] font-bold ' + (shape === 'circle' ? ' rounded-full aspect-square ' : ' rounded-lg aspect-square '); if (tag.border !== 'none') cls += ` border-2 ${tag.border === 'dashed' ? 'border-dashed' : ''}`; }
+    else { cls += ` rounded-lg uppercase tracking-wider ${getTagFontWeightClass(tag.fontWeight)} px-4 py-2 `; }
+    const V = <div ref={tagRef} style={style} onMouseDown={!!onUpdatePosition ? handleDragStart : undefined} onTouchStart={!!onUpdatePosition ? handleDragStart : undefined} className={cls}>{tag.url ? <div className={`flex items-center ${isStamp ? 'flex-col gap-1' : 'gap-2'}`}><span>{tag.text}</span><div className="bg-white p-0.5 rounded-sm"><QrCodeComponent url={tag.url} className={isPreviewMode(mode) ? 'w-4 h-4' : 'w-6 h-6'} color={{ dark: '#000', light: '#fff' }} /></div></div> : tag.text}</div>;
+    return startDelay > 0 ? <div className="contents animate-fade-in-post opacity-0" style={{ animationDelay: `${startDelay}s`, animationFillMode: 'forwards' }}>{V}</div> : V;
 };
 
 const CollageItemRenderer: React.FC<{ item: CollageItem; isPreloading?: boolean }> = ({ item, isPreloading }) => {
-    const [hasError, setHasError] = useState(false);
-    useEffect(() => { setHasError(false); }, [item.imageUrl, item.videoUrl]);
-
-    if (hasError) {
-        return <img src={PLACEHOLDER_URL} alt="Media saknas" className="w-full h-full object-contain p-2 bg-slate-200 dark:bg-slate-700" />;
-    }
-    if (item.type === 'video' && item.videoUrl) {
-        return <video src={item.videoUrl} onError={() => setHasError(true)} autoPlay={!isPreloading} muted loop playsInline className="w-full h-full object-cover" />;
-    }
-    if (item.type === 'image' && item.imageUrl) {
-        return <img src={item.imageUrl} onError={() => setHasError(true)} alt="Collage item" className="w-full h-full object-cover" />;
-    }
-    // Render a placeholder if item is malformed or missing URL
+    if (item.type === 'video' && item.videoUrl) return <video src={item.videoUrl} autoPlay={!isPreloading} muted loop playsInline crossOrigin="anonymous" className="w-full h-full object-cover" />;
+    if (item.type === 'image' && item.imageUrl) return <img src={item.imageUrl} alt="" crossOrigin="anonymous" className="w-full h-full object-cover" />;
     return <div className="w-full h-full bg-slate-800" />;
 };
 
+// --- MAIN RENDERER COMPONENT ---
 
-export interface DisplayPostRendererProps {
-    post: DisplayPost;
-    allTags?: Tag[];
-    onVideoEnded?: () => void;
-    primaryColor?: string;
-    cycleCount?: number;
-    mode?: 'preview' | 'live';
-    showTags?: boolean;
-    onUpdateTagPosition?: (tagId: string, newPosition: { x: number; y: number, rotation: number }) => void;
-    onUpdateTextPosition?: (pos: { x: number, y: number }) => void;
-    onUpdateTextWidth?: (width: number) => void;
-    onUpdateQrPosition?: (pos: { x: number, y: number }) => void;
-    onUpdateQrWidth?: (width: number) => void;
-    isTextDraggable?: boolean;
-    organization?: Organization;
-    isForDownload?: boolean;
-    aspectRatio?: DisplayScreen['aspectRatio'];
-    isPreloading?: boolean;
-}
+export interface DisplayPostRendererProps { post: DisplayPost; allTags?: Tag[]; onVideoEnded?: () => void; onLoadReady?: () => void; onLoadError?: () => void; primaryColor?: string; cycleCount?: number; mode?: 'preview' | 'live'; showTags?: boolean; onUpdateTagPosition?: (tagId: string, pos: { x: number; y: number, rotation: number }) => void; onUpdateTextPosition?: (pos: { x: number, y: number }) => void; onUpdateTextWidth?: (width: number) => void; onUpdateQrPosition?: (pos: { x: number, y: number }) => void; onUpdateQrWidth?: (width: number) => void; isTextDraggable?: boolean; organization?: Organization; isForDownload?: boolean; aspectRatio?: DisplayScreen['aspectRatio']; isPreloading?: boolean; isBridgeOnly?: boolean; }
 
-export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
-    post,
-    allTags: allTagsFromProp,
-    onVideoEnded,
-    primaryColor: primaryColorFromProp,
-    cycleCount = 0,
-    mode = 'live',
-    showTags = true,
-    onUpdateTagPosition,
-    onUpdateTextPosition,
-    onUpdateTextWidth,
-    onUpdateQrPosition,
-    onUpdateQrWidth,
-    isTextDraggable,
-    isForDownload = false,
-    organization,
-    aspectRatio = '16:9',
-    isPreloading = false,
-}) => {
+export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({ post, allTags: allTagsFromProp, onVideoEnded, onLoadReady, onLoadError, primaryColor: primaryColorFromProp, cycleCount = 0, mode = 'live', showTags = true, onUpdateTagPosition, onUpdateTextPosition, onUpdateTextWidth, onUpdateQrPosition, onUpdateQrWidth, isTextDraggable, isForDownload = false, organization, aspectRatio = '16:9', isPreloading = false, isBridgeOnly = false }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
-
-    // Delay start for overlays if in live mode to allow background to appear first
-    const startDelay = mode === 'live' ? 0.8 : 0;
-
-    const handleReplay = useCallback(() => {
-        if (videoRef.current) {
-            videoRef.current.currentTime = 0;
-            videoRef.current.play().catch(e => {
-            });
-        }
-    }, []);
-
-    // --- REWIND LOGIC FOR SEAMLESS LOOP ---
-    useEffect(() => {
-        if (videoRef.current) {
-            videoRef.current.currentTime = 0;
-            if (!isPreloading) {
-                videoRef.current.play().catch(e => {});
-            }
-        }
-    }, [cycleCount, isPreloading]);
-
-    useEffect(() => {
-        const videoElement = videoRef.current;
-        if (videoElement) {
-            const handleEnd = () => {
-                const duration = videoElement.duration;
-                if (videoElement.currentTime < 0.5 && !isNaN(duration) && duration > 1) {
-                    return;
-                }
-                if(onVideoEnded) onVideoEnded();
-            };
-            videoElement.addEventListener('ended', handleEnd);
-            return () => videoElement.removeEventListener('ended', handleEnd);
-        }
-    }, [onVideoEnded]);
-    
     const backgroundColor = resolveColor(post.backgroundColor, '#000000', organization, primaryColor);
     const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
-
-    const mediaAnimationClasses = `${post.imageEffect === 'ken-burns-slow' ? 'animate-ken-burns-slow' : ''} ${post.imageEffect === 'ken-burns-fast' ? 'animate-ken-burns-fast' : ''}`;
-    const mediaBaseClasses = 'absolute object-cover z-1';
-
+    
     const mediaStyle = useMemo((): React.CSSProperties => {
-        const style: React.CSSProperties = {};
-        const splitPercent = post.splitRatio || 50;
-
-        switch (post.layout) {
-            case 'image-fullscreen':
-            case 'video-fullscreen':
-                style.inset = 0;
-                style.width = '100%';
-                style.height = '100%';
-                break;
-            case 'image-left': // This is "Image Top" in portrait
-                style.top = 0;
-                style.left = 0;
-                if (isPortrait) {
-                    style.width = '100%';
-                    style.height = `${splitPercent}%`;
-                } else {
-                    style.height = '100%';
-                    style.width = `${splitPercent}%`;
-                }
-                break;
-            case 'image-right': // This is "Image Bottom" in portrait
-                if (isPortrait) {
-                    style.bottom = 0;
-                    style.left = 0;
-                    style.width = '100%';
-                    style.height = `${splitPercent}%`;
-                } else {
-                    style.top = 0;
-                    style.right = 0;
-                    style.height = '100%';
-                    style.width = `${splitPercent}%`;
-                }
-                break;
+        const style: React.CSSProperties = { inset: 0, width: '100%', height: '100%' };
+        if (post.layout === 'image-left' || post.layout === 'image-right') {
+            const split = post.splitRatio || 50;
+            if (isPortrait) { style.height = `${split}%`; if (post.layout === 'image-right') { style.top = 'auto'; style.bottom = 0; } }
+            else { style.width = `${split}%`; if (post.layout === 'image-right') { style.left = 'auto'; style.right = 0; } }
         }
         return style;
     }, [post.layout, post.splitRatio, isPortrait]);
-    
+
+    const handleMediaError = useCallback(() => { if (onLoadError) onLoadError(); }, [onLoadError]);
+    const handleMediaReady = useCallback(() => { if (onLoadReady) onLoadReady(); }, [onLoadReady]);
+
+    // Lightweight Bridge Mode: Only visual background
+    if (isBridgeOnly) {
+        return <div className="w-full h-full relative" style={{ backgroundColor }}>{post.imageUrl && <img src={post.imageUrl} crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-cover z-1" alt="" />}</div>;
+    }
+
     const renderCollage = () => {
         const items = post.collageItems || [];
-
-        const renderSlot = (item: CollageItem | undefined | null) => {
-            return item ? <CollageItemRenderer item={item} isPreloading={isPreloading} /> : <div className="w-full h-full bg-slate-800" />;
-        };
-
-        switch (post.collageLayout) {
-            case 'landscape-1-2':
-                return (
-                    <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div className="row-span-2">{renderSlot(items[0])}</div>
-                        <div className="col-start-2 row-start-1">{renderSlot(items[1])}</div>
-                        <div className="col-start-2 row-start-2">{renderSlot(items[2])}</div>
-                    </div>
-                );
-            case 'landscape-2-horiz':
-            case 'portrait-2-horiz':
-                return (
-                    <div className="grid grid-cols-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div>{renderSlot(items[0])}</div>
-                        <div>{renderSlot(items[1])}</div>
-                    </div>
-                );
-            case 'landscape-2-vert':
-            case 'portrait-2-vert':
-                return (
-                    <div className="grid grid-rows-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div>{renderSlot(items[0])}</div>
-                        <div>{renderSlot(items[1])}</div>
-                    </div>
-                );
-            case 'landscape-3-horiz':
-                return (
-                    <div className="grid grid-cols-3 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div>{renderSlot(items[0])}</div>
-                        <div>{renderSlot(items[1])}</div>
-                        <div>{renderSlot(items[2])}</div>
-                    </div>
-                );
-            case 'landscape-4-grid':
-                return (
-                    <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div>{renderSlot(items[0])}</div>
-                        <div>{renderSlot(items[1])}</div>
-                        <div>{renderSlot(items[2])}</div>
-                        <div>{renderSlot(items[3])}</div>
-                    </div>
-                );
-            case 'portrait-1-2':
-                 return (
-                    <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div className="col-span-2">{renderSlot(items[0])}</div>
-                        <div className="col-start-1 row-start-2">{renderSlot(items[1])}</div>
-                        <div className="col-start-2 row-start-2">{renderSlot(items[2])}</div>
-                    </div>
-                );
-            case 'portrait-3-vert':
-                return (
-                    <div className="grid grid-rows-3 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div>{renderSlot(items[0])}</div>
-                        <div>{renderSlot(items[1])}</div>
-                        <div>{renderSlot(items[2])}</div>
-                    </div>
-                );
-            case 'portrait-4-grid':
-                 return (
-                    <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div>{renderSlot(items[0])}</div>
-                        <div>{renderSlot(items[1])}</div>
-                        <div>{renderSlot(items[2])}</div>
-                        <div>{renderSlot(items[3])}</div>
-                    </div>
-                );
-            default:
-                // Default to first layout if none is selected
-                return (
-                    <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full p-1" style={{ backgroundColor }}>
-                        <div className="row-span-2">{renderSlot(items[0])}</div>
-                        <div className="col-start-2 row-start-1">{renderSlot(items[1])}</div>
-                        <div className="col-start-2 row-start-2">{renderSlot(items[2])}</div>
-                    </div>
-                );
-        }
+        const Block = (i: number) => <CollageItemRenderer item={items[i] || { id: 'empty', type: 'image' }} isPreloading={isPreloading} />;
+        return <div className="w-full h-full p-1 grid gap-1" style={{ backgroundColor }}>{post.collageLayout?.includes('landscape') ? <div className="grid grid-cols-2 grid-rows-2 h-full gap-1">{Block(0)}{Block(1)}{Block(2)}{Block(3)}</div> : <div className="h-full">{Block(0)}</div>}</div>;
     };
 
-    const renderInstagramPost = () => {
-        const url = organization?.latestInstagramPostUrl;
-
-        if (!url) {
-            const message = "Ingen länk till senaste Instagram-inlägg har angetts under Varumärke > Sociala Medier.";
-            return <div className="w-full h-full flex items-center justify-center text-slate-400 p-4 text-center">{message}</div>;
-        }
-        
-        const match = url.match(/\/p\/([a-zA-Z0-9_-]+)/) || url.match(/\/reel\/([a-zA-Z0-9_-]+)/);
-        const shortcode = match ? match[1] : null;
-
-        if (shortcode) {
-            const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/?cr=1&v=14&wp=540&rd=http%3A%2F%2Flocalhost%3A3000&rp=%2F#%7B%22ci%22%3A0%2C%22os%22%3A123%7D`;
-
-            return (
-                <div className="w-full h-full flex items-center justify-center bg-black p-1">
-                     <iframe
-                        src={embedUrl}
-                        className="w-full h-full border-0 max-w-[540px]"
-                        allowTransparency={true}
-                        scrolling="no"
-                    />
-                </div>
-            );
-        }
-
-        return <div className="w-full h-full flex items-center justify-center text-slate-400 p-4 text-center">Ogiltig Instagram-URL. Länken ska se ut ungefär så här: <br/> https://www.instagram.com/p/C_abc123/</div>;
-    };
-
-    if (post.layout === 'instagram-latest') {
-        return renderInstagramPost();
-    }
-    
-    if (post.layout === 'instagram-stories') {
-        if (!organization?.id) {
-            return <div className="w-full h-full flex items-center justify-center text-slate-400 p-4 text-center">Organisationen kunde inte identifieras.</div>
-        }
-        return <InstagramStoryPost organizationId={organization.id} />;
-    }
-
-    const isMediaLayout = useMemo(() => {
-        return ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
-    }, [post.layout]);
-
-    // Calculate QR position and size with defaults fallback
-    const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
-    const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
-    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 12);
+    const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
+    const startDelay = mode === 'live' ? 0.8 : 0;
 
     return (
         <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
             {isMediaLayout && (
                 <>
-                    {post.imageUrl && (
-                        <ImageWithFallback src={post.imageUrl} alt={post.headline || 'Post image'} className={`${mediaBaseClasses} ${mediaAnimationClasses}`} style={mediaStyle} />
-                    )}
-                    {!post.imageUrl && post.videoUrl && (
-                        <VideoWithFallback 
-                            key={post.videoUrl} // FORCE REMOUNT ON URL CHANGE
-                            ref={videoRef} 
-                            src={post.videoUrl} 
-                            autoPlay={!isPreloading && !isForDownload}
-                            muted 
-                            preload="auto"
-                            playsInline 
-                            onEnded={onVideoEnded} 
-                            className={mediaBaseClasses} 
-                            style={mediaStyle} 
-                        />
-                    )}
+                    {post.imageUrl && <ImageWithFallback src={post.imageUrl} className={`absolute object-cover z-1 ${post.imageEffect?.includes('ken-burns') ? 'animate-' + post.imageEffect : ''}`} style={mediaStyle} alt="" onLoadReady={post.videoUrl ? undefined : handleMediaReady} onLoadError={handleMediaError} />}
+                    {!post.imageUrl && post.videoUrl && <VideoWithFallback key={post.videoUrl} ref={videoRef} src={post.videoUrl} autoPlay={!isPreloading && !isForDownload} muted preload="auto" playsInline onEnded={onVideoEnded} onLoadReady={handleMediaReady} onLoadError={handleMediaError} onStall={handleMediaError} className="absolute object-cover z-1" style={mediaStyle} />}
+                    {post.imageUrl && post.videoUrl && <VideoWithFallback key={post.videoUrl} ref={videoRef} src={post.videoUrl} autoPlay={!isPreloading && !isForDownload} muted preload="auto" playsInline onEnded={onVideoEnded} onLoadReady={handleMediaReady} onLoadError={handleMediaError} onStall={handleMediaError} className="absolute object-cover z-2" style={mediaStyle} />}
                 </>
             )}
-             {post.layout === 'collage' && <div className="absolute inset-0 z-1">{renderCollage()}</div>}
-             {post.layout === 'webpage' && post.webpageUrl && (
-                <iframe
-                    src={ensureAbsoluteUrl(post.webpageUrl)}
-                    className="absolute inset-0 w-full h-full border-none z-1"
-                    title={post.internalTitle || 'Webpage Content'}
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                />
-             )}
-
-            {post.imageOverlayEnabled && (post.layout.includes('image') || post.layout.includes('video') || post.layout === 'collage' || post.layout === 'webpage') && (
-                <div 
-                    className="absolute inset-0 z-3"
-                    style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0, 0, 0, 0.45)', organization) }}
-                ></div>
-            )}
-            
+            {post.layout === 'collage' && <div className="absolute inset-0 z-1">{renderCollage()}</div>}
+            {post.layout === 'webpage' && post.webpageUrl && <iframe src={ensureAbsoluteUrl(post.webpageUrl)} className="absolute inset-0 w-full h-full border-none z-1" title="" sandbox="allow-scripts allow-same-origin" />}
+            {post.layout === 'instagram-latest' && organization?.latestInstagramPostUrl && <iframe src={`https://www.instagram.com/p/${organization.latestInstagramPostUrl.match(/\/p\/([a-zA-Z0-9_-]+)/)?.[1]}/embed/`} className="w-full h-full border-0 z-1" scrolling="no" />}
+            {post.layout === 'instagram-stories' && organization?.id && <InstagramStoryPost organizationId={organization.id} />}
+            {post.imageOverlayEnabled && <div className="absolute inset-0 z-3" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }}></div>}
             {(post.headline || post.body) && <TextContent post={post} mode={mode} onUpdateTextPosition={onUpdateTextPosition} onUpdateTextWidth={onUpdateTextWidth} isTextDraggable={isTextDraggable} cycleCount={cycleCount} organization={organization} aspectRatio={aspectRatio} isForDownload={isForDownload} startDelay={startDelay} />}
-
-            {showTags && post.tagIds && post.tagIds.map(tagId => {
-                 const tag = allTags.find(t => t.id === tagId);
-                 if (!tag) return null;
-                 
-                 const colorOverride = (post.tagColorOverrides || []).find(o => o.tagId === tagId);
-                 const positionOverride = (post.tagPositionOverrides || []).find(o => o.tagId === tagId);
-
-                 const finalTag = {
-                     ...tag,
-                     ...(colorOverride || {}),
-                 };
-                 
-                 return <DraggableTag key={tagId} tag={finalTag} override={positionOverride} mode={mode} onUpdatePosition={onUpdateTagPosition} startDelay={startDelay} />;
-            })}
-
-             {post.qrCodeUrl && (
-                <DraggableQrCode 
-                    url={post.qrCodeUrl}
-                    x={qrX}
-                    y={qrY}
-                    width={qrW}
-                    isDraggable={isTextDraggable}
-                    onUpdatePosition={onUpdateQrPosition}
-                    onUpdateWidth={onUpdateQrWidth}
-                    startDelay={startDelay}
-                />
-            )}
-
-            {post.layout === 'image-fullscreen' && post.subImages && post.subImages.length > 0 && post.subImageConfig && (
-                <SubImageCarousel images={post.subImages} config={post.subImageConfig} cycleCount={cycleCount} />
-            )}
-
+            {showTags && post.tagIds?.map(tagId => { const tag = allTags.find(t => t.id === tagId); return tag ? <DraggableTag key={tagId} tag={{ ...tag, ...((post.tagColorOverrides || []).find(o => o.tagId === tagId) || {}) }} override={(post.tagPositionOverrides || []).find(o => o.tagId === tagId)} mode={mode} onUpdatePosition={onUpdateTagPosition} startDelay={startDelay} /> : null; })}
+            {post.qrCodeUrl && <DraggableQrCode url={post.qrCodeUrl} x={post.qrPositionX ?? 90} y={post.qrPositionY ?? 90} width={post.qrWidth ?? 12} isDraggable={isTextDraggable} onUpdatePosition={onUpdateQrPosition} onUpdateWidth={onUpdateQrWidth} startDelay={startDelay} />}
+            {post.layout === 'image-fullscreen' && post.subImages?.length && post.subImageConfig && <SubImageCarousel images={post.subImages} config={post.subImageConfig} cycleCount={cycleCount} />}
             <BackgroundEffects effect={post.backgroundEffect} />
         </div>
     );

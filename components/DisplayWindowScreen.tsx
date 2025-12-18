@@ -10,18 +10,12 @@ interface DisplayWindowScreenProps {
   isEmbedded?: boolean;
 }
 
-/* ===================== Datum-helpers ===================== */
-// Helper function to check if a post is currently active based on dates
 const isPostActive = (post: DisplayPost, now: Date) => {
     if (post.status === 'archived') return false; 
     const start = parseToDate(post.startDate, false);
-    
-    // Requirement: A start date must exist and have passed for the post to be shown.
-    if (!start || start > now) return false;
-    
+    if (start && start > now) return false;
     const end = parseToDate(post.endDate, true);
     if (end && end < now) return false;
-    
     return true;
 };
 
@@ -46,111 +40,38 @@ const ProgressBar: React.FC<{ duration: number; isPaused: boolean }> = ({ durati
   );
 };
 
-const PostWrapper: React.FC<{
-  post: DisplayPost;
-  state: 'idle' | 'entering' | 'exiting';
-  transitionType?: DisplayPost['transitionToNext'];
-  allTags?: Tag[];
-  onVideoEnded?: () => void;
-  primaryColor?: string;
-  cycleCount: number;
-  organization?: Organization;
-  aspectRatio: DisplayScreen['aspectRatio'];
-}> = ({ post, state, transitionType, allTags, onVideoEnded, primaryColor, cycleCount, organization, aspectRatio }) => {
-  
-  const getAnimationClass = () => {
-    if (state === 'exiting') {
-      switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-out-left-full'; // Custom full slide out
-        case 'dissolve': return 'animate-dissolve-out-post'; // Blur out
-        case 'fade':
-        default: return 'animate-fade-out-post'; // Simple fade out
-      }
-    }
-    
-    if (state === 'entering') {
-      switch (transitionType || 'fade') {
-        case 'slide': return 'animate-slide-in-right-full'; // Custom full slide in
-        case 'dissolve': return 'animate-dissolve-in-post'; // Blur in
-        case 'fade':
-        default: return 'animate-fade-in-post'; // Simple fade in
-      }
-    }
-    return 'opacity-100';
-  };
-
-  const getZIndexClass = () => {
-      // For slide transitions, put the entering post on top to cover the exiting one cleanly
-      if (transitionType === 'slide' && state === 'entering') return 'z-30';
-      if (transitionType === 'slide' && state === 'exiting') return 'z-20';
-      
-      // For fade/dissolve, exiting stays on top briefly while fading out
-      return state === 'exiting' ? 'z-20' : 'z-10';
-  };
-
-  // If exiting, we disconnect the video ended handler to prevent double-firing
-  const handleVideoEnded = state === 'exiting' ? undefined : onVideoEnded;
-
-  return (
-    <div className={`absolute inset-0 ${getAnimationClass()} ${getZIndexClass()}`}>
-      <DisplayPostRenderer
-        post={post}
-        allTags={allTags}
-        onVideoEnded={handleVideoEnded}
-        primaryColor={primaryColor}
-        cycleCount={cycleCount}
-        organization={organization}
-        aspectRatio={aspectRatio}
-        mode="live"
-      />
-    </div>
-  );
-};
-
 export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack, isEmbedded = false }) => {
   const { selectedDisplayScreen, selectedOrganization } = useLocation();
 
-  // State
-  const [currentPostId, setCurrentPostId] = useState<string | null>(null);
-  const [exitingPost, setExitingPost] = useState<DisplayPost | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  // --- Sequential Loop Management (Sony Sandwich Model) ---
+  const [currentIdx, setCurrentIdx] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
   
-  // Refs & Timers
-  const timerRef = useRef<number | null>(null);
-  const failsafeTimerRef = useRef<number | null>(null);
-  const [lastClickTime, setLastClickTime] = useState(0);
+  // playbackState determines which layer is active and how we bridge transitions
+  // 'playing' -> Active post visible (Z-20)
+  // 'bridging' -> Previous post static image visible (Z-10), active post removed to clear decoder
+  // 'loading_next' -> Next post rendering hidden (Z-20, opacity-0) to prepare
+  const [playbackState, setPlaybackState] = useState<'playing' | 'bridging' | 'loading_next'>('playing');
+  
   const [currentTime, setCurrentTime] = useState(new Date());
+  const timerRef = useRef<number | null>(null);
+  const watchdogRef = useRef<number | null>(null);
+  const lastClickTime = useRef(0);
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
 
-  // --- BLOB CACHING ---
-  // Store mapped Blob URLs for videos to ensure smooth playback without network hits during transition
-  const [videoBlobs, setVideoBlobs] = useState<Record<string, string>>({});
-  const fetchingRefs = useRef<Set<string>>(new Set());
-  
-  /* Wake Lock */
+  /* Wake Lock for TVs */
   useEffect(() => {
     if (isEmbedded) return;
     const requestWakeLock = async () => {
       if ('wakeLock' in navigator) {
-        try {
-          wakeLockSentinel.current = await (navigator as any).wakeLock.request('screen');
-          wakeLockSentinel.current?.addEventListener('release', () => (wakeLockSentinel.current = null));
-        } catch { /* noop */ }
+        try { wakeLockSentinel.current = await (navigator as any).wakeLock.request('screen'); } catch { }
       }
     };
     requestWakeLock();
-    const vis = () => {
-      if (wakeLockSentinel.current === null && document.visibilityState === 'visible') requestWakeLock();
-    };
-    document.addEventListener('visibilitychange', vis);
-    return () => {
-      if (wakeLockSentinel.current) wakeLockSentinel.current.release().then(() => (wakeLockSentinel.current = null));
-      document.removeEventListener('visibilitychange', vis);
-    };
+    return () => { if (wakeLockSentinel.current) wakeLockSentinel.current.release(); };
   }, [isEmbedded]);
 
-  /* Time Tick */
+  /* Time Tick for Schedule Check */
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(t);
@@ -163,284 +84,141 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     return posts.filter(p => isPostActive(p, currentTime));
   }, [selectedDisplayScreen, currentTime]);
 
-  /* Determine Current Post Object */
-  const currentPost = useMemo(() => {
-      if (activePosts.length === 0) return null;
-      if (!currentPostId) return activePosts[0];
-      return activePosts.find(p => p.id === currentPostId) || activePosts[0];
-  }, [activePosts, currentPostId]);
+  const currentPost = activePosts[currentIdx] || null;
+  const nextIdx = (currentIdx + 1) % (activePosts.length || 1);
+  const nextPost = activePosts[nextIdx] || null;
 
-  /* Determine Next Post Object for Preloading */
-  const nextPost = useMemo(() => {
-      if (activePosts.length <= 1) return null;
-      if (!currentPostId) return activePosts[1]; // If first is active, next is second
-      
-      const currentIndex = activePosts.findIndex(p => p.id === currentPostId);
-      if (currentIndex === -1) return activePosts[0];
-      
-      const nextIndex = (currentIndex + 1) % activePosts.length;
-      return activePosts[nextIndex];
-  }, [activePosts, currentPostId]);
-
-  /* --- BLOB PRELOADING LOGIC --- */
-  useEffect(() => {
-    const url = nextPost?.videoUrl;
-    // Only preload if: url exists, not already cached, not currently fetching, and is a remote url (not local file/data uri)
-    if (!url || videoBlobs[url] || fetchingRefs.current.has(url) || !url.startsWith('http')) return;
-
-    fetchingRefs.current.add(url);
-    
-    // Download video file to memory
-    fetch(url)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        setVideoBlobs(prev => ({ ...prev, [url]: objectUrl }));
-      })
-      .catch(err => {
-        console.error("Video preload failed:", url, err);
-      })
-      .finally(() => {
-        fetchingRefs.current.delete(url);
-      });
-  }, [nextPost?.videoUrl, videoBlobs]);
-
-  /* --- BLOB CLEANUP LOGIC --- */
-  useEffect(() => {
-    const activeUrls = new Set<string>();
-    if (currentPost?.videoUrl) activeUrls.add(currentPost.videoUrl);
-    if (nextPost?.videoUrl) activeUrls.add(nextPost.videoUrl);
-    if (exitingPost?.videoUrl) activeUrls.add(exitingPost.videoUrl);
-
-    setVideoBlobs(prev => {
-      const nextState = { ...prev };
-      let changed = false;
-      Object.keys(prev).forEach(url => {
-        // If a cached URL is no longer needed for current, next, or exiting post -> revoke it
-        if (!activeUrls.has(url)) {
-          URL.revokeObjectURL(prev[url]);
-          delete nextState[url];
-          changed = true;
-        }
-      });
-      return changed ? nextState : prev;
-    });
-  }, [currentPost?.id, nextPost?.id, exitingPost?.id, currentPost?.videoUrl, nextPost?.videoUrl, exitingPost?.videoUrl]);
-
-  // Helper to inject blob URL into post object
-  const getPostWithCachedVideo = useCallback((p: DisplayPost | null) => {
-      if (!p) return null;
-      if (p.videoUrl && videoBlobs[p.videoUrl]) {
-          return { ...p, videoUrl: videoBlobs[p.videoUrl] };
-      }
-      return p;
-  }, [videoBlobs]);
-
-
-  /* Ensure we have a valid ID if posts are loaded but no ID selected */
-  useEffect(() => {
-      if (!currentPostId && activePosts.length > 0) {
-          setCurrentPostId(activePosts[0].id);
-      }
-  }, [activePosts, currentPostId]);
-
-  /* Advance Logic */
+  /* ADVANCE LOGIC (The Sandwich Engine) */
   const advance = useCallback(() => {
-    if (isTransitioning || activePosts.length === 0) return;
+    if (activePosts.length === 0) return;
     
-    const currentIndex = activePosts.findIndex(p => p.id === (currentPostId || activePosts[0].id));
-    if (currentIndex === -1) {
-        // Current post disappeared, reset to start
-        setCurrentPostId(activePosts[0].id);
-        setCycleCount(c => c + 1);
-        return;
-    }
+    // Clear all active durations and watchdogs
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    if (watchdogRef.current) window.clearTimeout(watchdogRef.current);
 
-    const nextIndex = (currentIndex + 1) % activePosts.length;
-    const nextPost = activePosts[nextIndex];
-    const prevPost = activePosts[currentIndex];
+    // 1. Switch to Bridging: Removes the active post (and its video decoder) 
+    // but keeps a static image of it as a bridge for the viewer.
+    setPlaybackState('bridging');
 
-    // Start transition
-    setIsTransitioning(true);
-    setExitingPost(prevPost);
-    setCurrentPostId(nextPost.id);
-    setCycleCount(c => c + 1);
-    
-    // End transition after animation. 
-    // Increased slightly to ensure animations complete before unmounting.
+    // Sony Safe-Gap: Transitional pause if switching from Video to Video
+    const isVideoToVideo = (currentPost?.videoUrl || currentPost?.layout?.includes('video')) && 
+                           (nextPost?.videoUrl || nextPost?.layout?.includes('video'));
+    const pauseTime = isVideoToVideo ? 500 : 0;
+
     window.setTimeout(() => {
-      setExitingPost(null);
-      setIsTransitioning(false);
-    }, 1300);
-  }, [isTransitioning, activePosts, currentPostId]);
+      // 2. Load the next post hidden (opacity-0)
+      setCurrentIdx(nextIdx);
+      setCycleCount(c => c + 1);
+      setPlaybackState('loading_next');
 
-  /* Timer Logic */
+      // 3. Sony Watchdog: Fail-fast if the next slide takes more than 7s to signal "ready"
+      watchdogRef.current = window.setTimeout(() => {
+        console.warn("Display: Media took too long to load. Advancing silently.");
+        advance();
+      }, 7000);
+    }, pauseTime);
+
+  }, [currentIdx, activePosts, nextIdx, currentPost, nextPost]);
+
+  /* READY HANDLER (Received from PostRenderer) */
+  const handleNextReady = useCallback(() => {
+    if (playbackState === 'loading_next') {
+      // Clear the loading watchdog
+      if (watchdogRef.current) window.clearTimeout(watchdogRef.current);
+      
+      // Post is fully prepared (Image loaded or Video ready to play)
+      setPlaybackState('playing');
+      
+      // Setup duration timer for static content (videos use onEnded)
+      const isVideo = currentPost && (currentPost.videoUrl || currentPost.layout?.includes('video'));
+      if (!isVideo) {
+        timerRef.current = window.setTimeout(advance, (currentPost?.durationSeconds ?? 10) * 1000);
+      }
+    }
+  }, [playbackState, currentPost, advance]);
+
+  /* ERROR HANDLER (Fail-Fast) */
+  const handleLoadError = useCallback(() => {
+    console.warn("Display: Media error or stall detected. Skipping to next.");
+    advance();
+  }, [advance]);
+
+  // Initial jump to first active post if current becomes invalid
   useEffect(() => {
-    // Clear existing timers
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    if (failsafeTimerRef.current) {
-        clearTimeout(failsafeTimerRef.current);
-        failsafeTimerRef.current = null;
-    }
+      if (activePosts.length > 0 && !currentPost) {
+          setCurrentIdx(0);
+      }
+  }, [activePosts, currentPost]);
 
-    if (isTransitioning || !currentPost) return;
-
-    const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout);
-    // Check if it's a video that should control the timing
-    const hasActiveVideo = isMediaLayout && !currentPost.imageUrl && currentPost.videoUrl;
-
-    const durationMs = (currentPost.durationSeconds ?? 10) * 1000;
-
-    if (hasActiveVideo) {
-        // For video, we wait for onEnded (handled in PostWrapper -> DisplayPostRenderer)
-        // But we add a failsafe in case video stalls
-        failsafeTimerRef.current = window.setTimeout(() => {
-            console.log("Video failsafe triggered - forcing advance");
-            advance();
-        }, durationMs + 8000); // 8s grace period for buffering
-        return;
-    }
-
-    // For images/text, use simple timer
-    timerRef.current = window.setTimeout(() => {
-      advance();
-    }, durationMs);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
-    };
-  }, [currentPost, isTransitioning, advance]);
-
-  /* Admin Double Click */
+  /* Double click for Admin return */
   const handleAdminClick = (e: React.MouseEvent) => {
     if (isEmbedded) return;
     const now = Date.now();
-    if (now - lastClickTime < 500) {
-      e.stopPropagation();
-      onBack();
-    }
-    setLastClickTime(now);
+    if (now - lastClickTime.current < 500) { onBack(); }
+    lastClickTime.current = now;
   };
 
-  // Loading / Error States
-  if (!selectedDisplayScreen || !selectedOrganization) {
-    return <div className="bg-black text-white min-h-screen flex items-center justify-center">Laddar skärm...</div>;
-  }
-  if (!selectedDisplayScreen.isEnabled) {
-    return <div className="bg-black text-white min-h-screen flex items-center justify-center">Denna skärm är inte aktiverad.</div>;
-  }
+  if (!selectedDisplayScreen || !selectedOrganization) return null;
 
-  // Branding
-  const branding = selectedDisplayScreen.branding;
   const logoUrl = selectedOrganization.logoUrlDark || selectedOrganization.logoUrlLight;
-  const getPositionClasses = (position: BrandingOptions['position'] = 'bottom-right') => {
-    switch (position) {
-      case 'top-left': return 'top-6 left-6';
-      case 'top-right': return 'top-6 right-6';
-      case 'bottom-left': return 'bottom-6 left-6';
-      case 'bottom-right': return 'bottom-6 right-6';
-      default: return 'bottom-6 right-6';
-    }
-  };
-
-  // Helper to determine progress bar visibility
-  const hasActiveVideo = currentPost && ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(currentPost.layout) && !currentPost.imageUrl && currentPost.videoUrl;
+  const branding = selectedDisplayScreen.branding;
 
   return (
     <div className="w-screen h-screen bg-black relative overflow-hidden" onClick={handleAdminClick}>
-      {/* Dynamic Keyframes for smoother full-width slides */}
-      <style>{`
-        @keyframes slide-out-left-full {
-          from { transform: translateX(0); opacity: 1; }
-          to { transform: translateX(-100%); opacity: 1; }
-        }
-        @keyframes slide-in-right-full {
-          from { transform: translateX(100%); opacity: 1; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        .animate-slide-out-left-full {
-          animation: slide-out-left-full 1.0s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-        }
-        .animate-slide-in-right-full {
-          animation: slide-in-right-full 1.0s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-        }
-      `}</style>
-
-      {/* --- PRELOADER (INVISIBLE) --- */}
-      {nextPost && nextPost.id !== currentPost?.id && (
-        <div className="absolute inset-0 opacity-0 pointer-events-none -z-10" aria-hidden="true">
-            <DisplayPostRenderer 
-                // We don't necessarily need the blob for the invisible preloader itself (since it just fetches), 
-                // but passing it keeps logic consistent. The important part is the `useEffect` above fetching the blob.
-                post={getPostWithCachedVideo(nextPost)!} 
-                allTags={selectedOrganization.tags} 
-                primaryColor={selectedOrganization.primaryColor}
-                organization={selectedOrganization}
-                aspectRatio={selectedDisplayScreen.aspectRatio}
-                mode="live"
-                isPreloading={true} // Triggers silent loading
-            />
+      
+      {/* 
+          BRIDGE LAYER (Z-10): 
+          Shows a static image of the PREVIOUS post while the next one is 
+          removed from DOM (bridging) or loading in the background (loading_next).
+      */}
+      {currentPost && (playbackState === 'bridging' || playbackState === 'loading_next') && (
+        <div className="absolute inset-0 z-10">
+          <DisplayPostRenderer
+            // Logic: we want to show the post that was just visible
+            post={activePosts[currentIdx === 0 ? activePosts.length - 1 : currentIdx - 1] || currentPost}
+            isBridgeOnly={true}
+            organization={selectedOrganization}
+            aspectRatio={selectedDisplayScreen.aspectRatio}
+          />
         </div>
       )}
 
-      {exitingPost && (
-        <PostWrapper
-          key={`${exitingPost.id}-${cycleCount - 1}`}
-          post={getPostWithCachedVideo(exitingPost)!}
-          state="exiting"
-          transitionType={exitingPost.transitionToNext}
-          allTags={selectedOrganization.tags}
-          primaryColor={selectedOrganization.primaryColor}
-          cycleCount={cycleCount - 1}
-          organization={selectedOrganization}
-          aspectRatio={selectedDisplayScreen.aspectRatio}
-        />
+      {/* 
+          ACTIVE LAYER (Z-20): 
+          This is where the actual rendering happens.
+          It's opacity-0 during 'loading_next' and fades in during 'playing'.
+      */}
+      {currentPost && (
+        <div className={`absolute inset-0 z-20 transition-opacity duration-700 ${playbackState === 'playing' ? 'opacity-100' : 'opacity-0'}`}>
+          <DisplayPostRenderer
+            key={`${currentPost.id}-${cycleCount}`}
+            post={currentPost}
+            onVideoEnded={advance}
+            onLoadReady={handleNextReady}
+            onLoadError={handleLoadError}
+            organization={selectedOrganization}
+            aspectRatio={selectedDisplayScreen.aspectRatio}
+            mode="live"
+          />
+        </div>
       )}
 
-      {currentPost ? (
-        <PostWrapper
-          key={`${currentPost.id}-${cycleCount}`}
-          post={getPostWithCachedVideo(currentPost)!}
-          state={isTransitioning ? 'entering' : 'idle'}
-          transitionType={exitingPost?.transitionToNext || 'fade'}
-          allTags={selectedOrganization.tags}
-          onVideoEnded={advance}
-          primaryColor={selectedOrganization.primaryColor}
-          cycleCount={cycleCount}
-          organization={selectedOrganization}
-          aspectRatio={selectedDisplayScreen.aspectRatio}
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-gray-500">Inga aktiva inlägg att visa.</div>
+      {/* 
+          OVERLAY UI (Z-30+)
+      */}
+      {currentPost && playbackState === 'playing' && !currentPost.videoUrl && (
+        <ProgressBar duration={currentPost.durationSeconds ?? 10} isPaused={false} />
       )}
 
-      {/* Show progress bar unless it's a video that controls its own timing */}
-      {currentPost && !hasActiveVideo && (
-        <ProgressBar duration={currentPost.durationSeconds ?? 10} isPaused={isTransitioning} />
-      )}
-
-      {branding?.isEnabled && selectedOrganization && (branding.showLogo || branding.showName) && (
-        <div className={`absolute ${getPositionClasses(branding.position)} z-30`}>
-            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-                {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${selectedOrganization.name} logo`} className="max-h-8 max-w-[100px] object-contain" />}
-                {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
-            </div>
+      {branding?.isEnabled && (branding.showLogo || branding.showName) && (
+        <div className="absolute bottom-6 right-6 z-30 flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+          {branding.showLogo && logoUrl && <img src={logoUrl} alt="" className="max-h-8 max-w-[100px] object-contain" />}
+          {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
         </div>
       )}
 
       {isEmbedded && (
-        <a
-          href="https://smartskylt.se"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-4 right-4 z-40 bg-black/50 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-sm no-underline hover:bg-black/70 hover:text-white transition-colors"
-          title="Powered by Smart Skylt"
-        >
+        <a href="https://smartskylt.se" target="_blank" rel="noopener noreferrer" className="absolute bottom-4 right-4 z-40 bg-black/50 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-sm no-underline">
           Powered by Smart Skylt
         </a>
       )}
