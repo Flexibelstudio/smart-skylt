@@ -3,9 +3,9 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
-import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon } from '../../icons';
+import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon, DownloadIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
-import { uploadPostAsset, listenToVideoOperationForPost } from '../../../services/firebaseService';
+import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary, listenToVideoOperationForPost } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
@@ -186,6 +186,7 @@ const SingleMediaEditor: React.FC<{
 }> = ({ post, onPostChange, handleFileChange, aiLoading, setAiLoading, uploadProgress, organization, screen, onUpdateOrganization }) => {
     const [isMediaPickerOpen, setIsMediaPickerOpen] = useState(false);
     const [isAiEditorOpen, setIsAiEditorOpen] = useState(false);
+    const [isSavingToGallery, setIsSavingToGallery] = useState(false);
     const { currentUser } = useAuth();
     const { showToast } = useToast();
     const [videoProgressText, setVideoProgressText] = useState("");
@@ -392,6 +393,45 @@ const SingleMediaEditor: React.FC<{
           startListening();
         }
     };
+
+    const handleSaveToGallery = async () => {
+        const mediaUrl = post.imageUrl || post.videoUrl;
+        if (!mediaUrl) return;
+
+        setIsSavingToGallery(true);
+        try {
+            let finalUrl = mediaUrl;
+            let type: 'image' | 'video' = post.imageUrl ? 'image' : 'video';
+            let createdBy: 'user' | 'ai' = (post.isAiGeneratedImage || post.isAiGeneratedVideo) ? 'ai' : 'user';
+
+            // Om det är en data-uri (t.ex. AI-genererad och ännu inte sparad i inlägget), ladda upp den
+            if (mediaUrl.startsWith('data:')) {
+                const blob = dataUriToBlob(mediaUrl);
+                const extension = type === 'image' ? 'png' : 'mp4';
+                const file = new File([blob], `gallery-item-${Date.now()}.${extension}`, { type: blob.type });
+                const { url } = await uploadMediaForGallery(organization.id, file, () => {});
+                finalUrl = url;
+            }
+
+            const newItem: MediaItem = {
+                id: `media-${Date.now()}`,
+                type,
+                url: finalUrl,
+                internalTitle: post.internalTitle || 'Bild från inlägg',
+                createdAt: new Date().toISOString(),
+                createdBy,
+                aiPrompt: post.aiImagePrompt || post.aiVideoPrompt
+            };
+
+            await addMediaItemsToLibrary(organization.id, [newItem]);
+            showToast({ message: "Media sparad i ditt galleri! 📸", type: 'success' });
+        } catch (error) {
+            console.error("Save to gallery failed:", error);
+            showToast({ message: "Kunde inte spara till galleriet.", type: 'error' });
+        } finally {
+            setIsSavingToGallery(false);
+        }
+    };
     
     const isVideoGenerating = aiLoading === 'generate-video' || aiLoading === 'preparing-image';
     const isImageGenerating = aiLoading === 'generate-image' || aiLoading === 'edit-image';
@@ -501,9 +541,13 @@ const SingleMediaEditor: React.FC<{
                         <div className="relative w-48 group">
                             {post.imageUrl && <img src={post.imageUrl} className="w-full rounded-md shadow-md" alt="Post media preview" />}
                             {post.videoUrl && <video src={post.videoUrl} className="w-full rounded-md shadow-md" autoPlay muted loop playsInline />}
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md">
-                                <button onClick={() => onPostChange({ ...post, imageUrl: undefined, videoUrl: undefined })} disabled={!!aiLoading} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg">
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 gap-2 rounded-md">
+                                <button onClick={() => onPostChange({ ...post, imageUrl: undefined, videoUrl: undefined })} disabled={!!aiLoading} className="w-32 bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg text-sm">
                                     Ta bort
+                                </button>
+                                <button onClick={handleSaveToGallery} disabled={!!aiLoading || isSavingToGallery} className="w-32 bg-white hover:bg-slate-100 text-slate-900 font-bold py-2 px-4 rounded-full shadow-lg flex items-center justify-center gap-2 text-sm">
+                                    {isSavingToGallery ? <LoadingSpinnerIcon className="w-4 h-4" /> : <DownloadIcon className="w-4 h-4" />}
+                                    Arkivera
                                 </button>
                             </div>
                         </div>
@@ -557,6 +601,7 @@ const CollageMediaEditor: React.FC<{
     const [structuredPrompt, setStructuredPrompt] = useState<Partial<StructuredImagePrompt>>({ subject: '' });
     const [editingCollageItem, setEditingCollageItem] = useState<CollageItem | null>(null);
     const [isAiEditorOpen, setIsAiEditorOpen] = useState(false);
+    const [isSavingToGalleryId, setIsSavingToGalleryId] = useState<string | null>(null);
 
     // Lazy initialization effect: if layout is collage and collageItems is empty,
     // populate it from imageUrl/videoUrl if they exist.
@@ -692,6 +737,42 @@ const CollageMediaEditor: React.FC<{
         onPostChange({ ...post, collageItems: items });
     };
 
+    const handleSaveItemToGallery = async (item: CollageItem) => {
+        const mediaUrl = item.imageUrl || item.videoUrl;
+        if (!mediaUrl) return;
+
+        setIsSavingToGalleryId(item.id);
+        try {
+            let finalUrl = mediaUrl;
+            let createdBy: 'user' | 'ai' = (item.isAiGeneratedImage || item.isAiGeneratedVideo) ? 'ai' : 'user';
+
+            if (mediaUrl.startsWith('data:')) {
+                const blob = dataUriToBlob(mediaUrl);
+                const extension = item.type === 'image' ? 'png' : 'mp4';
+                const file = new File([blob], `gallery-item-${Date.now()}.${extension}`, { type: blob.type });
+                const { url } = await uploadMediaForGallery(organization.id, file, () => {});
+                finalUrl = url;
+            }
+
+            const newMediaItem: MediaItem = {
+                id: `media-${Date.now()}`,
+                type: item.type,
+                url: finalUrl,
+                internalTitle: `Bild från collage (${item.id})`,
+                createdAt: new Date().toISOString(),
+                createdBy,
+            };
+
+            await addMediaItemsToLibrary(organization.id, [newMediaItem]);
+            showToast({ message: "Bild sparad i ditt galleri! 📸", type: 'success' });
+        } catch (error) {
+            console.error("Save to gallery failed:", error);
+            showToast({ message: "Kunde inte spara till galleriet.", type: 'error' });
+        } finally {
+            setIsSavingToGalleryId(null);
+        }
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
@@ -728,6 +809,9 @@ const CollageMediaEditor: React.FC<{
                                         <SparklesIcon className="h-4 w-4" />
                                     </button>
                                 )}
+                                <button onClick={() => handleSaveItemToGallery(item)} disabled={isSavingToGalleryId === item.id} className="p-2 bg-white/20 hover:bg-white/40 text-white rounded-full" title="Spara till galleri">
+                                    {isSavingToGalleryId === item.id ? <LoadingSpinnerIcon className="h-4 w-4" /> : <DownloadIcon className="h-4 w-4" />}
+                                </button>
                                 <button onClick={() => handleMoveItem(index, 'up')} disabled={index === 0} className="p-2 bg-white/20 hover:bg-white/40 text-white rounded-full disabled:opacity-30" title="Flytta bakåt"><ArrowUturnLeftIcon className="h-4 w-4 rotate-90" /></button>
                                 <button onClick={() => handleMoveItem(index, 'down')} disabled={index === (post.collageItems || []).length - 1} className="p-2 bg-white/20 hover:bg-white/40 text-white rounded-full disabled:opacity-30" title="Flytta framåt"><ArrowUturnRightIcon className="h-4 w-4 -rotate-90" /></button>
                             </div>
