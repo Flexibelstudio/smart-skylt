@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
@@ -76,7 +75,7 @@ const NoMediaNeeded: React.FC = () => (
     </div>
 );
 
-// --- NEW Structured AI Prompt Builder Component ---
+// --- Structured AI Prompt Builder Component ---
 
 const colorToneOptions = [
     { label: 'Varm', value: 'warm tones' },
@@ -265,7 +264,6 @@ const SingleMediaEditor: React.FC<{
         if (!currentUser) return;
         
         let imagePayload = undefined;
-        // Check if we should use existing image as starting frame
         const shouldAnimateImage = (useImageForVideo || isImageAliveEnabled) && post.imageUrl;
 
         if (shouldAnimateImage) {
@@ -281,7 +279,7 @@ const SingleMediaEditor: React.FC<{
              }
         }
 
-        // --- Save state for undo before we potentially switch to video mode ---
+        // --- Save state for undo BEFORE generation ---
         const currentVariants = [...(post.aiImageVariants || [])];
         if (post.imageUrl) {
             currentVariants.push({
@@ -295,11 +293,11 @@ const SingleMediaEditor: React.FC<{
 
         let finalPrompt = post.aiVideoPrompt || '';
         if (isImageAliveEnabled || useImageForVideo) {
-            // Skärpta instruktioner mot svart ridå
-            const technicalConstraint = "No fade-in. No black start. No curtain transitions. Start instantly from frame zero. The first frame MUST be pixel-identical to the source image.";
+            // EXTREMT SKÄRPTA instruktioner mot svart ridå / fade-in
+            const technicalConstraint = "CRITICAL: The first frame MUST be identical to the source image. ABSOLUTELY NO FADE-IN FROM BLACK. NO BLACK FRAMES AT START. START INSTANTLY FROM FRAME ZERO. Maintaining original exposure and colors is mandatory.";
             const motionInstruction = isImageAliveEnabled 
-                ? "Apply a very slow, continuous cinematic zoom-in immediately. Maintain absolute consistency with the source. If liquid, add ripples. If light, add glimmer. Zero black frames at the start."
-                : "Apply a smooth, slow cinematic zoom-in motion starting immediately from the first frame. Instant display.";
+                ? "Apply a continuous, very slow cinematic zoom-in starting immediately. Add high-quality looping ambient motion: if steam, make it rise; if liquid, add ripples; if foliage, add gentle breeze. Instant playback start."
+                : "Apply a smooth, slow cinematic zoom-in motion starting immediately from the very first frame. No intro delay.";
             
             finalPrompt = finalPrompt 
                 ? `${finalPrompt}. ${technicalConstraint} ${motionInstruction}` 
@@ -325,8 +323,8 @@ const SingleMediaEditor: React.FC<{
                 ...post,
                 videoUrl: videoUrl,
                 isAiGeneratedVideo: true,
-                imageUrl: undefined, // Transition to video
-                aiImageVariants: currentVariants // Pass along the history for undo
+                imageUrl: undefined, // Byt till video-vyn
+                aiImageVariants: currentVariants // Skicka med historiken för att "Backa"
             });
 
         } catch (error) {
@@ -398,7 +396,6 @@ const SingleMediaEditor: React.FC<{
         const variants = [...post.aiImageVariants];
         const lastVariant = variants.pop()!;
         
-        // If we are undoing a video, we need to clear the video fields and restore image
         onPostChange({
             ...post,
             imageUrl: lastVariant.url,
