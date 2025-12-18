@@ -261,7 +261,7 @@ export const Step3_Design: React.FC<{
                     onClick={() => setActiveTab('general')}
                     className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'general' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                 >
-                    Kanal & Bakgrund
+                    Bakgrund
                 </button>
             </div>
 

@@ -348,7 +348,10 @@ const DraggableTextElement: React.FC<any> = ({
                      </div>
                 </>
             )}
-            <div className={bgEnabled ? `bg-black/50 ${paddingClass} backdrop-blur-md` : ""}>
+            <div 
+                className={bgEnabled ? `${paddingClass} backdrop-blur-md` : ""}
+                style={bgEnabled ? { backgroundColor: resolveColor(bgColor, 'rgba(0,0,0,0.5)', organization) } : {}}
+            >
                 {type === 'headline' ? (
                     <h1 className={fontClass}>{text}</h1>
                 ) : (
