@@ -5,7 +5,7 @@ import { ChatMessage, Organization, DisplayPost, DisplayScreen } from '../types'
 import { initializeMarketingCoachChat, fileToBase64, generateCompletePost, createDisplayPostFunctionDeclaration } from '../services/geminiService';
 import { getVoiceServerConfig } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
-import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from './icons';
+import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon } from './icons';
 import { useToast } from '../context/ToastContext';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useAssistantProfile } from '../hooks/useAssistantProfile';
@@ -13,15 +13,18 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChannelSelectionModal } from './ChannelSelectionModal';
 import { useLocation } from '../context/StudioContext';
+import { ThinkingDots } from './HelpBot';
 
 
 /* ------------------------------- UI ------------------------------- */
 
 const TypingIndicator: React.FC = () => (
-  <div className="flex items-center space-x-1 p-2">
-    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
-    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+  <div className="flex flex-col items-start gap-1 p-2">
+    <div className="flex items-center gap-2 text-xs font-semibold text-purple-400 mb-1">
+      <SparklesIcon className="w-3 h-3 animate-pulse" />
+      <span>Skylie skapar ett svar</span>
+    </div>
+    <ThinkingDots className="text-slate-400" />
   </div>
 );
 
@@ -55,6 +58,7 @@ const LiveTranscriptionDisplay: React.FC<{
       <p className="flex items-center">
         <strong className="text-purple-400 mr-1">{modelName}:</strong>
         <span className="text-slate-500 dark:text-slate-400 italic flex items-center">
+           <ThinkingDots className="mr-2" />
           <AnimatedSentence text="Skylie tänker..." />
         </span>
       </p>
@@ -609,9 +613,9 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const isVoiceActive = connectionState === 'connected' || connectionState === 'connecting';
   
   const conversationStarters = [
-    { label: "Annonsera ett erbjudande", prompt: "Jag vill annonsera ett erbjudande." },
-    { label: "Skapa ett 'nyhet'-inlägg", prompt: "Jag vill skapa ett inlägg om en nyhet." },
-    { label: "Ge mig en kreativ idé", prompt: "Ge mig en kreativ idé för ett inlägg som passar min verksamhet." },
+    { label: "Annonsera ett erbjudande", prompt: "Jag want to advertise an offer." },
+    { label: "Skapa ett 'nyhet'-inlägg", prompt: "Jag want to create a post about a news." },
+    { label: "Ge mig en kreativ idé", prompt: "Give me a creative idea for a post that fits my business." },
   ];
 
   /* ------------------------------ render --------------------------- */
@@ -625,7 +629,10 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
       <div className={containerClasses}>
         <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <img src={assistantAvatar} alt={assistantName} className="w-8 h-8 rounded-full object-cover" />
+            <div className="relative">
+              <img src={assistantAvatar} alt={assistantName} className={`w-8 h-8 rounded-full object-cover transition-all ${isLoading ? 'ring-2 ring-purple-400 ring-offset-2 animate-pulse' : ''}`} />
+              {isLoading && <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full border-2 border-white dark:border-slate-800 animate-ping" />}
+            </div>
             <h3 className="font-bold text-lg text-slate-900 dark:text-white">{assistantName}</h3>
           </div>
           <div className="flex items-center gap-4">

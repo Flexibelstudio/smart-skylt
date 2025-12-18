@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from "react";
 import { Organization, SkyltIdeSuggestion } from '../types';
 import { generateSkyltIdeas } from '../services/geminiService';
@@ -5,7 +6,8 @@ import { useToast } from '../context/ToastContext';
 import { PrimaryButton } from './Buttons';
 import { StyledInput } from './Forms';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { MicrophoneIcon } from './icons';
+import { MicrophoneIcon, SparklesIcon } from './icons';
+import { ThinkingDots } from './HelpBot';
 
 interface AIIdeaGeneratorProps {
   onIdeaSelect: (idea: SkyltIdeSuggestion) => void;
@@ -27,6 +29,19 @@ const businessTypeExamples: { [key: string]: string } = {
   "Standard": "Ex: Erbjudande på kanelbullar eller Ny yogaklass på onsdagar"
 };
 
+const SkeletonCard = () => (
+  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 bg-white dark:bg-slate-800/50 animate-pulse space-y-3">
+    <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded w-3/4" />
+    <div className="space-y-2">
+      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded" />
+      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-5/6" />
+    </div>
+    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
+      <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
+      <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded w-1/3" />
+    </div>
+  </div>
+);
 
 const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoading, organization }) => {
   const [input, setInput] = useState('');
@@ -139,11 +154,30 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
             onClick={generateIdeas}
             loading={isGenerating}
             disabled={isLoading}
-            className="bg-purple-600 hover:bg-purple-500 flex-grow"
+            className="bg-purple-600 hover:bg-purple-500 flex-grow shadow-lg shadow-purple-500/20"
         >
-            {isGenerating ? "Skapar..." : "Hitta på idéer"}
+            {isGenerating ? "Skapar..." : (
+              <span className="flex items-center gap-2">
+                <SparklesIcon className="w-5 h-5" />
+                Hitta på idéer
+              </span>
+            )}
         </PrimaryButton>
       </div>
+
+      {isGenerating && (
+        <div className="mt-4 space-y-3 animate-fade-in">
+          <div className="flex items-center gap-2 text-sm font-semibold text-purple-600 dark:text-purple-400">
+            <ThinkingDots />
+            <span>Skylie letar efter kreativa idéer...</span>
+          </div>
+          <div className="grid md:grid-cols-3 gap-3">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        </div>
+      )}
 
       {suggestions.length > 0 && (
           <div className="mt-4 space-y-3 animate-fade-in">
@@ -153,10 +187,10 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
                   <button
                     key={i}
                     type="button"
-                    className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-left shadow-sm hover:shadow-md transition cursor-pointer bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/50 focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-left shadow-sm hover:shadow-md transition cursor-pointer bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/50 focus:outline-none focus:ring-2 focus:ring-primary group"
                     onClick={() => handleSelectSuggestion(s)}
                   >
-                    <h5 className="font-semibold text-base mb-1 text-primary">{s.headline}</h5>
+                    <h5 className="font-semibold text-base mb-1 text-primary group-hover:text-purple-500 transition-colors">{s.headline}</h5>
                     <p className="text-xs mb-2 text-slate-600 dark:text-slate-300">{s.text}</p>
                     <div className="text-xs text-slate-500 dark:text-slate-400 italic mt-2 pt-2 border-t border-slate-200 dark:border-slate-700/50 space-y-1">
                         <p><strong>Visuell Idé:</strong> {s.visual.imageIdea}</p>

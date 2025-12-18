@@ -10,6 +10,7 @@ import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToB
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
+import { ThinkingDots } from '../../HelpBot';
 
 const dataUriToBlob = (dataURI: string): Blob => {
     const byteString = atob(dataURI.split(',')[1]);
@@ -393,6 +394,7 @@ const SingleMediaEditor: React.FC<{
     };
     
     const isVideoGenerating = aiLoading === 'generate-video' || aiLoading === 'preparing-image';
+    const isImageGenerating = aiLoading === 'generate-image' || aiLoading === 'edit-image';
 
     return (
         <>
@@ -421,7 +423,7 @@ const SingleMediaEditor: React.FC<{
                         onSpeechClick={handleMicClick}
                     />
                     <div className="flex gap-2 pt-2">
-                        <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-image'} disabled={!post.aiImagePrompt?.trim() || !!aiLoading} className="bg-purple-600 hover:bg-purple-500">
+                        <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-image'} disabled={!post.aiImagePrompt?.trim() || !!aiLoading} className="bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-500/20">
                             Generera bild
                         </PrimaryButton>
                     </div>
@@ -433,11 +435,14 @@ const SingleMediaEditor: React.FC<{
                         Skapa video med AI
                     </label>
                     {isVideoGenerating ? (
-                        <div className="flex items-center gap-3 p-4 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-3 p-4 bg-indigo-600 dark:bg-indigo-700 rounded-lg text-white border border-indigo-500 shadow-xl animate-pulse">
                             <LoadingSpinnerIcon className="w-6 h-6 animate-spin" />
                             <div>
-                                <p className="font-bold">{videoProgressText || (aiLoading === 'preparing-image' ? "Förbereder bild..." : "Videogenerering pågår...")}</p>
-                                <p className="text-xs mt-1">Detta tar ca 1-2 minuter. Lämna inte sidan.</p>
+                                <p className="font-bold flex items-center gap-2">
+                                    {videoProgressText || (aiLoading === 'preparing-image' ? "Förbereder bild..." : "Skapar video...")}
+                                    <ThinkingDots className="text-white/70" />
+                                </p>
+                                <p className="text-xs opacity-80 mt-1">Skylie renderar din vision. Det här kan ta en stund.</p>
                             </div>
                         </div>
                     ) : (
@@ -465,12 +470,25 @@ const SingleMediaEditor: React.FC<{
                                 className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
                                 disabled={!!aiLoading}
                             />
-                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim() || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500">
+                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={!post.aiVideoPrompt?.trim() || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
                                 {useImageForVideo ? "Animera bild" : "Generera video"}
                             </PrimaryButton>
                         </>
                     )}
                 </div>
+
+                {isImageGenerating && (
+                    <div className="flex items-center gap-3 p-4 bg-purple-600 dark:bg-purple-700 rounded-lg text-white border border-purple-500 shadow-xl animate-pulse">
+                        <SparklesIcon className="w-6 h-6 animate-spin" />
+                        <div>
+                            <p className="font-bold flex items-center gap-2">
+                                Skylie genererar bild...
+                                <ThinkingDots className="text-white/70" />
+                            </p>
+                            <p className="text-xs opacity-80 mt-1">Bilden skapas utifrån din DNA-profil och dina instruktioner.</p>
+                        </div>
+                    </div>
+                )}
 
                 {uploadProgress !== null && (
                     <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mt-2">
@@ -481,8 +499,8 @@ const SingleMediaEditor: React.FC<{
                 {(post.imageUrl || post.videoUrl) && (
                     <div className="mt-4 space-y-4">
                         <div className="relative w-48 group">
-                            {post.imageUrl && <img src={post.imageUrl} className="w-full rounded-md" alt="Post media preview" />}
-                            {post.videoUrl && <video src={post.videoUrl} className="w-full rounded-md" autoPlay muted loop playsInline />}
+                            {post.imageUrl && <img src={post.imageUrl} className="w-full rounded-md shadow-md" alt="Post media preview" />}
+                            {post.videoUrl && <video src={post.videoUrl} className="w-full rounded-md shadow-md" autoPlay muted loop playsInline />}
                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md">
                                 <button onClick={() => onPostChange({ ...post, imageUrl: undefined, videoUrl: undefined })} disabled={!!aiLoading} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg">
                                     Ta bort
