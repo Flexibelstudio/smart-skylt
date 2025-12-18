@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
-import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon, DownloadIcon } from '../../icons';
+import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, CheckCircleIcon, ExclamationTriangleIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary, listenToVideoOperationForPost } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, fileToBase64, urlToBase64, editDisplayPostImage } from '../../../services/geminiService';
@@ -237,7 +237,6 @@ const SingleMediaEditor: React.FC<{
 
         setAiLoading('generate-image');
         try {
-            // FIX: Destructure imageBytes and mimeType from the object returned by generateDisplayPostImage
             const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             
@@ -278,8 +277,6 @@ const SingleMediaEditor: React.FC<{
         setVideoProgressText("Startar...");
 
         try {
-            // Use the Hybrid approach: Start on server, poll on client, save on server.
-            // The service now returns the video URL directly.
             const videoUrl = await generateVideoFromPrompt(
                 post.aiVideoPrompt,
                 organization.id,
@@ -291,12 +288,10 @@ const SingleMediaEditor: React.FC<{
             
             showToast({ message: 'Videogenerering klar!', type: 'success' });
             
-            // Update local state immediately with the new video URL
             onPostChange({
                 ...post,
                 videoUrl: videoUrl,
                 isAiGeneratedVideo: true,
-                // Ensure we don't have conflicting image if we generated a video
                 imageUrl: undefined
             });
 
@@ -310,7 +305,6 @@ const SingleMediaEditor: React.FC<{
     };
 
     const handleSelectFromGallery = (item: MediaItem) => {
-        // Smart layout switching if user picks video for image layout or vice versa
         const newLayout = (item.type === 'video' && post.layout === 'image-fullscreen') 
             ? 'video-fullscreen' 
             : (item.type === 'image' && post.layout === 'video-fullscreen')
@@ -335,7 +329,6 @@ const SingleMediaEditor: React.FC<{
         try {
             const { mimeType, data } = await urlToBase64(post.imageUrl);
             
-            // Vi sparar den NUVARANDE bilden som en variant i historiken INNAN vi byter ut den
             const currentVariant: AiImageVariant = {
                 id: `variant-${Date.now()}`,
                 url: post.imageUrl,
@@ -344,7 +337,6 @@ const SingleMediaEditor: React.FC<{
                 createdByUid: currentUser.uid,
             };
             
-            // FIX: Destructure imageBytes and mimeType from the object returned by editDisplayPostImage
             const { imageBytes: newImageBytes, mimeType: newMimeType } = await editDisplayPostImage(data, mimeType, editPrompt);
             const newDataUri = `data:${newMimeType};base64,${newImageBytes}`;
 
@@ -404,7 +396,6 @@ const SingleMediaEditor: React.FC<{
             let type: 'image' | 'video' = post.imageUrl ? 'image' : 'video';
             let createdBy: 'user' | 'ai' = (post.isAiGeneratedImage || post.isAiGeneratedVideo) ? 'ai' : 'user';
 
-            // Om det är en data-uri (t.ex. AI-genererad och ännu inte sparad i inlägget), ladda upp den
             if (mediaUrl.startsWith('data:')) {
                 const blob = dataUriToBlob(mediaUrl);
                 const extension = type === 'image' ? 'png' : 'mp4';
@@ -545,18 +536,20 @@ const SingleMediaEditor: React.FC<{
                                 <button onClick={() => onPostChange({ ...post, imageUrl: undefined, videoUrl: undefined })} disabled={!!aiLoading} className="w-32 bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg text-sm">
                                     Ta bort
                                 </button>
-                                <button onClick={handleSaveToGallery} disabled={!!aiLoading || isSavingToGallery} className="w-32 bg-white hover:bg-slate-100 text-slate-900 font-bold py-2 px-4 rounded-full shadow-lg flex items-center justify-center gap-2 text-sm">
-                                    {isSavingToGallery ? <LoadingSpinnerIcon className="w-4 h-4" /> : <DownloadIcon className="w-4 h-4" />}
-                                    Arkivera
-                                </button>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-4">
                             {post.imageUrl && (
                                 <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
                                     <PencilIcon className="h-4 w-4"/> Redigera bild med AI
                                 </button>
                             )}
+                            
+                            <button type="button" onClick={handleSaveToGallery} disabled={!!aiLoading || isSavingToGallery} className="flex items-center gap-1 text-sm font-bold text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-50">
+                                {isSavingToGallery ? <LoadingSpinnerIcon className="w-4 h-4" /> : <StarIcon className="w-4 h-4" />}
+                                Spara i galleriet
+                            </button>
+
                             {post.aiImageVariants && post.aiImageVariants.length > 0 && (
                                 <button type="button" onClick={handleUndoImageEdit} className="flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
                                     <ArrowUturnLeftIcon className="h-4 w-4"/> Backa ett steg
@@ -572,7 +565,7 @@ const SingleMediaEditor: React.FC<{
                 onClose={() => setIsMediaPickerOpen(false)}
                 mediaLibrary={organization.mediaLibrary || []}
                 onSelect={handleSelectFromGallery}
-                filter={undefined} // Allow picking both video and images to enable type switching
+                filter={undefined} 
                 postAiVariants={post.aiImageVariants}
             />
             <AiImageEditorModal
@@ -603,8 +596,6 @@ const CollageMediaEditor: React.FC<{
     const [isAiEditorOpen, setIsAiEditorOpen] = useState(false);
     const [isSavingToGalleryId, setIsSavingToGalleryId] = useState<string | null>(null);
 
-    // Lazy initialization effect: if layout is collage and collageItems is empty,
-    // populate it from imageUrl/videoUrl if they exist.
     useEffect(() => {
         if (post.layout === 'collage' && (!post.collageItems || post.collageItems.length === 0)) {
             let initialItem: CollageItem | null = null;
@@ -627,7 +618,7 @@ const CollageMediaEditor: React.FC<{
                 onPostChange({ ...post, collageItems: [initialItem] });
             }
         }
-    }, [post.id, post.layout, post.imageUrl, post.videoUrl, post.isAiGeneratedImage, post.isAiGeneratedVideo, post.collageItems, onPostChange]); // Run only when the post itself changes to avoid loops
+    }, [post.id, post.layout, post.imageUrl, post.videoUrl, post.isAiGeneratedImage, post.isAiGeneratedVideo, post.collageItems, onPostChange]);
 
     const handleAddItem = (newItem: Omit<CollageItem, 'id'>) => {
         const itemWithId: CollageItem = { ...newItem, id: `item-${Date.now()}` };
@@ -666,7 +657,6 @@ const CollageMediaEditor: React.FC<{
         if (!fullPrompt.trim()) return;
         setAiLoading('generate-collage-image');
         try {
-            // FIX: Destructure imageBytes and mimeType from the object returned by generateDisplayPostImage
             const { imageBytes, mimeType } = await generateDisplayPostImage(fullPrompt.trim(), screen.aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             handleAddItem({
@@ -690,7 +680,6 @@ const CollageMediaEditor: React.FC<{
     
         try {
             const { mimeType, data } = await urlToBase64(editingCollageItem.imageUrl);
-            // FIX: Destructure imageBytes and mimeType from the object returned by editDisplayPostImage
             const { imageBytes: newImageBytes, mimeType: newMimeType } = await editDisplayPostImage(data, mimeType, editPrompt);
             const newDataUri = `data:${newMimeType};base64,${newImageBytes}`;
     
@@ -826,7 +815,7 @@ const CollageMediaEditor: React.FC<{
                 onClose={() => setIsMediaPickerOpen(false)}
                 mediaLibrary={organization.mediaLibrary || []}
                 onSelect={handleSelectFromGallery}
-                filter={undefined} // Allow both images and videos for collage
+                filter={undefined} 
             />
             <AiImageEditorModal
                 isOpen={isAiEditorOpen}
@@ -851,7 +840,7 @@ export const Step2_Media: React.FC<{
     const { showToast } = useToast();
 
     const handleFileChange = async (file: File) => {
-        setUploadProgress(0); // Show progress bar
+        setUploadProgress(0); 
         try {
             const reader = new FileReader();
             reader.onprogress = (event) => {
@@ -868,7 +857,7 @@ export const Step2_Media: React.FC<{
                     videoUrl: isVideo ? e.target?.result as string : undefined,
                 };
                 onPostChange(updatedPost);
-                setUploadProgress(null); // Hide progress bar on completion
+                setUploadProgress(null); 
             };
             reader.readAsDataURL(file);
         } catch (error) {
@@ -877,12 +866,10 @@ export const Step2_Media: React.FC<{
         }
     };
     
-    // Check if the current layout needs media
     if (['text-only', 'webpage', 'instagram-latest', 'instagram-stories'].includes(post.layout)) {
         return <NoMediaNeeded />;
     }
     
-    // NEW: Render CollageMediaEditor for collage layout
     if (post.layout === 'collage') {
         return (
             <CollageMediaEditor
@@ -895,7 +882,6 @@ export const Step2_Media: React.FC<{
         );
     }
     
-    // For single media layouts
     if (['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout)) {
         return (
             <SingleMediaEditor 
