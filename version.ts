@@ -1,2 +1,2 @@
-// Versionsformat: ÅÅMMDD-VersionFörDagen
-export const APP_VERSION = "251219-1";
+// Versionsformat: ÅÅMMDD.VersionFörDagen
+export const APP_VERSION = "251219.1";
