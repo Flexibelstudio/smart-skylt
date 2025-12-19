@@ -47,6 +47,7 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [suggestions, setSuggestions] = useState<SkyltIdeSuggestion[]>([]);
+  const [cooldown, setCooldown] = useState(0);
   const { showToast } = useToast();
   const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
@@ -61,6 +62,17 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
       showToast({ message: `Röstigenkänning misslyckades: ${speechError}`, type: 'error' });
     }
   }, [speechError, showToast]);
+
+  // Handle cooldown countdown
+  useEffect(() => {
+    let timer: any;
+    if (cooldown > 0) {
+        timer = setInterval(() => {
+            setCooldown(prev => prev - 1);
+        }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   const placeholderText = useMemo(() => {
     const businessTypes = organization?.businessType;
@@ -88,17 +100,19 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
     try {
       const ideas = await generateSkyltIdeas(textToGenerate, organization);
       setSuggestions(ideas);
+      setCooldown(10); // Start 10s cooldown
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Något gick fel – kunde inte hämta idéer just nu.";
       showToast({ message, type: 'error' });
+      setCooldown(5); // Shorter cooldown on error
     } finally {
       setIsGenerating(false);
     }
   };
   
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !isGenerating && !isLoading) {
+    if (e.key === 'Enter' && !isGenerating && !isLoading && cooldown === 0) {
         e.preventDefault();
         generateIdeas();
     }
@@ -133,13 +147,13 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isGenerating || isLoading}
+            disabled={isGenerating || isLoading || cooldown > 0}
             className="pr-12"
           />
           <button
               type="button"
               onClick={handleMicClick}
-              disabled={isGenerating || isLoading}
+              disabled={isGenerating || isLoading || cooldown > 0}
               className={`absolute inset-y-0 right-0 flex items-center px-3 transition-colors rounded-r-lg ${
                   isListening
                   ? 'bg-red-500/20 text-red-500 animate-pulse'
@@ -153,13 +167,13 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
         <PrimaryButton
             onClick={generateIdeas}
             loading={isGenerating}
-            disabled={isLoading}
+            disabled={isLoading || cooldown > 0}
             className="bg-purple-600 hover:bg-purple-500 flex-grow shadow-lg shadow-purple-500/20"
         >
             {isGenerating ? "Skapar..." : (
               <span className="flex items-center gap-2">
                 <SparklesIcon className="w-5 h-5" />
-                Hitta på idéer
+                {cooldown > 0 ? `Väntar... (${cooldown}s)` : "Hitta på idéer"}
               </span>
             )}
         </PrimaryButton>

@@ -205,9 +205,16 @@ async function generateImagesViaProxy(model: string, prompt: string, config?: an
 async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
+    
     const errorString = error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
+    
+    // Specifik hantering av 429 Too Many Requests (Rate Limit)
+    // FirebaseError brukar ha en 'code' eller 'status' i sin message om det är en Cloud Function
+    if (errorString.includes("429") || errorString.includes("resource_exhausted") || errorString.includes("too many requests")) {
+      throw new Error("Skylie tar en kort paus! Just nu är det många som skapar innehåll samtidigt. Vänta en minut och försök igen.");
+    }
     
     if (errorString.includes("internal")) throw new Error("Serverfel (Internal). Försök igen om en stund.");
     if (errorString.includes("permission_denied")) throw new Error("Behörighet saknas. Kontakta support.");
@@ -606,7 +613,7 @@ export const updateStyleProfileSummary = (organization: Organization, recentPost
 
 export const generateRhythmReminderText = (organization: Organization, analysis: { reason: string; context: string; }): Promise<{ headline: string; subtext: string }> => {
   const cacheKey = `ai-rhythm-reminder-${organization.id}-${analysis.reason}`;
-  return getCachedAIResponse(cacheKey, 60 * 6, () =>
+  return getCachedAIResponse(cacheKey, 60 * 24, () =>
     handleAIError(async () => {
       const prompt = Prompts.getRhythmReminderPrompt(organization, analysis.context);
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiRhythmReminderSchema };

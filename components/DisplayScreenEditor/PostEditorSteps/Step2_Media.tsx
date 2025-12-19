@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, VideoOperation } from '../../../types';
@@ -192,6 +193,9 @@ const SingleMediaEditor: React.FC<{
     const [useImageForVideo, setUseImageForVideo] = useState(false);
     const [isImageAliveEnabled, setIsImageAliveEnabled] = useState(false);
 
+    // Cooldown state
+    const [cooldown, setCooldown] = useState(0);
+
     const { isListening, transcript, error: speechError, startListening, stopListening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
     useEffect(() => {
@@ -216,6 +220,19 @@ const SingleMediaEditor: React.FC<{
             setIsImageAliveEnabled(false);
         }
     }, [post.imageUrl, post.videoUrl]);
+
+    // Handle cooldown countdown
+    useEffect(() => {
+        let timer: any;
+        if (cooldown > 0) {
+            timer = setInterval(() => {
+                setCooldown(prev => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(timer);
+    }, [cooldown]);
+
+    const startCooldown = () => setCooldown(10); // 10 sekunder cooldown
 
     const handleStructuredPromptChange = (newPrompt: Partial<StructuredImagePrompt>) => {
         const fullPrompt = [newPrompt.subject, newPrompt.style, newPrompt.colorTone, newPrompt.perspective, newPrompt.composition, newPrompt.story].filter(Boolean).join(', ');
@@ -248,9 +265,10 @@ const SingleMediaEditor: React.FC<{
                 isAiGeneratedImage: true,
             });
             showToast({ message: 'AI-bild genererad!', type: 'success' });
-    
+            startCooldown();
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte generera bild.', type: 'error' });
+            startCooldown(); // Start cooldown even on error to prevent hammer-clicking
         } finally {
             setAiLoading(false);
         }
@@ -326,10 +344,11 @@ const SingleMediaEditor: React.FC<{
                 imageUrl: undefined, // Byt till video-vyn
                 aiImageVariants: currentVariants // Skicka med historiken för att "Backa"
             });
-
+            startCooldown();
         } catch (error) {
             console.error("Video generation failed:", error);
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte starta videogenerering.', type: 'error' });
+            startCooldown();
         } finally {
             setAiLoading(false);
             setVideoProgressText("");
@@ -382,9 +401,11 @@ const SingleMediaEditor: React.FC<{
             });
     
             showToast({ message: 'Ny bildvariant skapad!', type: 'success' });
+            startCooldown();
         } catch (error) {
             console.error("AI Edit failed:", error);
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte redigera bilden.', type: 'error' });
+            startCooldown();
         } finally {
             setAiLoading(false);
         }
@@ -483,14 +504,19 @@ const SingleMediaEditor: React.FC<{
                     <StructuredAiPromptBuilder 
                         prompt={post.structuredImagePrompt || { subject: post.aiImagePrompt || '' }}
                         onPromptChange={handleStructuredPromptChange}
-                        disabled={!!aiLoading}
+                        disabled={!!aiLoading || cooldown > 0}
                         showSpeechButton={browserSupportsSpeechRecognition}
                         isListening={isListening}
                         onSpeechClick={handleMicClick}
                     />
                     <div className="flex gap-2 pt-2">
-                        <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-image'} disabled={!post.aiImagePrompt?.trim() || !!aiLoading} className="bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-500/20">
-                            Generera bild
+                        <PrimaryButton 
+                            onClick={handleGenerateImage} 
+                            loading={aiLoading === 'generate-image'} 
+                            disabled={!post.aiImagePrompt?.trim() || !!aiLoading || cooldown > 0} 
+                            className="bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-500/20"
+                        >
+                            {cooldown > 0 ? `Väntar... (${cooldown}s)` : "Generera bild"}
                         </PrimaryButton>
                     </div>
                 </div>
@@ -522,7 +548,7 @@ const SingleMediaEditor: React.FC<{
                                             checked={useImageForVideo}
                                             onChange={(e) => setUseImageForVideo(e.target.checked)}
                                             className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
-                                            disabled={!!aiLoading}
+                                            disabled={!!aiLoading || cooldown > 0}
                                         />
                                         <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
                                             Använd inläggets bild som startbild
@@ -535,7 +561,7 @@ const SingleMediaEditor: React.FC<{
                                             checked={isImageAliveEnabled}
                                             onChange={(e) => setIsImageAliveEnabled(e.target.checked)}
                                             className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
-                                            disabled={!!aiLoading}
+                                            disabled={!!aiLoading || cooldown > 0}
                                         />
                                         <label htmlFor="makeImageAlive" className="text-sm font-bold text-indigo-900 dark:text-white cursor-pointer select-none flex items-center gap-1">
                                             ✨ Gör bilden levande (rök, vind, ljusblänk)
@@ -549,10 +575,15 @@ const SingleMediaEditor: React.FC<{
                                 placeholder={isImageAliveEnabled ? "Skriv inget här för automatisk 'liv', eller beskriv rörelsen själv..." : (useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa...")}
                                 rows={3}
                                 className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
-                                disabled={!!aiLoading}
+                                disabled={!!aiLoading || cooldown > 0}
                             />
-                            <PrimaryButton onClick={handleGenerateVideo} loading={aiLoading === 'generate-video'} disabled={(!post.aiVideoPrompt?.trim() && !isImageAliveEnabled) || !!aiLoading} className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
-                                {isImageAliveEnabled ? "Skapa magisk rörelse" : (useImageForVideo ? "Animera bild" : "Generera video")}
+                            <PrimaryButton 
+                                onClick={handleGenerateVideo} 
+                                loading={aiLoading === 'generate-video'} 
+                                disabled={(!post.aiVideoPrompt?.trim() && !isImageAliveEnabled) || !!aiLoading || cooldown > 0} 
+                                className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
+                            >
+                                {cooldown > 0 ? `Väntar... (${cooldown}s)` : (isImageAliveEnabled ? "Skapa magisk rörelse" : (useImageForVideo ? "Animera bild" : "Generera video"))}
                             </PrimaryButton>
                         </>
                     )}
@@ -590,7 +621,7 @@ const SingleMediaEditor: React.FC<{
                         </div>
                         <div className="flex flex-wrap items-center gap-4">
                             {post.imageUrl && (
-                                <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading}>
+                                <button type="button" onClick={() => setIsAiEditorOpen(true)} className="flex items-center gap-1 text-sm font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50" disabled={!!aiLoading || cooldown > 0}>
                                     <PencilIcon className="h-4 w-4"/> Redigera bild med AI
                                 </button>
                             )}
@@ -646,6 +677,9 @@ const CollageMediaEditor: React.FC<{
     const [isAiEditorOpen, setIsAiEditorOpen] = useState(false);
     const [isSavingToGalleryId, setIsSavingToGalleryId] = useState<string | null>(null);
 
+    // Cooldown state
+    const [cooldown, setCooldown] = useState(0);
+
     useEffect(() => {
         if (post.layout === 'collage' && (!post.collageItems || post.collageItems.length === 0)) {
             let initialItem: CollageItem | null = null;
@@ -669,6 +703,19 @@ const CollageMediaEditor: React.FC<{
             }
         }
     }, [post.id, post.layout, post.imageUrl, post.videoUrl, post.isAiGeneratedImage, post.isAiGeneratedVideo, post.collageItems, onPostChange]);
+
+    // Handle cooldown countdown
+    useEffect(() => {
+        let timer: any;
+        if (cooldown > 0) {
+            timer = setInterval(() => {
+                setCooldown(prev => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(timer);
+    }, [cooldown]);
+
+    const startCooldown = () => setCooldown(10);
 
     const handleAddItem = (newItem: Omit<CollageItem, 'id'>) => {
         const itemWithId: CollageItem = { ...newItem, id: `item-${Date.now()}` };
@@ -716,8 +763,10 @@ const CollageMediaEditor: React.FC<{
             });
             showToast({ message: 'AI-bild genererad och tillagd i collage!', type: 'success' });
             setStructuredPrompt({ subject: '' });
+            startCooldown();
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte generera bild.', type: 'error' });
+            startCooldown();
         } finally {
             setAiLoading(false);
         }
@@ -753,8 +802,10 @@ const CollageMediaEditor: React.FC<{
             onPostChange({ ...post, collageItems: updatedCollageItems });
     
             showToast({ message: 'Collagebild uppdaterad med AI!', type: 'success' });
+            startCooldown();
         } catch (error) {
             showToast({ message: error instanceof Error ? error.message : 'Kunde inte redigera bilden.', type: 'error' });
+            startCooldown();
         } finally {
             setAiLoading(false);
             setEditingCollageItem(null);
@@ -832,10 +883,15 @@ const CollageMediaEditor: React.FC<{
                 <StructuredAiPromptBuilder 
                     prompt={structuredPrompt}
                     onPromptChange={setStructuredPrompt}
-                    disabled={!!aiLoading}
+                    disabled={!!aiLoading || cooldown > 0}
                 />
-                <PrimaryButton onClick={handleGenerateImage} loading={aiLoading === 'generate-collage-image'} disabled={!structuredPrompt.subject?.trim()} className="bg-purple-600 hover:bg-purple-500">
-                    Generera & Lägg till
+                <PrimaryButton 
+                    onClick={handleGenerateImage} 
+                    loading={aiLoading === 'generate-collage-image'} 
+                    disabled={!structuredPrompt.subject?.trim() || !!aiLoading || cooldown > 0} 
+                    className="bg-purple-600 hover:bg-purple-500"
+                >
+                    {cooldown > 0 ? `Väntar... (${cooldown}s)` : "Generera & Lägg till"}
                 </PrimaryButton>
             </div>
 
@@ -847,7 +903,7 @@ const CollageMediaEditor: React.FC<{
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-1 gap-1 rounded-lg">
                             <div className="flex gap-1">
                                 {item.type === 'image' && (
-                                    <button onClick={() => { setEditingCollageItem(item); setIsAiEditorOpen(true); }} className="p-2 bg-purple-600/80 hover:bg-purple-500 text-white rounded-full" title="Redigera med AI">
+                                    <button onClick={() => { setEditingCollageItem(item); setIsAiEditorOpen(true); }} className="p-2 bg-purple-600/80 hover:bg-purple-500 text-white rounded-full disabled:opacity-50" title="Redigera med AI" disabled={!!aiLoading || cooldown > 0}>
                                         <SparklesIcon className="h-4 w-4" />
                                     </button>
                                 )}
