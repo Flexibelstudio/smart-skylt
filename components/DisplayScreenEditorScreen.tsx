@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -45,7 +44,7 @@ const dataUriToBlob = (dataURI: string): Blob => {
 
 export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps> = ({ screen: initialScreen, initialPostToEdit, onUpdateOrganization, userRole }) => {
     const { selectedOrganization: organization, displayScreens, updateDisplayScreen } = useLocation();
-    const { showToast } = showToast();
+    const { showToast } = useToast();
 
     const screen = useMemo(() => displayScreens.find(s => s.id === initialScreen.id) || initialScreen, [displayScreens, initialScreen]);
 
