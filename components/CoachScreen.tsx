@@ -1,10 +1,9 @@
 
-
-import React from 'react';
+import React, { useState } from 'react';
 import { Page, MenuItem, CustomPage, UserRole } from '../types';
-// FIX: Replaced deprecated `useStudio` with `useLocation`.
 import { useLocation } from '../context/StudioContext';
 import { useAuth } from '../context/AuthContext';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface CoachScreenProps {
   navigateTo: (page: Page) => void;
@@ -14,14 +13,12 @@ interface CoachScreenProps {
 }
 
 export const CoachScreen: React.FC<CoachScreenProps> = ({ navigateTo, onSelectCustomPage, isImpersonating, onReturnToAdmin }) => {
-  // FIX: Removed `selectedLocation` as it does not exist on the context type.
   const { selectedOrganization } = useLocation();
-  // FIX: Renamed `isStudioMode` to `isScreenMode`.
   const { isScreenMode, signOut } = useAuth();
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
 
   const staticMenuItems: MenuItem[] = [];
   
-  // FIX: Property 'displayConfig' does not exist on type 'Organization'. Replaced with a check on displayScreens.
   if ((selectedOrganization?.displayScreens ?? []).some(s => s.isEnabled)) {
     staticMenuItems.push({ title: 'Starta Skyltfönster', action: () => navigateTo(Page.DisplayWindow) });
   }
@@ -33,15 +30,10 @@ export const CoachScreen: React.FC<CoachScreenProps> = ({ navigateTo, onSelectCu
   
   const adminMenuItems: MenuItem[] = [];
   
-  // FIX: Renamed `isStudioMode` to `isScreenMode`.
   if (isScreenMode && !isImpersonating) { 
       adminMenuItems.push({
           title: 'Avsluta skärmläge',
-          action: () => {
-              if (window.confirm("Är du säker på att du vill avsluta detta läge? Detta loggar ut enheten.")) {
-                  signOut();
-              }
-          },
+          action: () => setIsExitConfirmOpen(true),
       });
   }
 
@@ -65,7 +57,6 @@ export const CoachScreen: React.FC<CoachScreenProps> = ({ navigateTo, onSelectCu
       <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-10">Admin-hubb</h1>
        <div className="text-gray-400 mb-6 -mt-4 text-center">
             <p>Organisation: <span className="font-bold text-white">{selectedOrganization?.name || 'Ingen vald'}</span></p>
-            {/* FIX: Removed display of `selectedLocation` as the data is not available in the context. */}
        </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {allMenuItems.map(item => (
@@ -79,6 +70,17 @@ export const CoachScreen: React.FC<CoachScreenProps> = ({ navigateTo, onSelectCu
           </button>
         ))}
       </div>
+
+      <ConfirmDialog
+        isOpen={isExitConfirmOpen}
+        onClose={() => setIsExitConfirmOpen(false)}
+        onConfirm={signOut}
+        title="Avsluta skärmläge?"
+        confirmText="Logga ut enhet"
+        variant="destructive"
+      >
+        Är du säker på att du vill avsluta skärmläget? Detta kommer att logga ut den här enheten från systemet.
+      </ConfirmDialog>
     </div>
   );
 }

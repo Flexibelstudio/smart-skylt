@@ -25,6 +25,7 @@ import { EnvironmentBadge } from '../components/EnvironmentBadge';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { MarketingCoachBot } from '../components/MarketingCoachBot';
 import { DraggableSkylieButton } from '../components/DraggableSkylieButton';
+import { APP_VERSION } from '../version';
 
 // --- LAZY-LOADED COMPONENTS ---
 const SuperAdminScreen = lazy(() => import('../components/SuperAdminScreen').then(module => ({ default: module.SuperAdminScreen })));
@@ -473,6 +474,9 @@ const MainContent: React.FC = () => {
               <DraggableSkylieButton isOpen={isMarketingCoachOpen} onClick={() => setIsMarketingCoachOpen(prev => !prev)} />
           )}
           <SyncStatusIndicator status={syncStatus} />
+          <footer className="p-4 text-center text-[10px] text-slate-400 dark:text-slate-600">
+              Smart Skylt Admin &bull; Version {APP_VERSION}
+          </footer>
           <EnvironmentBadge />
           {isOffline && <DeveloperToolbar />}
       </div>

@@ -21,6 +21,7 @@ import {
     SharePostModal
 } from './DisplayScreenEditor/Modals';
 import { syncSharedPosts, copyPostToScreens } from './DisplayScreenEditor/sharedPostsUtils';
+import { ConfirmDialog } from './ConfirmDialog';
 
 
 interface DisplayScreenEditorScreenProps {
@@ -44,7 +45,7 @@ const dataUriToBlob = (dataURI: string): Blob => {
 
 export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps> = ({ screen: initialScreen, initialPostToEdit, onUpdateOrganization, userRole }) => {
     const { selectedOrganization: organization, displayScreens, updateDisplayScreen } = useLocation();
-    const { showToast } = useToast();
+    const { showToast } = showToast();
 
     const screen = useMemo(() => displayScreens.find(s => s.id === initialScreen.id) || initialScreen, [displayScreens, initialScreen]);
 
@@ -66,6 +67,8 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [generatingFollowUpPostId, setGeneratingFollowUpPostId] = useState<string | null>(null);
+
+    const [postIdToDelete, setPostIdToDelete] = useState<string | null>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -188,8 +191,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             throw uploadError;
         }
 
-        // FIX: Sanitize the post object to remove 'undefined' values which Firestore does not support.
-        // JSON.stringify will omit keys with undefined values.
         const sanitizedPost = JSON.parse(JSON.stringify(postWithStorageUrls));
     
         const updatedPosts = isNewPost
@@ -250,7 +251,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         
         let newMediaItems: MediaItem[] = [];
 
-        // Add main AI image if applicable
         if (wasAiDataUri && sanitizedPost.imageUrl) {
             const newMediaItem: MediaItem = {
                 id: `media-ai-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -264,7 +264,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             newMediaItems.push(newMediaItem);
         }
         
-        // Add collected collage items
         if (aiCollageItems.length > 0) {
             newMediaItems.push(...aiCollageItems);
         }
@@ -305,10 +304,12 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         setOriginalPost(null);
     };
 
-    const handleDeletePost = async (postId: string) => {
-        if (window.confirm("Är du säker på att du vill ta bort detta inlägg?") && organization) {
-            const updatedPosts = (screen.posts || []).filter(p => p.id !== postId);
+    const handleDeletePost = async () => {
+        if (postIdToDelete && organization) {
+            const updatedPosts = (screen.posts || []).filter(p => p.id !== postIdToDelete);
             await handleUpdatePosts(updatedPosts);
+            setPostIdToDelete(null);
+            showToast({ message: "Inlägget togs bort.", type: 'success' });
         }
     };
     
@@ -443,7 +444,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             setOriginalPost(JSON.parse(JSON.stringify(post)));
                             setEditingPost(post);
                         }} 
-                        onDeletePost={handleDeletePost}
+                        onDeletePost={(id) => setPostIdToDelete(id)}
                         onDownloadPost={setPostToDownloadAssets}
                         onInitiateCreatePost={() => handleCreatePost()}
                         onSaveAsTemplate={handleSaveAsTemplate}
@@ -457,6 +458,16 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                 </>
             )}
             
+            <ConfirmDialog
+                isOpen={!!postIdToDelete}
+                onClose={() => setPostIdToDelete(null)}
+                onConfirm={handleDeletePost}
+                title="Ta bort inlägg?"
+                confirmText="Ja, ta bort"
+            >
+                Är du säker på att du vill ta bort detta inlägg? Detta går inte att ångra.
+            </ConfirmDialog>
+
             <CampaignIdeaModal
                 isOpen={isIdeaModalOpen}
                 onClose={() => setIsIdeaModalOpen(false)}
@@ -483,7 +494,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             <SharePostModal
                 isOpen={!!postToShare}
                 onClose={() => setPostToShare(null)}
-                onShare={handleConfirmShare}
+                onConfirm={handleConfirmShare}
                 organization={{...organization, displayScreens}}
                 currentScreenId={screen.id}
                 postToShare={postToShare}
