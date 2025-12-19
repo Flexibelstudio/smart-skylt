@@ -493,7 +493,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             <SharePostModal
                 isOpen={!!postToShare}
                 onClose={() => setPostToShare(null)}
-                onConfirm={handleConfirmShare}
+                onShare={handleConfirmShare}
                 organization={{...organization, displayScreens}}
                 currentScreenId={screen.id}
                 postToShare={postToShare}
