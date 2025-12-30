@@ -33,24 +33,8 @@ import * as Schemas from './aiSchemas';
 // Init
 // -------------------------------------------------------------
 
-// @ts-ignore
-const API_KEY = undefined; // FORCE PROXY: process.env.API_KEY is ignored here to prevent client-side usage
-
-let ai: GoogleGenAI | null = null;
-if (API_KEY) {
-  try {
-    ai = new GoogleGenAI({ apiKey: API_KEY });
-  } catch (e) {
-    console.warn("Local GoogleGenAI initialization failed:", e);
-  }
-}
-
-const ensureAiInitialized = (): GoogleGenAI => {
-  if (!ai) {
-    throw new Error("AI-tjänsten är inte konfigurerad lokalt. Försök igen eller kontakta support.");
-  }
-  return ai;
-};
+// Skapa en global instans av AI-klienten med nyckeln från miljövariabeln
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // -------------------------------------------------------------
 // Tools Definitions
@@ -210,8 +194,6 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
     
     const errorString = error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
     
-    // Specifik hantering av 429 Too Many Requests (Rate Limit)
-    // FirebaseError brukar ha en 'code' eller 'status' i sin message om det är en Cloud Function
     if (errorString.includes("429") || errorString.includes("resource_exhausted") || errorString.includes("too many requests")) {
       throw new Error("Skylie tar en kort paus! Just nu är det många som skapar innehåll samtidigt. Vänta en minut och försök igen.");
     }
@@ -230,17 +212,10 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
 // Exports
 // -------------------------------------------------------------
 
-// CHAT uses a direct connection if key exists, annars kör vi proxy-baserad stream i framtiden.
 export async function initializeMarketingCoachChat(organization: Organization): Promise<Chat> {
-  // Om ingen lokal nyckel finns kan vi inte initiera en lokal chatt-instans som stöder streaming enkelt.
-  // Men för att tillfredsställa gränssnittet i MarketingCoachBot returnerar vi en instans om möjligt.
-  if (!API_KEY) {
-      // Om vi kör via proxy behövs egentligen en annan arkitektur för Chat-objektet.
-      // Men vi antar här att API_KEY finns tillgänglig i miljön där detta körs (eller via proxy-logik).
-      throw new Error("Chat kräver API-nyckel eller backend-stream.");
-  }
-  const ai = ensureAiInitialized();
   const systemInstruction = Prompts.getMarketingCoachSystemInstruction(organization);
+  
+  // Använd den globala ai-instansen för att skapa en chatt-session
   return ai.chats.create({
     model: "gemini-3-pro-preview",
     config: { 
@@ -258,9 +233,8 @@ export const formatPageWithAI = (rawContent: string): Promise<string> =>
         const result = await fn({ action: 'formatPageWithAI', params: { rawContent } });
         return result.data as string;
     }
-    const aiClient = ensureAiInitialized();
     const prompt = Prompts.getFormatPagePrompt(rawContent);
-    const response = await aiClient.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
+    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
     return response.text ?? "";
   });
 
@@ -271,9 +245,8 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
         const result = await fn({ action: 'generatePageContentFromPrompt', params: { userPrompt } });
         return result.data as string;
     }
-    const aiClient = ensureAiInitialized();
     const prompt = Prompts.getGeneratePageContentPrompt(userPrompt);
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt });
     return response.text ?? "";
   });
 
@@ -284,9 +257,8 @@ export const generateDisplayPostContent = (userPrompt: string, organizationName:
         const result = await fn({ action: 'generateDisplayPostContent', params: { userPrompt, organizationName } });
         return result.data as { headline: string; body: string };
     }
-    const aiClient = ensureAiInitialized();
     const prompt = Prompts.getDisplayPostContentPrompt(userPrompt, organizationName);
-    const response = await aiClient.models.generateContent({
+    const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema }
@@ -301,8 +273,7 @@ export const generateAutomationPrompt = (inputs: { goal: string; tone: string; m
         const response = await generateContentViaProxy("gemini-2.5-flash", prompt);
         return (response.text ?? "").trim();
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
+    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
     return (response.text ?? "").trim();
   });
 
@@ -315,8 +286,7 @@ export const generateSkyltIdeas = (prompt: string, organization: Organization): 
         const response = await generateContentViaProxy("gemini-2.5-flash", fullPrompt, config);
         return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-2.5-flash", contents: fullPrompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: fullPrompt, config });
     return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
   });
 
@@ -329,8 +299,7 @@ export const generateCampaignIdeasForEvent = (eventName: string, daysUntil: numb
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as any;
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as any;
   });
 
@@ -343,8 +312,7 @@ export const generateSeasonalCampaignIdeas = (organization: Organization, planni
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as any;
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as any;
   });
 
@@ -367,8 +335,7 @@ export const generateCompletePost = (
     if (functions) {
         textGenResponse = await generateContentViaProxy("gemini-3-pro-preview", { parts }, config);
     } else {
-        const aiClient = ensureAiInitialized();
-        textGenResponse = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: { parts }, config });
+        textGenResponse = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: { parts }, config });
     }
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
@@ -379,8 +346,7 @@ export const generateCompletePost = (
           const proxyImg = await generateImagesViaProxy("imagen-4.0-generate-001", (postData as any).imagePrompt, { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio });
           imageResponse = { generatedImages: [{ image: { imageBytes: proxyImg.imageBytes } }] };
       } else {
-          const aiClient = ensureAiInitialized();
-          imageResponse = await aiClient.models.generateImages({ model: "imagen-4.0-generate-001", prompt: (postData as any).imagePrompt, config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio } });
+          imageResponse = await ai.models.generateImages({ model: "imagen-4.0-generate-001", prompt: (postData as any).imagePrompt, config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio } });
       }
 
       if (!imageResponse.generatedImages?.length) throw new Error("AI:n kunde inte generera en bild.");
@@ -398,8 +364,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
     if (functions) {
         textGenResponse = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
     } else {
-        const aiClient = ensureAiInitialized();
-        textGenResponse = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+        textGenResponse = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     }
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
@@ -410,8 +375,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
           const proxyImg = await generateImagesViaProxy("imagen-4.0-generate-001", (postData as any).imagePrompt, { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio });
           imageResponse = { generatedImages: [{ image: { imageBytes: proxyImg.imageBytes } }] };
       } else {
-          const aiClient = ensureAiInitialized();
-          imageResponse = await aiClient.models.generateImages({ model: "imagen-4.0-generate-001", prompt: (postData as any).imagePrompt, config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio } });
+          imageResponse = await ai.models.generateImages({ model: "imagen-4.0-generate-001", prompt: (postData as any).imagePrompt, config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio } });
       }
       if (!imageResponse.generatedImages?.length) throw new Error("AI:n kunde inte generera en bild.");
       return { postData, imageData: { imageBytes: imageResponse.generatedImages[0].image.imageBytes, mimeType: 'image/jpeg' } };
@@ -426,9 +390,8 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
         const result = await fn({ action: 'generateHeadlineSuggestions', params: { body, existingHeadlines } });
         return result.data as string[];
     }
-    const aiClient = ensureAiInitialized();
     const prompt = Prompts.getHeadlineSuggestionsPrompt(body, existingHeadlines);
-    const response = await aiClient.models.generateContent({
+    const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
@@ -445,8 +408,7 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
   });
 
@@ -457,9 +419,8 @@ export const refineDisplayPostContent = (content: { headline: string; body: stri
         const result = await fn({ action: 'refineDisplayPostContent', params: { content, command } });
         return result.data as { headline: string; body: string };
     }
-    const aiClient = ensureAiInitialized();
     const prompt = Prompts.getRefineContentPrompt(content, command);
-    const response = await aiClient.models.generateContent({
+    const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema },
@@ -476,8 +437,7 @@ export const refineTextWithCustomPrompt = (content: { headline: string; body: st
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
 
@@ -491,9 +451,8 @@ export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "1
         const mime = meta.split(':')[1].split(';')[0];
         return { imageBytes: data, mimeType: mime };
     }
-    const aiClient = ensureAiInitialized();
     const apiPrompt = Prompts.getGenerateImagePrompt(prompt);
-    const response = await aiClient.models.generateImages({
+    const response = await ai.models.generateImages({
       model: "imagen-4.0-generate-001",
       prompt: apiPrompt,
       config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
@@ -512,11 +471,10 @@ export const editDisplayPostImage = (base64ImageData: string, mimeType: string, 
         const mime = meta.split(':')[1].split(';')[0];
         return { imageBytes: data, mimeType: mime };
     }
-    const aiClient = ensureAiInitialized();
     const parts: any[] = [{ inlineData: { data: base64ImageData, mimeType } }, { text: prompt }];
     if (logo) parts.push({ inlineData: { data: logo.base64Data, mimeType: logo.mimeType } });
 
-    const response = await aiClient.models.generateContent({
+    const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
       contents: { parts },
       config: { responseModalities: [Modality.IMAGE] },
@@ -589,8 +547,7 @@ export const generateEventReminderText = (event: { name: string; icon: string },
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
       }
-      const aiClient = ensureAiInitialized();
-      const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+      const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
     })
   );
@@ -606,8 +563,7 @@ export const updateStyleProfileSummary = (organization: Organization, recentPost
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
   });
 
@@ -621,8 +577,7 @@ export const generateRhythmReminderText = (organization: Organization, analysis:
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
       }
-      const aiClient = ensureAiInitialized();
-      const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+      const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
     })
   );
@@ -643,8 +598,7 @@ export const getSeasonalSuggestion = (posts: DisplayPost[], organization: Organi
           const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
       }
-      const aiClient = ensureAiInitialized();
-      const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+      const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
     })
   );
@@ -660,8 +614,7 @@ export const generateDnaAnalysis = (organization: Organization): Promise<Partial
         const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as any;
         return { ...analysisData, lastUpdatedAt: new Date().toISOString(), feedback: null };
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as any;
     return { ...analysisData, lastUpdatedAt: new Date().toISOString(), feedback: null };
   });
@@ -675,8 +628,7 @@ export const analyzePostDiff = (aiSuggestion: DisplayPost, finalPost: DisplayPos
         const response = await generateContentViaProxy("gemini-3-pro-preview", prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as { ändringar: string[]; tolkning: string; förslagFörFramtiden: string; };
     }
-    const aiClient = ensureAiInitialized();
-    const response = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as { ändringar: string[]; tolkning: string; förslagFörFramtiden: string; };
   });
 
@@ -693,8 +645,7 @@ export async function summarizeLearnLogForOrg(orgId: string) {
       const response = await generateContentViaProxy("gemini-3-pro-preview", prompt);
       summary = response.text?.trim() || "";
   } else {
-      const aiClient = ensureAiInitialized();
-      const result = await aiClient.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt });
+      const result = await ai.models.generateContent({ model: "gemini-3-pro-preview", contents: prompt });
       summary = result.text?.trim() || "";
   }
 
