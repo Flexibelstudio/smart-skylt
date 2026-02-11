@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Skylt</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cabin:wght@400;700&family=Cormorant+Garamond:wght@400;700&family=DM+Sans:wght@400;700&family=EB+Garamond:wght@400;700&family=Exo+2:wght@400;700&family=Fira+Sans:wght@400;700&family=Inter:wght@400;500;700;900&family=Josefin+Sans:wght@400;700&family=Lato:wght@400;700&family=Libre+Baskerville:wght@400;700&family=Lobster&family=Lora:wght@400;700&family=Manrope:wght@400;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;700&family=Nunito:wght@400;700&family=Open+Sans:wght@400;700&family=Oswald:wght@400;700&family=PT+Serif:wght@400;700&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;700;900&family=Quicksand:wght@400;700&family=Raleway:wght@400;700&family=Roboto:wght@400;700&family=Satisfy&family=Source+Sans+Pro:wght@400;700&family=Ubuntu:wght@400;700&family=Work+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./index.css" />
+    <style>
+      @keyframes confetti-fall {
+        0% { transform: translateY(-20px) rotateZ(0deg); opacity: 1; }
+        100% { transform: translateY(100vh) rotateZ(720deg); opacity: 0; }
+      }
+
+      .confetti-piece {
+        position: absolute;
+        top: 0;
+        width: 10px;
+        height: 20px;
+        opacity: 0;
+        animation-name: confetti-fall;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+        will-change: transform, opacity;
+      }
+
+      @keyframes heart-rise {
+        0% { transform: translateY(20px) scale(0.5); opacity: 1; }
+        100% { transform: translateY(-100vh) scale(1.5); opacity: 0; }
+      }
+
+      .heart-piece {
+        position: absolute;
+        bottom: 0;
+        font-size: 24px;
+        color: #e63946;
+        opacity: 0;
+        animation-name: heart-rise;
+        animation-timing-function: ease-in;
+        animation-iteration-count: infinite;
+        will-change: transform, opacity;
+      }
+      
+      .line-clamp-2 {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+
+      .line-clamp-4 {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 4;
+      }
+      
+      .line-clamp-6 {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 6;
+      }
+      
+      /* Keyframes for banner animations */
+      @keyframes slideInLeft {
+        from { transform: translateX(-100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes fadeInBanner {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      /* Keyframes for tag animations */
+      @keyframes pulse-tag-bg {
+        50% { opacity: 0.85; }
+      }
+      .animate-pulse-tag {
+        animation: pulse-tag-bg 2s ease-in-out infinite;
+      }
+
+      @keyframes glow-tag-shadow {
+        50% { box-shadow: 0 0 15px 5px var(--glow-color, rgba(255, 255, 255, 0.5)); }
+      }
+      .animate-glow-tag {
+        animation: glow-tag-shadow 2.5s ease-in-out infinite;
+      }
+
+      /* Keyframes for new stamp pulse animation */
+      @keyframes pulse-stamp {
+        50% { transform: scale(0.97); }
+      }
+      .animate-pulse-stamp {
+        animation: pulse-stamp 2s ease-in-out infinite;
+      }
+      @keyframes pulse-stamp-override {
+        50% { --scale: 0.97; }
+      }
+      .animate-pulse-stamp-override {
+        animation: pulse-stamp-override 2s ease-in-out infinite;
+      }
+      
+      /* Keyframes for magical AI button glow */
+      @keyframes glow-button-keyframes {
+        from {
+          box-shadow: 0 0 5px #fde047, 0 0 15px #fde047, 0 0 25px #facc15, 0 0 35px #facc15;
+        }
+        to {
+          box-shadow: 0 0 10px #fef9c3, 0 0 20px #fef9c3, 0 0 30px #fde047, 0 0 40px #fde047;
+        }
+      }
+
+      /* Keyframes for shooting star animation */
+      @keyframes shoot-star-keyframes {
+        0% {
+          transform: translate(0, 0) scale(0.5) rotate(0deg);
+          opacity: 0;
+        }
+        20% {
+          opacity: 1;
+        }
+        100% {
+          transform: translate(-70vw, 40vh) scale(1.2) rotate(180deg);
+          opacity: 0;
+        }
+      }
+
+      /* Keyframes for toast notifications */
+      @keyframes toast-in-right {
+        from { transform: translateX(100%) scale(0.9); opacity: 0; }
+        to { transform: translateX(0) scale(1); opacity: 1; }
+      }
+      @keyframes toast-fade-out {
+        from { opacity: 1; transform: scale(1); }
+        to { opacity: 0; transform: scale(0.9); }
+      }
+      
+      /* Keyframes for new list items */
+      @keyframes slide-in-item {
+        from { transform: translateY(10px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slide-in-item {
+        animation: slide-in-item 0.4s ease-out forwards;
+      }
+      
+      /* Keyframes for AI flow highlight */
+      @keyframes ai-flow-highlight {
+        0%, 100% {
+          box-shadow: 0 0 0 0 rgba(var(--color-primary-rgb, 20 184 166), 0);
+          background-color: rgba(var(--color-primary-rgb, 20 184 166), 0);
+        }
+        50% {
+          box-shadow: 0 0 1rem 0.5rem rgba(var(--color-primary-rgb, 20 184 166), 0.4);
+          background-color: rgba(var(--color-primary-rgb, 20 184 166), 0.1);
+        }
+      }
+      .animate-ai-flow-highlight {
+        animation: ai-flow-highlight 3s ease-out;
+      }
+      
+      .highlight-pulse {
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+        animation: pulseFade 2.5s ease-out;
+      }
+
+      @keyframes pulseFade {
+        0% {
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.7);
+        }
+        50% {
+          box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.2);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+        }
+      }
+
+      /* --- NEW ANIMATIONS --- */
+
+      /* Text Animations */
+      @keyframes typing { from { width: 0; } to { width: 100%; } }
+      @keyframes blink-caret { from, to { border-color: transparent; } 50% { border-color: currentColor; } }
+      .animate-typewriter { 
+        display: inline-block; /* Fix: Added to allow width animation */
+        overflow: hidden; 
+        white-space: nowrap; 
+        border-right: .1em solid currentColor;
+        animation: typing var(--type-duration, 2s) steps(var(--char-count, 20), end) forwards, blink-caret .75s step-end infinite;
+      }
+
+      @keyframes fade-up-in {
+        from { opacity: 0; transform: translateY(1em); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-up-word {
+        display: inline-block;
+        opacity: 0;
+        animation: fade-up-in 0.5s ease forwards;
+      }
+
+      @keyframes blur-in {
+        from { filter: blur(10px); opacity: 0; }
+        to { filter: blur(0px); opacity: 1; }
+      }
+      .animate-blur-in {
+        animation: blur-in 0.8s ease-out forwards;
+      }
+
+      /* Image Effects */
+      @keyframes ken-burns {
+        0% {
+          transform: scale(1.1) translate(0, 0);
+        }
+        100% {
+          transform: scale(1.5) translate(-20%, -10%);
+        }
+      }
+      .animate-ken-burns-slow {
+        animation: ken-burns 20s ease-in-out infinite alternate;
+      }
+      .animate-ken-burns-fast {
+        animation: ken-burns 10s ease-in-out infinite alternate;
+      }
+
+      /* Make date picker icon white on dark inputs */
+      .dark-date-input::-webkit-calendar-picker-indicator {
+        filter: invert(1);
+      }
+      
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#14b8a6', // Static UI accent color, works in light/dark mode.
+              'brand': 'var(--color-brand, #14b8a6)', // Dynamic brand color for org content.
+              slate: {
+                50: '#f8fafc',
+                100: '#f1f5f9',
+                200: '#e2e8f0',
+                300: '#cbd5e1',
+                400: '#94a3b8',
+                500: '#64748b',
+                600: '#475569',
+                700: '#334155',
+                800: '#1e293b',
+                900: '#0f172a',
+              },
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              logo: ['Satisfy', 'cursive'],
+              display: ['Poppins', 'sans-serif'],
+              adscript: ['Lobster', 'cursive'],
+              'roboto': ['Roboto', 'sans-serif'],
+              'open-sans': ['"Open Sans"', 'sans-serif'],
+              'lato': ['Lato', 'sans-serif'],
+              'montserrat': ['Montserrat', 'sans-serif'],
+              'source-sans-pro': ['"Source Sans Pro"', 'sans-serif'],
+              'nunito': ['Nunito', 'sans-serif'],
+              'raleway': ['Raleway', 'sans-serif'],
+              'oswald': ['Oswald', 'sans-serif'],
+              'ubuntu': ['Ubuntu', 'sans-serif'],
+              'helvetica-neue': ['"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
+              'arial': ['Arial', 'sans-serif'],
+              'manrope': ['Manrope', 'sans-serif'],
+              'fira-sans': ['"Fira Sans"', 'sans-serif'],
+              'merriweather': ['Merriweather', 'serif'],
+              'playfair-display': ['"Playfair Display"', 'serif'],
+              'lora': ['Lora', 'serif'],
+              'georgia': ['Georgia', 'serif'],
+              'times-new-roman': ['"Times New Roman"', 'Times', 'serif'],
+              'libre-baskerville': ['"Libre Baskerville"', 'serif'],
+              'eb-garamond': ['"EB Garamond"', 'serif'],
+              'cormorant-garamond': ['"Cormorant Garamond"', 'serif'],
+              'pt-serif': ['"PT Serif"', 'serif'],
+              'dm-sans': ['"DM Sans"', 'sans-serif'],
+              'work-sans': ['"Work Sans"', 'sans-serif'],
+              'quicksand': ['Quicksand', 'sans-serif'],
+              'josefin-sans': ['"Josefin Sans"', 'sans-serif'],
+              'exo-2': ['"Exo 2"', 'sans-serif'],
+              'cabin': ['Cabin', 'sans-serif'],
+            },
+            boxShadow: {
+                'inner-soft': 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.3s ease-out forwards',
+              'pulse-loader': 'pulseLoader 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'slide-in-left': 'slideInLeft 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'slide-in-right': 'slideInRight 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'fade-in-banner': 'fadeInBanner 0.7s ease-out forwards',
+              'glow-button': 'glow-button-keyframes 1.5s ease-in-out infinite alternate',
+              'shoot-star': 'shoot-star-keyframes 1.2s ease-in-out forwards',
+              'marquee': 'marquee var(--scroll-duration, 30s) linear infinite',
+              'fade-in-post': 'fade-in-post 1.2s ease-out forwards',
+              'fade-out-post': 'fade-out-post 1.2s ease-out forwards',
+              'slide-in-post': 'slide-in-from-right 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards',
+              'slide-out-post': 'slide-out-to-left 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards',
+              'dissolve-in-post': 'dissolve-in-post 1.2s ease-in-out forwards',
+              'dissolve-out-post': 'dissolve-out-post 1.2s ease-in-out forwards',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'scale(0.95)' },
+                '100%': { opacity: '1', transform: 'scale(1)' },
+              },
+              pulseLoader: {
+                '0%': { transform: 'scale(.1)', opacity: '1' },
+                '70%': { transform: 'scale(1)', opacity: '0.7' },
+                '100%': { opacity: '0' },
+              },
+              marquee: {
+                '0%': { transform: 'translateX(0)' },
+                '100%': { transform: 'translateX(-50%)' },
+              },
+              'fade-in-post': {
+                'from': { opacity: '0', transform: 'scale(0.97)' },
+                'to': { opacity: '1', transform: 'scale(1)' },
+              },
+              'fade-out-post': {
+                'from': { opacity: '1', transform: 'scale(1)' },
+                'to': { opacity: '0', transform: 'scale(0.97)' },
+              },
+              'slide-in-from-right': {
+                'from': { transform: 'translateX(30%)', opacity: '0' },
+                'to': { transform: 'translateX(0)', opacity: '1' },
+              },
+              'slide-out-to-left': {
+                'from': { transform: 'translateX(0)', opacity: '1' },
+                'to': { transform: 'translateX(-30%)', opacity: '0' },
+              },
+              'dissolve-in-post': {
+                'from': { opacity: '0', filter: 'blur(20px)', transform: 'scale(1.05)' },
+                'to': { opacity: '1', filter: 'blur(0)', transform: 'scale(1)' },
+              },
+              'dissolve-out-post': {
+                'from': { opacity: '1', filter: 'blur(0)', transform: 'scale(1)' },
+                'to': { opacity: '0', filter: 'blur(20px)', transform: 'scale(0.95)' },
+              },
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
+    "@google/genai": "https://esm.sh/@google/genai@0.14.0",
+    "qrcode": "https://esm.sh/qrcode@1.5.3",
+    "react-dom": "https://esm.sh/react-dom@18.2.0",
+    "react-dom/": "https://esm.sh/react-dom@18.2.0/",
+    "react/": "https://esm.sh/react@18.2.0/",
+    "firebase/compat/app": "https://esm.sh/firebase@9.23.0/compat/app",
+    "firebase/compat/auth": "https://esm.sh/firebase@9.23.0/compat/auth",
+    "firebase/compat/firestore": "https://esm.sh/firebase@9.23.0/compat/firestore",
+    "firebase/compat/functions": "https://esm.sh/firebase@9.23.0/compat/functions",
+    "firebase/compat/storage": "https://esm.sh/firebase@9.23.0/compat/storage",
+    "firebase/": "https://esm.sh/firebase@^12.1.0/",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
+    "firebase-functions/": "https://aistudiocdn.com/firebase-functions@^6.6.0/",
+    "firebase-admin/": "https://aistudiocdn.com/firebase-admin@^13.5.0/",
+    "express": "https://aistudiocdn.com/express@^5.1.0",
+    "ws": "https://aistudiocdn.com/ws@^8.18.3",
+    "http": "https://aistudiocdn.com/http@^0.0.1-security",
+    "remark-gfm": "https://aistudiocdn.com/remark-gfm@^4.0.1",
+    "react-markdown": "https://aistudiocdn.com/react-markdown@^10.1.0",
+    "@tanstack/react-query": "https://esm.sh/@tanstack/react-query@5.28.4?external=react,react-dom",
+    "zod": "https://esm.sh/zod@3.22.4",
+    "crypto": "https://aistudiocdn.com/crypto@^1.0.1",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
+    "path": "https://esm.sh/path@^0.12.7",
+    "url": "https://esm.sh/url@^0.11.4"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-100 dark:bg-slate-900">
+    <div id="root"></div>
+    <script src="/config.js"></script>
+    <script type="module" src="./index.tsx"></script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
