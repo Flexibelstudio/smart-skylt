@@ -1084,12 +1084,6 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                         <h4 className="text-xl font-bold text-slate-900 dark:text-white">Taggar & Stämplar</h4>
                         <TagManager tags={tags} onSave={handleSaveTag} onDelete={(tag) => setTagToDelete(tag)} editingTag={editingTag} setEditingTag={setEditingTag} />
                     </div>
-                    <hr className="my-6 border-slate-200 dark:border-slate-700" />
-                    <div>
-                        <h4 className="text-xl font-bold text-slate-900 dark:text-white">Inläggsmallar</h4>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">Återanvändbara designer för dina inlägg. Skapa nya mallar från ett befintligt inlägg i kanal-redigeraren.</p>
-                        <PostTemplateManager organization={organization} onUpdatePostTemplates={onUpdatePostTemplates} />
-                    </div>
                 </div>
             </Card>
 
