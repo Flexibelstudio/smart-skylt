@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DisplayPost, DisplayScreen, Organization, BrandingOptions, Tag, TagPositionOverride } from '../../types';
+import { DisplayPost, DisplayScreen, Organization, BrandingOptions } from '../../types';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ChevronDownIcon, PlayIcon, PauseIcon } from '../icons';
 
@@ -11,6 +11,65 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
         case '3:4': return 'aspect-[3/4]';
         case '16:9': default: return 'aspect-[16/9]';
     }
+};
+
+const ScaledPreviewWrapper: React.FC<{ 
+    aspectRatio: DisplayScreen['aspectRatio']; 
+    children: React.ReactNode;
+    className?: string;
+}> = ({ aspectRatio, children, className }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
+
+    // Definiera referensupplösning baserat på bildförhållande (Full HD bas)
+    const { width: baseWidth, height: baseHeight } = useMemo(() => {
+        switch (aspectRatio) {
+            case '9:16': return { width: 1080, height: 1920 };
+            case '3:4': return { width: 1080, height: 1440 };
+            case '4:3': return { width: 1440, height: 1080 };
+            case '16:9': default: return { width: 1920, height: 1080 };
+        }
+    }, [aspectRatio]);
+
+    useEffect(() => {
+        const updateScale = () => {
+            if (containerRef.current) {
+                const parentWidth = containerRef.current.clientWidth;
+                if (parentWidth > 0) {
+                    setScale(parentWidth / baseWidth);
+                }
+            }
+        };
+
+        updateScale();
+        const observer = new ResizeObserver(updateScale);
+        if (containerRef.current) observer.observe(containerRef.current);
+        
+        return () => observer.disconnect();
+    }, [baseWidth]);
+
+    return (
+        <div 
+            ref={containerRef} 
+            className={`relative w-full overflow-hidden ${className || ''}`}
+            style={{ aspectRatio: `${baseWidth}/${baseHeight}` }}
+        >
+            <div 
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: `${baseWidth}px`,
+                    height: `${baseHeight}px`,
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top left',
+                    pointerEvents: 'auto'
+                }}
+            >
+                {children}
+            </div>
+        </div>
+    );
 };
 
 const SinglePostPreview: React.FC<{ 
@@ -55,7 +114,11 @@ const SinglePostPreview: React.FC<{
                     )}
                 </div>
             </div>
-            <div className={`${getAspectRatioClass(screen.aspectRatio)} ${isPortrait ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
+            
+            <ScaledPreviewWrapper 
+                aspectRatio={screen.aspectRatio}
+                className={`bg-slate-300 dark:bg-slate-900 rounded-lg border-2 border-slate-300 dark:border-gray-600 shadow-lg ${isPortrait ? 'max-h-[75vh] mx-auto' : 'w-full'}`}
+            >
                 <DisplayPostRenderer 
                     post={post} 
                     allTags={organization.tags} 
@@ -79,7 +142,8 @@ const SinglePostPreview: React.FC<{
                         </div>
                     </div>
                 )}
-            </div>
+            </ScaledPreviewWrapper>
+            
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text, QR-kod och taggar för att placera dem fritt. Dra i handtagen på sidorna av rutorna för att ändra bredd.</p>
         </div>
     );
@@ -147,13 +211,18 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
         }
     };
     
+    const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+
     return (
         <div className="space-y-4">
              <div className="flex justify-between items-center">
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white">Live-förhandsgranskning</h3>
              </div>
              <div className="space-y-4">
-                 <div className={`${getAspectRatioClass(screen.aspectRatio)} ${screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
+                 <ScaledPreviewWrapper 
+                    aspectRatio={screen.aspectRatio}
+                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg border-2 border-slate-300 dark:border-gray-600 shadow-lg ${isPortrait ? 'max-h-[75vh] mx-auto' : 'w-full'}`}
+                 >
                     {currentPost ? (
                         <DisplayPostRenderer 
                             post={currentPost} 
@@ -176,7 +245,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
                             </div>
                         </div>
                     )}
-                 </div>
+                 </ScaledPreviewWrapper>
 
                  {activePosts.length > 1 && (
                      <div className="p-2 bg-slate-100 dark:bg-gray-800 rounded-lg flex justify-between items-center border border-slate-200 dark:border-gray-700">
