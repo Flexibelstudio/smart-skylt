@@ -90,9 +90,14 @@ const DisplayScreenPreviewModal: React.FC<{
 
     const currentPost = activePosts[currentIndex];
     
+    // Determine modal width based on aspect ratio
+    // If portrait (9:16 or 3:4), use a narrower max-width to fit height on screen
+    const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+    const modalWidthClass = isPortrait ? 'max-w-sm' : 'max-w-4xl';
+
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 w-full max-w-4xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className={`bg-white dark:bg-slate-800 rounded-xl p-4 w-full ${modalWidthClass} text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in`} onClick={e => e.stopPropagation()}>
                 <h2 className="text-xl font-bold mb-4">Förhandsgranskning: {screen.name}</h2>
                 <div className={`${getAspectRatioClass(screen.aspectRatio)} w-full bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
                     {currentPost ? (
