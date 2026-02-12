@@ -205,8 +205,9 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
 
         const sanitizedPost = JSON.parse(JSON.stringify(postWithStorageUrls));
     
+        // FIX: Prepend new posts instead of appending them to the list
         const updatedPosts = isNewPost
-            ? [...(screen.posts || []), sanitizedPost]
+            ? [sanitizedPost, ...(screen.posts || [])]
             : (screen.posts || []).map(p => p.id === sanitizedPost.id ? sanitizedPost : p);
         
         await updateDisplayScreen(screen.id, { posts: updatedPosts });
@@ -236,7 +237,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             const shouldUpdateSummary = !styleProfile.summary || newVersion % 3 === 0;
             if (shouldUpdateSummary) {
                 try {
-                    const postsForAnalysis = updatedPosts.slice(-5);
+                    const postsForAnalysis = updatedPosts.slice(0, 5); // Take first 5 (newest if prepended)
                     const result = await updateStyleProfileSummary(organization, postsForAnalysis);
                     updatedSummary = result.summary;
                 } catch (e) {

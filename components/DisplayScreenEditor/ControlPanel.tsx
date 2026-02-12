@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Organization, DisplayScreen, DisplayPost, BrandingOptions, Tag } from '../../types';
-import { ToggleSwitch, PencilIcon, TrashIcon, ChevronDownIcon, StarIcon, CampaignIcon, DownloadIcon, SparklesIcon, InstagramIcon, ShareIcon, DuplicateIcon, EllipsisVerticalIcon } from '../icons';
+import { ToggleSwitch, PencilIcon, TrashIcon, ChevronDownIcon, StarIcon, CampaignIcon, DownloadIcon, SparklesIcon, InstagramIcon, ShareIcon, DuplicateIcon, EllipsisVerticalIcon, MagnifyingGlassIcon } from '../icons';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { PrimaryButton } from '../Buttons';
+import { StyledSelect } from '../Forms';
 import { getPostVisibility } from './sharedPostsUtils';
 import { useToast } from '../../context/ToastContext';
 import { RemixModal } from './Modals';
@@ -83,21 +84,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [dragIndex, setDragIndex] = useState<number | null>(null);
-    const [orderedPosts, setOrderedPosts] = useState<DisplayPost[]>(screen.posts || []);
     const [remixPost, setRemixPost] = useState<DisplayPost | null>(null);
     const { showToast } = useToast();
+    
+    // Sort & Search State
+    const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'status' | 'alpha'>('manual');
+    const [searchQuery, setSearchQuery] = useState('');
     
     const configKey = `channel-configured-${screen.id}`;
     const [isFirstTimeConfiguring, setIsFirstTimeConfiguring] = useState(() => {
         try {
-            // Fallback to false (closed) if localStorage is not available.
             return !localStorage.getItem(configKey);
         } catch (e) {
             return false;
         }
     });
-
-    useEffect(() => { setOrderedPosts(screen.posts || []); }, [screen.posts]);
 
     const handleSettingChange = async (field: keyof DisplayScreen | `branding.${keyof BrandingOptions}`, value: any) => {
         setIsSaving(true);
@@ -128,24 +129,70 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         }
     };
 
-    const handleDragStart = (index: number) => setDragIndex(index);
-    const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+    // --- Sorting & Filtering Logic ---
+    const displayedPosts = useMemo(() => {
+        let posts = [...(screen.posts || [])];
+
+        // 1. Filter
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            posts = posts.filter(p => p.internalTitle.toLowerCase().includes(q));
+        }
+
+        // 2. Sort
+        if (sortOption === 'newest') {
+            posts.sort((a, b) => {
+                // Try to parse timestamp from ID (e.g. post-171...) or new-171...
+                const timeA = parseInt(a.id.split('-')[1]) || 0;
+                const timeB = parseInt(b.id.split('-')[1]) || 0;
+                return timeB - timeA;
+            });
+        } else if (sortOption === 'alpha') {
+            posts.sort((a, b) => a.internalTitle.localeCompare(b.internalTitle));
+        } else if (sortOption === 'status') {
+            const now = new Date();
+            const getStatusRank = (p: DisplayPost) => {
+                if (p.status === 'archived') return 3;
+                const start = p.startDate ? new Date(p.startDate) : null;
+                const end = p.endDate ? new Date(p.endDate) : null;
+                if (end && end < now) return 3; // Expired/Archived
+                if (start && start > now) return 2; // Scheduled
+                return 1; // Active
+            };
+            posts.sort((a, b) => getStatusRank(a) - getStatusRank(b));
+        }
+        
+        return posts;
+    }, [screen.posts, sortOption, searchQuery]);
+
+    const isManualMode = sortOption === 'manual' && !searchQuery.trim();
+
+    const handleDragStart = (index: number) => {
+        if (isManualMode) setDragIndex(index);
+    };
+    
+    const handleDragOver = (e: React.DragEvent) => {
+        if (isManualMode) e.preventDefault();
+    };
+    
     const handleDrop = (dropIndex: number) => {
         if (dragIndex === null || dragIndex === dropIndex) return;
-        const reordered = [...orderedPosts];
+        if (!isManualMode) return; 
+
+        const reordered = [...(screen.posts || [])];
         const [dragged] = reordered.splice(dragIndex, 1);
         reordered.splice(dropIndex, 0, dragged);
-        setOrderedPosts(reordered);
+        
         onUpdateScreen({ posts: reordered });
         setDragIndex(null);
     };
 
     const handleRemixSelect = async (variant: DisplayPost) => {
         setIsSaving(true);
-        setRemixPost(null); // Close modal immediately
+        setRemixPost(null); 
         try {
-            // Add as new post
-            const updatedPosts = [...(screen.posts || []), variant];
+            // Prepend remix
+            const updatedPosts = [variant, ...(screen.posts || [])];
             await onUpdateScreen({ posts: updatedPosts });
             showToast({ message: "Remixad version sparad!", type: 'success' });
         } catch(e) {
@@ -157,7 +204,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     
     return (
         <div className="space-y-6">
-            {/* Ändrad till stängd som standard för en renare startvy. */}
             <Accordion title="⚙️ Kanalinställningar" defaultOpen={false}>
                 <div className="p-4">
                     <div className="space-y-6">
@@ -184,7 +230,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         <div>
                             <h4 className="text-base font-semibold text-slate-600 dark:text-slate-300 mb-2 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">Varumärkesvisning</h4>
                             <div className="space-y-4">
-                                {/* Använder nullish coalescing operator (??) för att säkerställa att togglen är avstängd (false) om screen.branding eller screen.branding.isEnabled är undefined, enligt önskemål. */}
                                 <ToggleSwitch label="Aktivera varumärkesvisning" checked={screen.branding?.isEnabled ?? false} onChange={c => handleSettingChange('branding.isEnabled', c)} />
                                 <div className={screen.branding?.isEnabled ? 'space-y-4' : 'opacity-50 pointer-events-none space-y-4'}>
                                     <ToggleSwitch label="Visa logotyp" checked={screen.branding?.showLogo ?? true} onChange={c => handleSettingChange('branding.showLogo', c)} />
@@ -212,81 +257,129 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                 </div>
             </Accordion>
-            {/* Inläggssektionen är nu öppen som standard för att användaren snabbt ska se och skapa inlägg. */}
+            
             <Accordion 
-                title={`Inlägg (${(orderedPosts || []).length})`} 
+                title={`Inlägg (${(displayedPosts || []).length})`} 
                 defaultOpen={true}
                 actions={<PrimaryButton onClick={onInitiateCreatePost} disabled={isSaving}>Skapa nytt inlägg</PrimaryButton>}
             >
-                 <div className="space-y-3 p-4">
-                    {(orderedPosts).map((post, index) => {
-                        const visibility = getPostVisibility(post, screen.id, organization);
-                        return (
-                            <div key={post.id} draggable onDragStart={() => handleDragStart(index)} onDragOver={handleDragOver} onDrop={() => handleDrop(index)} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-3 border border-slate-200 dark:border-slate-700 cursor-grab active:cursor-grabbing" style={{ opacity: dragIndex === index ? 0.5 : 1 }}>
-                                <div className="flex-shrink-0 w-24 h-14 bg-black rounded-md overflow-hidden"><DisplayPostRenderer post={post} mode="preview" allTags={organization.tags} showTags={false} organization={organization}/></div>
-                                <div className="flex-grow min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="min-w-0">
-                                        <p className="font-semibold text-slate-900 dark:text-white truncate">{post.internalTitle}</p>
-                                        {visibility.isShared ? (
-                                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                                <span className="font-semibold">Delas från:</span> {visibility.sourceScreenName}
-                                            </div>
-                                        ) : visibility.visibleIn.length > 1 ? (
-                                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                                                <span className="font-semibold">Synkas till:</span>
-                                                {visibility.visibleIn.map(s => (
-                                                <span key={s.id} className="font-bold bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded">
-                                                    {s.name}
-                                                </span>
-                                                ))}
-                                            </div>
-                                        ) : null}
-                                        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1">
-                                            <PostStatusBadge post={post} />
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-1 flex-shrink-0 mt-2 sm:mt-0 self-end sm:self-auto">
-                                        {/* Responsive actions */}
-                                        <div className="hidden sm:flex items-center gap-1">
-                                            
-                                            {/* REMIX BUTTON */}
-                                            <button onClick={() => setRemixPost(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-purple-500" title="Remixa - Skapa varianter">
-                                                <SparklesIcon className="h-5 w-5"/>
-                                            </button>
+                 <div className="p-4 space-y-4">
+                    {/* Cockpit Toolbar */}
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <div className="relative flex-grow">
+                            <input 
+                                type="text" 
+                                placeholder="Sök inlägg..." 
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-shadow"
+                            />
+                            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                        </div>
+                        <div className="min-w-[220px]">
+                            <StyledSelect 
+                                value={sortOption} 
+                                onChange={e => setSortOption(e.target.value as any)}
+                                className="!h-10 !py-1 !text-sm"
+                            >
+                                <option value="manual">Manuell ordning (Spellista)</option>
+                                <option value="newest">Senast skapad</option>
+                                <option value="status">Status (Aktiva först)</option>
+                                <option value="alpha">Namn (A-Ö)</option>
+                            </StyledSelect>
+                        </div>
+                    </div>
+                    { !isManualMode && (
+                        <div className="text-xs text-slate-500 bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded border border-yellow-200 dark:border-yellow-800/50 flex items-center gap-2">
+                            <span>⚠️</span> Sortering aktiv. Byt till "Manuell ordning" för att ändra ordning i spellistan.
+                        </div>
+                    )}
 
-                                            <button onClick={() => onSharePost(post)} disabled={isSaving || !!post.sharedFromPostId} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-green-500 disabled:opacity-50 disabled:cursor-not-allowed" title={post.sharedFromPostId ? 'Kan inte dela ett redan delat inlägg' : 'Dela till annan kanal'}><ShareIcon className="h-5 w-5"/></button>
-                                            <button onClick={() => onSaveAsTemplate(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-yellow-400" title="Spara som mall"><StarIcon /></button>
-                                            <button onClick={() => onDownloadPost(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-cyan-500" title="Ladda ner material"><DownloadIcon className="h-5 w-5"/></button>
+                    <div className="space-y-3">
+                        {displayedPosts.length > 0 ? (
+                            displayedPosts.map((post, index) => {
+                                const visibility = getPostVisibility(post, screen.id, organization);
+                                return (
+                                    <div 
+                                        key={post.id} 
+                                        draggable={isManualMode}
+                                        onDragStart={() => handleDragStart(index)} 
+                                        onDragOver={handleDragOver} 
+                                        onDrop={() => handleDrop(index)} 
+                                        className={`bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-3 border border-slate-200 dark:border-slate-700 ${isManualMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'} transition-opacity`}
+                                        style={{ opacity: dragIndex === index ? 0.5 : 1 }}
+                                    >
+                                        <div className="flex-shrink-0 w-24 h-14 bg-black rounded-md overflow-hidden relative group">
+                                            <DisplayPostRenderer post={post} mode="preview" allTags={organization.tags} showTags={false} organization={organization}/>
+                                            {!isManualMode && <div className="absolute inset-0 bg-white/10 dark:bg-black/10" />}
                                         </div>
-                                        <button onClick={() => onEditPost(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-primary" title="Redigera"><PencilIcon /></button>
-                                        <button onClick={() => onDeletePost(post.id)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-red-500" title="Ta bort"><TrashIcon /></button>
-                                        {/* Mobile "More" button */}
-                                        <div className="sm:hidden relative" ref={openDropdownId === post.id ? dropdownRef : null}>
-                                            <button onClick={() => setOpenDropdownId(openDropdownId === post.id ? null : post.id)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500">
-                                                <EllipsisVerticalIcon className="h-5 w-5"/>
-                                            </button>
-                                            {openDropdownId === post.id && (
-                                                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg border border-slate-200 dark:border-slate-700 z-10 animate-fade-in">
-                                                    <button onClick={() => setRemixPost(post)} disabled={isSaving} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                        <SparklesIcon className="h-4 w-4 text-purple-500"/> Remixa
-                                                    </button>
-                                                    <button onClick={() => onSharePost(post)} disabled={isSaving || !!post.sharedFromPostId} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50">
-                                                        <ShareIcon className="h-4 w-4"/> Dela till kanal
-                                                    </button>
-                                                    <button onClick={() => onSaveAsTemplate(post)} disabled={isSaving} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                        <StarIcon className="h-4 w-4"/> Spara som mall
-                                                    </button>
-                                                    <button onClick={() => onDownloadPost(post)} disabled={isSaving} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                        <DownloadIcon className="h-4 w-4"/> Ladda ner
-                                                    </button>
+                                        <div className="flex-grow min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-slate-900 dark:text-white truncate">{post.internalTitle}</p>
+                                                {visibility.isShared ? (
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                                        <span className="font-semibold">Delas från:</span> {visibility.sourceScreenName}
+                                                    </div>
+                                                ) : visibility.visibleIn.length > 1 ? (
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                                                        <span className="font-semibold">Synkas till:</span>
+                                                        {visibility.visibleIn.map(s => (
+                                                        <span key={s.id} className="font-bold bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded">
+                                                            {s.name}
+                                                        </span>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                                <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1">
+                                                    <PostStatusBadge post={post} />
                                                 </div>
-                                            )}
+                                            </div>
+                                            <div className="flex gap-1 flex-shrink-0 mt-2 sm:mt-0 self-end sm:self-auto">
+                                                {/* Responsive actions */}
+                                                <div className="hidden sm:flex items-center gap-1">
+                                                    <button onClick={() => setRemixPost(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-purple-500" title="Remixa - Skapa varianter">
+                                                        <SparklesIcon className="h-5 w-5"/>
+                                                    </button>
+
+                                                    <button onClick={() => onSharePost(post)} disabled={isSaving || !!post.sharedFromPostId} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-green-500 disabled:opacity-50 disabled:cursor-not-allowed" title={post.sharedFromPostId ? 'Kan inte dela ett redan delat inlägg' : 'Dela till annan kanal'}><ShareIcon className="h-5 w-5"/></button>
+                                                    <button onClick={() => onSaveAsTemplate(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-yellow-400" title="Spara som mall"><StarIcon /></button>
+                                                    <button onClick={() => onDownloadPost(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-cyan-500" title="Ladda ner material"><DownloadIcon className="h-5 w-5"/></button>
+                                                </div>
+                                                <button onClick={() => onEditPost(post)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-primary" title="Redigera"><PencilIcon /></button>
+                                                <button onClick={() => onDeletePost(post.id)} disabled={isSaving} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 hover:text-red-500" title="Ta bort"><TrashIcon /></button>
+                                                {/* Mobile "More" button */}
+                                                <div className="sm:hidden relative" ref={openDropdownId === post.id ? dropdownRef : null}>
+                                                    <button onClick={() => setOpenDropdownId(openDropdownId === post.id ? null : post.id)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500">
+                                                        <EllipsisVerticalIcon className="h-5 w-5"/>
+                                                    </button>
+                                                    {openDropdownId === post.id && (
+                                                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg border border-slate-200 dark:border-slate-700 z-10 animate-fade-in">
+                                                            <button onClick={() => setRemixPost(post)} disabled={isSaving} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                                <SparklesIcon className="h-4 w-4 text-purple-500"/> Remixa
+                                                            </button>
+                                                            <button onClick={() => onSharePost(post)} disabled={isSaving || !!post.sharedFromPostId} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50">
+                                                                <ShareIcon className="h-4 w-4"/> Dela till kanal
+                                                            </button>
+                                                            <button onClick={() => onSaveAsTemplate(post)} disabled={isSaving} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                                <StarIcon className="h-4 w-4"/> Spara som mall
+                                                            </button>
+                                                            <button onClick={() => onDownloadPost(post)} disabled={isSaving} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                                <DownloadIcon className="h-4 w-4"/> Ladda ner
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                )
+                            })
+                        ) : (
+                            <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                                Inga inlägg hittades.
                             </div>
-                        )
-                    })}
+                        )}
+                    </div>
                  </div>
             </Accordion>
 
