@@ -11,7 +11,6 @@ import QRCode from 'qrcode';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
 import { uploadMediaForGallery } from '../services/firebaseService';
 import { generateDnaAnalysis, analyzeWebsiteContent } from '../services/geminiService';
-import { ResolutionScaler } from './ResolutionScaler';
 
 interface SuperAdminScreenProps {
     organization: Organization;
@@ -643,17 +642,14 @@ const PostTemplateManager: React.FC<PostTemplateManagerProps> = ({ organization,
                     };
                     return (
                         <div key={template.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-3 border border-slate-200 dark:border-slate-700">
-                            {/* Scaled Thumbnail to prevent layout break */}
-                            <div className="flex-shrink-0 w-24 h-14 bg-black rounded-md overflow-hidden border border-slate-300 dark:border-slate-600 relative">
-                                <ResolutionScaler aspectRatio="16:9">
-                                    <DisplayPostRenderer 
-                                        post={postForPreview}
-                                        mode="preview"
-                                        allTags={organization.tags}
-                                        showTags={false}
-                                        organization={organization}
-                                    />
-                                </ResolutionScaler>
+                            <div className="flex-shrink-0 w-24 h-14 bg-black rounded-md overflow-hidden">
+                                <DisplayPostRenderer 
+                                    post={postForPreview}
+                                    mode="preview"
+                                    allTags={organization.tags}
+                                    showTags={false}
+                                    organization={organization}
+                                />
                             </div>
                             <div className="flex-grow">
                                 <p className="font-semibold text-slate-900 dark:text-white">{template.templateName}</p>
@@ -1087,10 +1083,6 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                     <div>
                         <h4 className="text-xl font-bold text-slate-900 dark:text-white">Taggar & Stämplar</h4>
                         <TagManager tags={tags} onSave={handleSaveTag} onDelete={(tag) => setTagToDelete(tag)} editingTag={editingTag} setEditingTag={setEditingTag} />
-                    </div>
-                    <div>
-                        <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Sparade Mallar</h4>
-                        <PostTemplateManager organization={organization} onUpdatePostTemplates={onUpdatePostTemplates} />
                     </div>
                 </div>
             </Card>

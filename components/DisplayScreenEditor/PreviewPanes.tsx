@@ -3,7 +3,15 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { DisplayPost, DisplayScreen, Organization, BrandingOptions, Tag, TagPositionOverride } from '../../types';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ChevronDownIcon, PlayIcon, PauseIcon } from '../icons';
-import { ResolutionScaler } from '../ResolutionScaler';
+
+export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): string => {
+    switch (ratio) {
+        case '9:16': return 'aspect-[9/16]';
+        case '4:3': return 'aspect-[4/3]';
+        case '3:4': return 'aspect-[3/4]';
+        case '16:9': default: return 'aspect-[16/9]';
+    }
+};
 
 const SinglePostPreview: React.FC<{ 
     post: DisplayPost, 
@@ -47,36 +55,31 @@ const SinglePostPreview: React.FC<{
                     )}
                 </div>
             </div>
-            
-            {/* Resolution Scaler Wrapper */}
-            <div className={`${isPortrait ? 'h-[75vh] w-auto mx-auto aspect-[9/16]' : 'w-full aspect-[16/9]'} bg-slate-200 dark:bg-slate-900 rounded-lg overflow-hidden border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
-                <ResolutionScaler aspectRatio={screen.aspectRatio} className="bg-slate-300 dark:bg-slate-900">
-                    <DisplayPostRenderer 
-                        post={post} 
-                        allTags={organization.tags} 
-                        primaryColor={organization.primaryColor}
-                        onUpdateTagPosition={onUpdateTagPosition}
-                        onUpdateHeadlinePosition={onUpdateHeadlinePosition}
-                        onUpdateHeadlineWidth={onUpdateHeadlineWidth}
-                        onUpdateBodyPosition={onUpdateBodyPosition}
-                        onUpdateBodyWidth={onUpdateBodyWidth}
-                        onUpdateQrPosition={onUpdateQrPosition}
-                        onUpdateQrWidth={onUpdateQrWidth}
-                        isTextDraggable={isTextDraggable}
-                        organization={organization}
-                        aspectRatio={screen.aspectRatio}
-                    />
-                    {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
-                        <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
-                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-                                {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
-                                {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
-                            </div>
+            <div className={`${getAspectRatioClass(screen.aspectRatio)} ${isPortrait ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
+                <DisplayPostRenderer 
+                    post={post} 
+                    allTags={organization.tags} 
+                    primaryColor={organization.primaryColor}
+                    onUpdateTagPosition={onUpdateTagPosition}
+                    onUpdateHeadlinePosition={onUpdateHeadlinePosition}
+                    onUpdateHeadlineWidth={onUpdateHeadlineWidth}
+                    onUpdateBodyPosition={onUpdateBodyPosition}
+                    onUpdateBodyWidth={onUpdateBodyWidth}
+                    onUpdateQrPosition={onUpdateQrPosition}
+                    onUpdateQrWidth={onUpdateQrWidth}
+                    isTextDraggable={isTextDraggable}
+                    organization={organization}
+                    aspectRatio={screen.aspectRatio}
+                />
+                {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
+                    <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
+                        <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+                            {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
+                            {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
                         </div>
-                    )}
-                </ResolutionScaler>
+                    </div>
+                )}
             </div>
-            
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text, QR-kod och taggar för att placera dem fritt. Dra i handtagen på sidorna av rutorna för att ändra bredd.</p>
         </div>
     );
@@ -144,39 +147,35 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
         }
     };
     
-    const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
-
     return (
         <div className="space-y-4">
              <div className="flex justify-between items-center">
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white">Live-förhandsgranskning</h3>
              </div>
              <div className="space-y-4">
-                 <div className={`${isPortrait ? 'h-[75vh] w-auto mx-auto aspect-[9/16]' : 'w-full aspect-[16/9]'} bg-slate-200 dark:bg-slate-900 rounded-lg overflow-hidden border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
-                    <ResolutionScaler aspectRatio={screen.aspectRatio} className="bg-slate-300 dark:bg-slate-900">
-                        {currentPost ? (
-                            <DisplayPostRenderer 
-                                post={currentPost} 
-                                allTags={organization.tags} 
-                                primaryColor={organization.primaryColor}
-                                onVideoEnded={() => advance('next')}
-                                organization={organization}
-                                aspectRatio={screen.aspectRatio}
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
-                            {screen.posts?.length > 0 ? 'Inga aktiva inlägg.' : 'Lägg till inlägg.'}
+                 <div className={`${getAspectRatioClass(screen.aspectRatio)} ${screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
+                    {currentPost ? (
+                        <DisplayPostRenderer 
+                            post={currentPost} 
+                            allTags={organization.tags} 
+                            primaryColor={organization.primaryColor}
+                            onVideoEnded={() => advance('next')}
+                            organization={organization}
+                            aspectRatio={screen.aspectRatio}
+                        />
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
+                           {screen.posts?.length > 0 ? 'Inga aktiva inlägg.' : 'Lägg till inlägg.'}
+                        </div>
+                    )}
+                    {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
+                        <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
+                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+                                {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
+                                {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
                             </div>
-                        )}
-                        {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
-                            <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
-                                <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-                                    {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
-                                    {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
-                                </div>
-                            </div>
-                        )}
-                    </ResolutionScaler>
+                        </div>
+                    )}
                  </div>
 
                  {activePosts.length > 1 && (
