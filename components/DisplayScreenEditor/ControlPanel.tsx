@@ -30,6 +30,7 @@ interface ControlPanelProps {
 }
 
 type PostStatus = 'active' | 'scheduled' | 'ended' | 'archived';
+type FilterOption = 'all' | 'active' | 'scheduled' | 'ended';
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
     screen,
@@ -50,7 +51,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const { showToast } = useToast();
     const [isRealityCheckOpen, setIsRealityCheckOpen] = useState(false);
     
-    const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'status' | 'alpha'>('manual');
+    // View State
+    const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'alpha'>('manual');
+    const [filterStatus, setFilterStatus] = useState<FilterOption>('all');
     const [searchQuery, setSearchQuery] = useState('');
     
     // Branding Settings State
@@ -70,11 +73,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const filteredPosts = useMemo(() => {
         let posts = [...(screen.posts || [])];
 
+        // 1. Filter by Status
+        if (filterStatus !== 'all') {
+            posts = posts.filter(p => getPostStatus(p) === filterStatus);
+        }
+
+        // 2. Filter by Search
         if (searchQuery) {
             const lowerQuery = searchQuery.toLowerCase();
             posts = posts.filter(p => p.internalTitle.toLowerCase().includes(lowerQuery) || p.headline?.toLowerCase().includes(lowerQuery));
         }
 
+        // 3. Sort
         switch (sortOption) {
             case 'newest':
                 return posts.sort((a, b) => {
@@ -84,32 +94,28 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 });
             case 'alpha':
                 return posts.sort((a, b) => a.internalTitle.localeCompare(b.internalTitle));
-            case 'status':
-                return posts.sort((a, b) => {
-                    const statusOrder: Record<PostStatus, number> = { active: 0, scheduled: 1, ended: 2, archived: 3 };
-                    const sA = getPostStatus(a);
-                    const sB = getPostStatus(b);
-                    return statusOrder[sA] - statusOrder[sB];
-                });
             case 'manual':
             default:
+                // If manual sort is selected but we are filtering/searching, we can't really reorder manually comfortably
+                // but we return the list as is (which is manual order).
                 return posts;
         }
-    }, [screen.posts, sortOption, searchQuery]);
+    }, [screen.posts, sortOption, searchQuery, filterStatus]);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
-        if (sortOption !== 'manual' || searchQuery) return;
+        // Dragging only allowed in "Show All" and "Manual Sort" and "No Search"
+        if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all') return;
         setDragIndex(index);
         e.dataTransfer.effectAllowed = "move";
     };
 
     const handleDragOver = (e: React.DragEvent, index: number) => {
-        if (sortOption !== 'manual' || searchQuery || dragIndex === null || dragIndex === index) return;
+        if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all' || dragIndex === null || dragIndex === index) return;
         e.preventDefault();
     };
 
     const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
-        if (sortOption !== 'manual' || searchQuery || dragIndex === null) return;
+        if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all' || dragIndex === null) return;
         e.preventDefault();
         
         const newPosts = [...(screen.posts || [])];
@@ -138,8 +144,44 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     };
 
     const formatDate = (isoString?: string) => {
-        if (!isoString) return 'Tills vidare';
+        if (!isoString) return '';
         return new Date(isoString).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' });
+    };
+
+    const StatusPill: React.FC<{ status: PostStatus, post: DisplayPost }> = ({ status, post }) => {
+        let bgClass = 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+        let dotClass = 'bg-slate-400';
+        let text = 'Utkast';
+
+        switch (status) {
+            case 'active':
+                bgClass = 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800';
+                dotClass = 'bg-green-500';
+                text = `Publicerad ${formatDate(post.startDate)} - ${formatDate(post.endDate) || 'tills vidare'}`;
+                break;
+            case 'scheduled':
+                bgClass = 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800';
+                dotClass = 'bg-blue-500';
+                text = `Schemalagd ${formatDate(post.startDate)}`;
+                break;
+            case 'ended':
+                bgClass = 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600';
+                dotClass = 'bg-slate-400';
+                text = `Avslutades ${formatDate(post.endDate)}`;
+                break;
+            case 'archived':
+                bgClass = 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700';
+                dotClass = 'bg-slate-300';
+                text = 'Arkiverad';
+                break;
+        }
+
+        return (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${bgClass}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                {text}
+            </span>
+        );
     };
 
     return (
@@ -180,7 +222,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 </div>
 
                 {/* Bottom Row: Filters (Collapsible or Always visible) */}
-                <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100 dark:border-slate-700/50">
+                <div className="flex flex-col lg:flex-row gap-3 pt-3 border-t border-slate-100 dark:border-slate-700/50">
                     <div className="relative flex-grow">
                         <input
                             type="text"
@@ -191,18 +233,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         />
                         <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">Sortera:</span>
-                        <div className="relative min-w-[160px]">
+                    
+                    <div className="flex gap-2 w-full lg:w-auto">
+                        <div className="relative flex-1 lg:w-48">
+                            <select 
+                                value={filterStatus} 
+                                onChange={(e) => setFilterStatus(e.target.value as FilterOption)}
+                                className="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm px-3 py-2 pr-8 focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+                            >
+                                <option value="all">Visa alla</option>
+                                <option value="active">Endast Publicerade</option>
+                                <option value="scheduled">Endast Schemalagda</option>
+                                <option value="ended">Endast Avslutade</option>
+                            </select>
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                <FunnelIcon className="w-4 h-4" />
+                            </div>
+                        </div>
+
+                        <div className="relative flex-1 lg:w-48">
                             <select 
                                 value={sortOption} 
                                 onChange={(e) => setSortOption(e.target.value as any)}
                                 className="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm px-3 py-2 pr-8 focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
                             >
-                                <option value="manual">Manuell (Spellista)</option>
+                                <option value="manual">Manuell ordning</option>
                                 <option value="newest">Senast skapad</option>
                                 <option value="alpha">Namn (A-Ö)</option>
-                                <option value="status">Status</option>
                             </select>
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                 <ListBulletIcon className="w-4 h-4" />
@@ -249,11 +306,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 </div>
             )}
 
-            {/* Warning if sorting is active */}
-            {sortOption !== 'manual' && (
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 text-sm px-4 py-2 rounded-lg flex items-center gap-2 border border-yellow-200 dark:border-yellow-800/50">
+            {/* Warning if sorting/filtering is active */}
+            {(sortOption !== 'manual' || filterStatus !== 'all' || searchQuery) && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 text-sm px-4 py-2 rounded-lg flex items-center gap-2 border border-blue-200 dark:border-blue-800/50">
                     <FunnelIcon className="w-4 h-4" />
-                    <span>Listan är sorterad/filtrerad. Byt till <strong>Manuell ordning</strong> för att ändra ordning på inläggen.</span>
+                    <span>Visar filtrerad/sorterad lista. Byt till <strong>Visa alla</strong> och <strong>Manuell ordning</strong> för att ändra ordning på inläggen.</span>
                 </div>
             )}
 
@@ -263,32 +320,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     filteredPosts.map((post, index) => {
                         const status = getPostStatus(post);
                         const isMenuOpen = openDropdownId === post.id;
-                        const canDrag = sortOption === 'manual' && !searchQuery;
+                        const canDrag = sortOption === 'manual' && !searchQuery && filterStatus === 'all';
                         
-                        let statusColorClass = 'text-slate-500 dark:text-slate-400';
-                        let statusText = '';
-                        let opacityClass = 'opacity-100';
-
-                        switch (status) {
-                            case 'active':
-                                statusColorClass = 'text-green-600 dark:text-green-400';
-                                statusText = `Publicerad: ${formatDate(post.startDate)} - ${formatDate(post.endDate)}`;
-                                break;
-                            case 'scheduled':
-                                statusColorClass = 'text-blue-600 dark:text-blue-400';
-                                statusText = `Schemalagd: ${formatDate(post.startDate)} - ${formatDate(post.endDate)}`;
-                                break;
-                            case 'ended':
-                                statusColorClass = 'text-slate-500 dark:text-slate-500';
-                                statusText = `Avslutades: ${formatDate(post.endDate)}`;
-                                opacityClass = 'opacity-75 bg-slate-50 dark:bg-slate-800/50';
-                                break;
-                            case 'archived':
-                                statusColorClass = 'text-slate-400 dark:text-slate-600';
-                                statusText = 'Arkiverad';
-                                opacityClass = 'opacity-60 bg-slate-50 dark:bg-slate-800/50';
-                                break;
-                        }
+                        let opacityClass = status === 'ended' || status === 'archived' ? 'opacity-75 bg-slate-50 dark:bg-slate-800/50' : 'opacity-100';
                         
                         return (
                             <div 
@@ -314,17 +348,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
                                 {/* Info */}
                                 <div className="flex-grow min-w-0">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 mb-1">
                                         <h4 className="font-bold text-slate-800 dark:text-slate-200 truncate text-sm sm:text-base" title={post.internalTitle}>{post.internalTitle}</h4>
                                     </div>
-                                    <div className="flex flex-col sm:flex-row sm:items-center gap-x-3 gap-y-1 mt-1">
-                                        <span className={`text-xs font-semibold flex items-center gap-1 ${statusColorClass}`}>
-                                            <CalendarIcon className="w-3 h-3"/> {statusText}
-                                        </span>
-                                        <div className="hidden sm:block w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
-                                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                                            <span className="bg-slate-100 dark:bg-slate-700 px-1.5 rounded font-mono">{post.durationSeconds}s</span>
-                                            <span className="capitalize">{post.layout.replace(/-/g, ' ')}</span>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <StatusPill status={status} post={post} />
+                                        <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-2">
+                                            <span>|</span>
+                                            <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded font-mono text-slate-600 dark:text-slate-300">{post.durationSeconds}s</span>
+                                            <span className="capitalize hidden sm:inline">{post.layout.replace(/-/g, ' ')}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -372,9 +404,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         <div className="w-16 h-16 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center mb-4 shadow-sm">
                             <SparklesIcon className="w-8 h-8 text-slate-300 dark:text-slate-500" />
                         </div>
-                        <h4 className="text-lg font-bold text-slate-900 dark:text-white">Inga inlägg här än</h4>
+                        <h4 className="text-lg font-bold text-slate-900 dark:text-white">Inga inlägg hittades</h4>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-6 max-w-xs mx-auto">
-                            Kanalen är tom. Skapa ditt första inlägg manuellt eller låt AI:n hjälpa dig.
+                            {filterStatus !== 'all' ? 'Prova att ändra filtret till "Visa alla".' : 'Kanalen är tom. Skapa ditt första inlägg manuellt eller låt AI:n hjälpa dig.'}
                         </p>
                         <PrimaryButton onClick={onInitiateCreatePost}>Skapa första inlägget</PrimaryButton>
                     </div>
