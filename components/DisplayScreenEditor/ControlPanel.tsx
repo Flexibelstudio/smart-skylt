@@ -3,13 +3,13 @@ import React, { useState, useMemo } from 'react';
 import { DisplayScreen, Organization, DisplayPost, BrandingOptions } from '../../types';
 import { useToast } from '../../context/ToastContext';
 import { StyledSelect, StyledInput } from '../Forms';
-import { PrimaryButton, SecondaryButton } from '../Buttons';
+import { PrimaryButton } from '../Buttons';
 import { 
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
-    CalendarIcon, ShareIcon, DownloadIcon, DuplicateIcon, 
+    ShareIcon, DownloadIcon, DuplicateIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
     ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
-    Cog6ToothIcon
+    Cog6ToothIcon, ChevronDownIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -55,9 +55,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const [filterStatus, setFilterStatus] = useState<FilterOption>('all');
     const [searchQuery, setSearchQuery] = useState('');
     
-    // Panels State
-    const [showBrandingSettings, setShowBrandingSettings] = useState(false);
-    const [showChannelSettings, setShowChannelSettings] = useState(false);
+    // Settings Panel State
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     
     // Local state for channel settings editing
     const [channelName, setChannelName] = useState(screen.name);
@@ -216,35 +215,98 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* --- Main Toolbar --- */}
+            
+            {/* --- Card 1: Kanalinställningar (Collapsible) --- */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                <button 
+                    onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                    className="w-full flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors text-left"
+                >
+                    <div className="flex items-center gap-2 text-slate-800 dark:text-white font-bold text-lg">
+                        <Cog6ToothIcon className="w-5 h-5 text-slate-500" />
+                        Kanalinställningar
+                    </div>
+                    <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isSettingsOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isSettingsOpen && (
+                    <div className="p-6 border-t border-slate-200 dark:border-slate-700 space-y-6 animate-fade-in">
+                        {/* Row 1: Basic Info */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Kanalens namn</label>
+                                <div className="flex gap-2">
+                                    <StyledInput 
+                                        type="text" 
+                                        value={channelName} 
+                                        onChange={(e) => setChannelName(e.target.value)} 
+                                        placeholder="Namn på kanalen"
+                                    />
+                                    <PrimaryButton onClick={handleChannelSettingsSave} disabled={channelName === screen.name}>Spara</PrimaryButton>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Bildformat (Aspect Ratio)</label>
+                                <StyledSelect 
+                                    value={screen.aspectRatio} 
+                                    onChange={(e) => onUpdateScreen({ aspectRatio: e.target.value as any })}
+                                >
+                                    <option value="16:9">Liggande (16:9)</option>
+                                    <option value="9:16">Stående (9:16)</option>
+                                </StyledSelect>
+                                <p className="text-xs text-slate-400 mt-1">Ändrar formatet på förhandsgranskningen. Påverkar inte den fysiska skärmens orientering.</p>
+                            </div>
+                        </div>
+
+                        {/* Row 2: Branding (Design) */}
+                        <div className="pt-6 border-t border-slate-100 dark:border-slate-700/50">
+                            <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                                <SparklesIcon className="w-4 h-4 text-purple-500" />
+                                Skärmdesign & Varumärke
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <ToggleSwitch 
+                                    label="Visa logotyp" 
+                                    checked={screen.branding?.showLogo ?? false} 
+                                    onChange={(c) => handleBrandingChange('showLogo', c)} 
+                                />
+                                <ToggleSwitch 
+                                    label="Visa företagsnamn" 
+                                    checked={screen.branding?.showName ?? false} 
+                                    onChange={(c) => handleBrandingChange('showName', c)} 
+                                />
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Position</label>
+                                    <StyledSelect 
+                                        value={screen.branding?.position || 'bottom-right'} 
+                                        onChange={(e) => handleBrandingChange('position', e.target.value)}
+                                        className="!text-sm !py-1"
+                                    >
+                                        <option value="top-left">Uppe vänster</option>
+                                        <option value="top-right">Uppe höger</option>
+                                        <option value="bottom-left">Nere vänster</option>
+                                        <option value="bottom-right">Nere höger</option>
+                                    </StyledSelect>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* --- Card 2: Inlägg (Posts) --- */}
             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-4">
                 
-                {/* Top Row: Actions */}
+                {/* Top Row: Header & Actions */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">Spellista</h3>
+                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">Inlägg</h3>
                         <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold px-2 py-1 rounded-full">
                             {screen.posts?.length || 0}
                         </span>
                     </div>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                        <button 
-                            onClick={() => { setShowChannelSettings(!showChannelSettings); setShowBrandingSettings(false); }}
-                            className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${showChannelSettings ? 'bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                            title="Kanalinställningar"
-                        >
-                            <Cog6ToothIcon className="w-5 h-5" />
-                            <span className="hidden sm:inline">Inställningar</span>
-                        </button>
-                        <button 
-                            onClick={() => { setShowBrandingSettings(!showBrandingSettings); setShowChannelSettings(false); }}
-                            className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${showBrandingSettings ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                            title="Skärmdesign"
-                        >
-                            <SparklesIcon className="w-5 h-5" />
-                            <span className="hidden sm:inline">Design</span>
-                        </button>
+                    <div className="w-full sm:w-auto flex justify-end">
                         <PrimaryButton onClick={onInitiateCreatePost} className="shadow-lg shadow-primary/20">
                             + Skapa inlägg
                         </PrimaryButton>
@@ -299,78 +361,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                 </div>
             </div>
-
-            {/* Channel Settings Panel */}
-            {showChannelSettings && (
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 animate-fade-in shadow-sm relative">
-                    <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
-                        <Cog6ToothIcon className="w-5 h-5 text-slate-500" />
-                        Kanalinställningar
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Kanalens namn</label>
-                            <div className="flex gap-2">
-                                <StyledInput 
-                                    type="text" 
-                                    value={channelName} 
-                                    onChange={(e) => setChannelName(e.target.value)} 
-                                    placeholder="Namn på kanalen"
-                                />
-                                <PrimaryButton onClick={handleChannelSettingsSave} disabled={channelName === screen.name}>Spara</PrimaryButton>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Bildformat (Aspect Ratio)</label>
-                            <StyledSelect 
-                                value={screen.aspectRatio} 
-                                onChange={(e) => onUpdateScreen({ aspectRatio: e.target.value as any })}
-                            >
-                                <option value="16:9">Liggande (16:9)</option>
-                                <option value="9:16">Stående (9:16)</option>
-                            </StyledSelect>
-                            <p className="text-xs text-slate-400 mt-1">Ändrar formatet på förhandsgranskningen. Påverkar inte den fysiska skärmens orientering.</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Branding Settings Panel */}
-            {showBrandingSettings && (
-                <div className="bg-gradient-to-r from-purple-50 to-white dark:from-slate-800 dark:to-slate-800/50 p-4 rounded-xl border border-purple-100 dark:border-slate-700 animate-fade-in relative overflow-hidden">
-                    <div className="relative z-10">
-                        <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
-                            <SparklesIcon className="w-4 h-4 text-purple-500" />
-                            Skärmens utseende (Branding)
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <ToggleSwitch 
-                                label="Visa logotyp" 
-                                checked={screen.branding?.showLogo ?? false} 
-                                onChange={(c) => handleBrandingChange('showLogo', c)} 
-                            />
-                            <ToggleSwitch 
-                                label="Visa företagsnamn" 
-                                checked={screen.branding?.showName ?? false} 
-                                onChange={(c) => handleBrandingChange('showName', c)} 
-                            />
-                            <div className="col-span-2">
-                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Position</label>
-                                <StyledSelect 
-                                    value={screen.branding?.position || 'bottom-right'} 
-                                    onChange={(e) => handleBrandingChange('position', e.target.value)}
-                                    className="!text-sm !py-1"
-                                >
-                                    <option value="top-left">Uppe vänster</option>
-                                    <option value="top-right">Uppe höger</option>
-                                    <option value="bottom-left">Nere vänster</option>
-                                    <option value="bottom-right">Nere höger</option>
-                                </StyledSelect>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Warning if sorting/filtering is active */}
             {(sortOption !== 'manual' || filterStatus !== 'all' || searchQuery) && (
