@@ -2,8 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { DisplayScreen, Organization, DisplayPost, BrandingOptions } from '../../types';
 import { useToast } from '../../context/ToastContext';
-import { StyledSelect } from '../../Forms';
-import { PrimaryButton } from '../../Buttons';
+import { StyledSelect } from '../Forms';
+import { PrimaryButton } from '../Buttons';
 import { 
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
     CalendarIcon, ShareIcon, DownloadIcon, DuplicateIcon, 
