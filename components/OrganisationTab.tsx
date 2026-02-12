@@ -1240,6 +1240,7 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                         ${isStamp ? '' : getTagFontWeightClass(currentTag.fontWeight)}
                         ${getTagAnimationClass(currentTag.animation, currentTag.displayType)}
                         ${stampClasses}
+                        whitespace-pre-wrap text-center
                     `}
                 >
                     {currentTag.url ? (
