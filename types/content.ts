@@ -56,6 +56,8 @@ export interface TagPositionOverride {
   x: number; // percentage from left
   y: number; // percentage from top
   rotation: number; // degrees
+  scale?: number; // Scaling factor (1.0 is default)
+  width?: number; // Width in percentage relative to screen width (if manual resizing is applied)
 }
 
 export interface TagColorOverride {

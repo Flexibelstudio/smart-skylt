@@ -1272,7 +1272,13 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                         Stämpel
                     </button>
                 </div>
-                <StyledInput type="text" placeholder="Taggens text" value={currentTag.text} onChange={e => setCurrentTag({...currentTag, text: e.target.value})} />
+                {/* Changed to textarea for multiline support */}
+                <textarea 
+                    placeholder="Taggens text (Använd Enter för ny rad)" 
+                    value={currentTag.text} 
+                    onChange={e => setCurrentTag({...currentTag, text: e.target.value})} 
+                    className="w-full bg-slate-100 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors min-h-[80px]"
+                />
                 <StyledInput type="url" placeholder="URL för QR-kod (valfritt)" value={currentTag.url || ''} onChange={e => setCurrentTag({...currentTag, url: e.target.value.trim()})} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

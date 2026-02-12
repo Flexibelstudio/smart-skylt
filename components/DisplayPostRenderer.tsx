@@ -502,20 +502,21 @@ const DraggableTextElement: React.FC<any> = ({
 };
 
 const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) => {
-     const tagRef = useRef<HTMLDivElement>(null);
+     const containerRef = useRef<HTMLDivElement>(null);
      const isDraggable = !!onUpdatePosition;
      const [isDragging, setIsDragging] = useState(false);
 
      const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isDraggable || !onUpdatePosition || !tagRef.current) return;
+        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
         setIsDragging(true);
-        const parent = tagRef.current.parentElement;
+        const parent = containerRef.current.parentElement;
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
+        
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const initialY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const initialOverride = override || { x: 50, y: 50, rotation: 0 }; 
+        const initialOverride = override || { x: 50, y: 50, rotation: 0, scale: 1, width: null }; 
 
         const onDragMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
@@ -525,9 +526,9 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
             const dxPercent = (dx / parentRect.width) * 100;
             const dyPercent = (dy / parentRect.height) * 100;
             onUpdatePosition(tag.id, {
+                ...initialOverride,
                 x: Math.max(0, Math.min(100, initialOverride.x + dxPercent)),
                 y: Math.max(0, Math.min(100, initialOverride.y + dyPercent)),
-                rotation: initialOverride.rotation
             });
         };
         const onDragEnd = () => {
@@ -546,31 +547,161 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         }
     };
 
+    const handleScaleStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        
+        // Calculate center of the element to scale relative to it
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        const initialClientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialClientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        
+        const initialDistance = Math.hypot(initialClientX - centerX, initialClientY - centerY);
+        const initialScale = override?.scale || 1;
+        const initialOverride = override || { x: 50, y: 50, rotation: 0, scale: 1, width: null };
+
+        const onScaleMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
+            
+            const currentDistance = Math.hypot(moveClientX - centerX, moveClientY - centerY);
+            
+            // Simple ratio scaling
+            let newScale = initialScale * (currentDistance / initialDistance);
+            newScale = Math.max(0.1, Math.min(5, newScale)); // Limits
+
+            onUpdatePosition(tag.id, {
+                ...initialOverride,
+                scale: newScale
+            });
+        };
+
+        const onScaleEnd = () => {
+            window.removeEventListener('mousemove', onScaleMove as any);
+            window.removeEventListener('mouseup', onScaleEnd);
+            window.removeEventListener('touchmove', onScaleMove as any);
+            window.removeEventListener('touchend', onScaleEnd);
+        };
+
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onScaleMove as any);
+            window.addEventListener('touchend', onScaleEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onScaleMove as any);
+            window.addEventListener('mouseup', onScaleEnd, { once: true });
+        }
+    };
+
+    const handleWidthResizeStart = (e: React.MouseEvent | React.TouchEvent, direction: 'left' | 'right') => {
+        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        
+        const initialClientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        // If width is undefined, we need to grab computed width
+        const initialPixelWidth = containerRef.current.offsetWidth;
+        const initialWidthPercent = override?.width || (initialPixelWidth / parentRect.width * 100);
+        const initialOverride = override || { x: 50, y: 50, rotation: 0, scale: 1, width: initialWidthPercent };
+
+        const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const dxPixels = moveClientX - initialClientX;
+            
+            // Convert dx to percentage
+            const dxPercent = (dxPixels / parentRect.width) * 100;
+            
+            // If dragging right side, adding dx increases width. Left side, subtracting dx increases width.
+            const newWidth = direction === 'right' 
+                ? initialWidthPercent + dxPercent 
+                : initialWidthPercent - dxPercent;
+
+            onUpdatePosition(tag.id, {
+                ...initialOverride,
+                width: Math.max(5, Math.min(100, newWidth)) // Min 5%, Max 100%
+            });
+        };
+
+        const onResizeEnd = () => {
+            window.removeEventListener('mousemove', onResizeMove as any);
+            window.removeEventListener('mouseup', onResizeEnd);
+            window.removeEventListener('touchmove', onResizeMove as any);
+            window.removeEventListener('touchend', onResizeEnd);
+        };
+
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onResizeMove as any);
+            window.addEventListener('touchend', onResizeEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onResizeMove as any);
+            window.addEventListener('mouseup', onResizeEnd, { once: true });
+        }
+    };
+
      const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x ?? 50}%`,
         top: `${override?.y ?? 50}%`,
-        transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg)`,
+        // We apply transform here for position centering and rotation
+        transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg) scale(${override?.scale || 1})`,
         zIndex: 40,
+        width: override?.width ? `${override.width}%` : 'auto', // Dynamic width
+        maxWidth: '90%', // Safety cap
+        
         backgroundColor: tag.backgroundColor,
         color: tag.textColor,
         padding: isPreviewMode(mode) ? '0.25rem 0.5rem' : '0.5rem 1rem',
         borderRadius: '999px',
         fontWeight: 'bold',
-        whiteSpace: 'nowrap',
+        
+        // Multi-line support
+        whiteSpace: 'pre-wrap', 
+        wordBreak: 'break-word',
+        textAlign: 'center',
+        
         boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
         cursor: isDraggable ? 'grab' : 'default',
-        opacity: isDragging ? 0.7 : 1
+        opacity: isDragging ? 0.7 : 1,
+        
+        // Ensure scale doesn't blur text too much in some browsers
+        backfaceVisibility: 'hidden', 
      };
 
      return (
-         <div ref={tagRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
-              className={`flex items-center gap-2 ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
-             {tag.text}
-             {tag.url && (
-                 <div className={`bg-white rounded-sm flex-shrink-0 ${isPreviewMode(mode) ? 'p-0.5 w-[1.2em] h-[1.2em]' : 'p-0.5 w-[1.5em] h-[1.5em]'}`}>
-                     <QrCodeComponent url={tag.url} className="w-full h-full" />
-                 </div>
+         <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
+              className={`flex flex-col items-center justify-center group ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
+             
+             {/* Content */}
+             <div className="flex items-center gap-2">
+                 <span>{tag.text}</span>
+                 {tag.url && (
+                     <div className={`bg-white rounded-sm flex-shrink-0 ${isPreviewMode(mode) ? 'p-0.5 w-[1.2em] h-[1.2em]' : 'p-0.5 w-[1.5em] h-[1.5em]'}`}>
+                         <QrCodeComponent url={tag.url} className="w-full h-full" />
+                     </div>
+                 )}
+             </div>
+
+             {/* Handles (Only visible when draggable) */}
+             {isDraggable && (
+                <>
+                    {/* Scale Handles (Corners) */}
+                    <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -top-2 -left-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nwse-resize opacity-0 group-hover:opacity-100 z-50" />
+                    <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -top-2 -right-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nesw-resize opacity-0 group-hover:opacity-100 z-50" />
+                    <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nesw-resize opacity-0 group-hover:opacity-100 z-50" />
+                    <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nwse-resize opacity-0 group-hover:opacity-100 z-50" />
+
+                    {/* Width Handles (Sides) */}
+                    <div onMouseDown={(e) => handleWidthResizeStart(e, 'left')} onTouchStart={(e) => handleWidthResizeStart(e, 'left')} className="absolute top-1/2 -left-2 w-2 h-6 -translate-y-1/2 bg-white border border-blue-500 rounded cursor-ew-resize opacity-0 group-hover:opacity-100 z-50" />
+                    <div onMouseDown={(e) => handleWidthResizeStart(e, 'right')} onTouchStart={(e) => handleWidthResizeStart(e, 'right')} className="absolute top-1/2 -right-2 w-2 h-6 -translate-y-1/2 bg-white border border-blue-500 rounded cursor-ew-resize opacity-0 group-hover:opacity-100 z-50" />
+                </>
              )}
          </div>
      );
@@ -596,7 +727,8 @@ export interface DisplayPostRendererProps {
     onLoadError?: () => void;
     
     // Interactive props
-    onUpdateTagPosition?: any; 
+    // Updated type signature for Tag Position to include scale and width
+    onUpdateTagPosition?: (tagId: string, newPosition: { x: number, y: number, rotation: number, scale?: number, width?: number }) => void;
     onUpdateHeadlinePosition?: any; onUpdateHeadlineWidth?: any;
     onUpdateBodyPosition?: any; onUpdateBodyWidth?: any;
     onUpdateQrPosition?: any; onUpdateQrWidth?: any; 

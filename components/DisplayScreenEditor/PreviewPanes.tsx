@@ -17,7 +17,7 @@ const SinglePostPreview: React.FC<{
     post: DisplayPost, 
     screen: DisplayScreen, 
     organization: Organization,
-    onUpdateTagPosition: (tagId: string, newPosition: { x: number, y: number, rotation: number }) => void,
+    onUpdateTagPosition: (tagId: string, newPosition: { x: number, y: number, rotation: number, scale?: number, width?: number }) => void,
     onUpdateHeadlinePosition: (pos: { x: number, y: number }) => void,
     onUpdateHeadlineWidth: (width: number) => void,
     onUpdateBodyPosition: (pos: { x: number, y: number }) => void,
@@ -200,7 +200,7 @@ interface PreviewPaneProps {
     editingPost: DisplayPost | null;
     screen: DisplayScreen;
     organization: Organization;
-    onUpdateTagPosition: (tagId: string, pos: {x: number, y: number, rotation: number}) => void;
+    onUpdateTagPosition: (tagId: string, pos: {x: number, y: number, rotation: number, scale?: number, width?: number}) => void;
     onUpdateHeadlinePosition: (pos: {x: number, y: number}) => void;
     onUpdateHeadlineWidth: (width: number) => void;
     onUpdateBodyPosition: (pos: {x: number, y: number}) => void;
