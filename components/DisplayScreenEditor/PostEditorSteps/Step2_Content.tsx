@@ -116,6 +116,26 @@ const ColorOpacityControl: React.FC<{
     );
 };
 
+// --- Small Color Picker for Effects ---
+const EffectColorPicker: React.FC<{
+    value: string;
+    onChange: (val: string) => void;
+    organization: Organization;
+}> = ({ value, onChange, organization }) => {
+    const hexValue = resolveColor(value, '#000000', organization);
+    return (
+        <div className="relative group">
+            <input 
+                type="color" 
+                value={hexValue} 
+                onChange={e => onChange(e.target.value)} 
+                className="w-6 h-6 p-0 rounded-full border border-slate-300 dark:border-slate-600 cursor-pointer overflow-hidden"
+                title="Välj färg"
+            />
+        </div>
+    );
+};
+
 // --- Text Block Component ---
 const TextBlock: React.FC<{
     label: string;
@@ -137,6 +157,16 @@ const TextBlock: React.FC<{
     onBgEnabledChange: (val: boolean) => void;
     bgColor: string;
     onBgColorChange: (val: string) => void;
+
+    // Effects props
+    shadowType: string;
+    onShadowTypeChange: (val: string) => void;
+    shadowColor: string;
+    onShadowColorChange: (val: string) => void;
+    outlineWidth: number;
+    onOutlineWidthChange: (val: number) => void;
+    outlineColor: string;
+    onOutlineColorChange: (val: string) => void;
     
     // AI props
     onAiSuggest: () => void;
@@ -152,6 +182,10 @@ const TextBlock: React.FC<{
     textAlign, onAlignChange,
     bgEnabled, onBgEnabledChange,
     bgColor, onBgColorChange,
+    shadowType, onShadowTypeChange,
+    shadowColor, onShadowColorChange,
+    outlineWidth, onOutlineWidthChange,
+    outlineColor, onOutlineColorChange,
     onAiSuggest, onRefine, aiLoading, organization, rows = 2 
 }) => {
     
@@ -227,6 +261,51 @@ const TextBlock: React.FC<{
                     </div>
 
                     <ColorPaletteInput value={color} onChange={onColorChange} organization={organization} />
+                </div>
+
+                {/* Effects Section */}
+                <div className="flex flex-wrap gap-x-6 gap-y-3 pt-2 items-center">
+                    {/* Shadow */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Skugga</span>
+                        <div className="flex bg-slate-200 dark:bg-slate-600 rounded-md p-0.5">
+                            {[
+                                { id: 'none', label: '🚫' },
+                                { id: 'soft', label: '☁️' },
+                                { id: 'hard', label: '🧱' },
+                                { id: 'glow', label: '✨' }
+                            ].map(opt => (
+                                <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => onShadowTypeChange(opt.id)}
+                                    className={`px-2 py-1 text-xs rounded transition-all ${shadowType === opt.id ? 'bg-white dark:bg-slate-800 shadow-sm text-primary' : 'text-slate-500 dark:text-slate-300 hover:text-slate-700'}`}
+                                    title={opt.id}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                        {shadowType !== 'none' && (
+                            <EffectColorPicker value={shadowColor} onChange={onShadowColorChange} organization={organization} />
+                        )}
+                    </div>
+
+                    {/* Outline */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Kant</span>
+                        <input 
+                            type="range" 
+                            min="0" max="5" step="1" 
+                            value={outlineWidth} 
+                            onChange={e => onOutlineWidthChange(parseInt(e.target.value))}
+                            className="w-16 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
+                            title={`${outlineWidth}px`}
+                        />
+                        {outlineWidth > 0 && (
+                            <EffectColorPicker value={outlineColor} onChange={onOutlineColorChange} organization={organization} />
+                        )}
+                    </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 border-t border-slate-200 dark:border-slate-600/30 pt-3">
@@ -542,6 +621,16 @@ export const Step2_Content: React.FC<{
                     onBgEnabledChange={val => handleFieldChange('headlineBackgroundEnabled', val)}
                     bgColor={post.headlineBackgroundColor || post.textBackgroundColor || 'rgba(0,0,0,0.5)'}
                     onBgColorChange={val => handleFieldChange('headlineBackgroundColor', val)}
+                    // Effects props
+                    shadowType={post.headlineShadowType || 'none'}
+                    onShadowTypeChange={val => handleFieldChange('headlineShadowType', val)}
+                    shadowColor={post.headlineShadowColor || '#000000'}
+                    onShadowColorChange={val => handleFieldChange('headlineShadowColor', val)}
+                    outlineWidth={post.headlineOutlineWidth || 0}
+                    onOutlineWidthChange={val => handleFieldChange('headlineOutlineWidth', val)}
+                    outlineColor={post.headlineOutlineColor || '#000000'}
+                    onOutlineColorChange={val => handleFieldChange('headlineOutlineColor', val)}
+                    // AI
                     onAiSuggest={handleOpenHeadlineSuggestions}
                     onRefine={(cmd) => handleAiTextRefine(cmd, 'headline')}
                     aiLoading={aiLoading}
@@ -565,6 +654,16 @@ export const Step2_Content: React.FC<{
                     onBgEnabledChange={val => handleFieldChange('bodyBackgroundEnabled', val)}
                     bgColor={post.bodyBackgroundColor || post.textBackgroundColor || 'rgba(0,0,0,0.5)'}
                     onBgColorChange={val => handleFieldChange('bodyBackgroundColor', val)}
+                    // Effects props
+                    shadowType={post.bodyShadowType || 'none'}
+                    onShadowTypeChange={val => handleFieldChange('bodyShadowType', val)}
+                    shadowColor={post.bodyShadowColor || '#000000'}
+                    onShadowColorChange={val => handleFieldChange('bodyShadowColor', val)}
+                    outlineWidth={post.bodyOutlineWidth || 0}
+                    onOutlineWidthChange={val => handleFieldChange('bodyOutlineWidth', val)}
+                    outlineColor={post.bodyOutlineColor || '#000000'}
+                    onOutlineColorChange={val => handleFieldChange('bodyOutlineColor', val)}
+                    // AI
                     onAiSuggest={handleOpenBodySuggestions}
                     onRefine={(cmd) => handleAiTextRefine(cmd, 'body')}
                     aiLoading={aiLoading}
