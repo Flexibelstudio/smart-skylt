@@ -9,7 +9,7 @@ import {
     ShareIcon, DownloadIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
     ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
-    Cog6ToothIcon, ChevronDownIcon, DuplicateIcon
+    Cog6ToothIcon, ChevronDownIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -22,7 +22,6 @@ interface ControlPanelProps {
     onDeletePost: (id: string) => void;
     onDownloadPost: (post: DisplayPost) => void;
     onInitiateCreatePost: () => void;
-    onSaveAsTemplate: (post: DisplayPost) => void;
     onSharePost: (post: DisplayPost) => void;
     openDropdownId: string | null;
     setOpenDropdownId: (id: string | null) => void;
@@ -40,7 +39,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     onDeletePost,
     onDownloadPost,
     onInitiateCreatePost,
-    onSaveAsTemplate,
     onSharePost,
     openDropdownId,
     setOpenDropdownId,
@@ -450,9 +448,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                         </button>
                                                         <button onClick={() => { onSharePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
                                                             <ShareIcon className="w-4 h-4 text-slate-400" /> Dela till kanal
-                                                        </button>
-                                                        <button onClick={() => { onSaveAsTemplate(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                            <DuplicateIcon className="w-4 h-4 text-slate-400" /> Spara som mall
                                                         </button>
                                                         <button onClick={() => { onDownloadPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
                                                             <DownloadIcon className="w-4 h-4 text-slate-400" /> Ladda ner

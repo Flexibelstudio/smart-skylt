@@ -395,22 +395,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         await updateDisplayScreen(screen.id, data);
     };
 
-    const handleSaveAsTemplate = async (postToSave: DisplayPost) => {
-        if (!organization) return;
-        const templateName = prompt("Ange ett namn för mallen:", postToSave.internalTitle);
-        if (templateName) {
-            const { id, startDate, endDate, internalTitle, ...postData } = postToSave;
-            const newTemplate: PostTemplate = {
-                id: `template-${Date.now()}`,
-                templateName,
-                postData: postData,
-            };
-            const updatedTemplates = [...(organization.postTemplates || []), newTemplate];
-            await onUpdateOrganization(organization.id, { postTemplates: updatedTemplates });
-            showToast({ message: "Inlägget sparades som en mall.", type: 'success' });
-        }
-    };
-
     const handleSharePost = (post: DisplayPost) => {
         setPostToShare(post);
     };
@@ -457,7 +441,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                         onDeletePost={(id) => setPostIdToDelete(id)}
                         onDownloadPost={setPostToDownloadAssets}
                         onInitiateCreatePost={() => handleCreatePost()}
-                        onSaveAsTemplate={handleSaveAsTemplate}
                         onSharePost={handleSharePost}
                         openDropdownId={openDropdownId}
                         setOpenDropdownId={setOpenDropdownId}
