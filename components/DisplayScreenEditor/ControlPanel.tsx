@@ -328,8 +328,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                             >
                                 <option value="16:9">Liggande (16:9)</option>
                                 <option value="9:16">Stående (9:16)</option>
-                                <option value="4:3">Liggande (4:3)</option>
-                                <option value="3:4">Stående (3:4)</option>
                             </StyledSelect>
                             <p className="text-xs text-slate-400 mt-1">Ändrar formatet på förhandsgranskningen. Påverkar inte den fysiska skärmens orientering.</p>
                         </div>
