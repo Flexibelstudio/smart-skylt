@@ -9,7 +9,7 @@ import {
     ShareIcon, DownloadIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
     ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
-    Cog6ToothIcon, ChevronDownIcon
+    Cog6ToothIcon, ChevronDownIcon, CheckCircleIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -251,15 +251,45 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Bildformat (Aspect Ratio)</label>
-                                <StyledSelect 
-                                    value={screen.aspectRatio} 
-                                    onChange={(e) => onUpdateScreen({ aspectRatio: e.target.value as any })}
-                                >
-                                    <option value="16:9">Liggande (16:9)</option>
-                                    <option value="9:16">Stående (9:16)</option>
-                                </StyledSelect>
-                                <p className="text-xs text-slate-400 mt-1">Ändrar formatet på förhandsgranskningen. Påverkar inte den fysiska skärmens orientering.</p>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Skärmriktning</label>
+                                <div className="flex gap-4">
+                                    {/* Landscape Option */}
+                                    <button
+                                        onClick={() => onUpdateScreen({ aspectRatio: '16:9' })}
+                                        className={`relative flex-1 p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 group ${
+                                            screen.aspectRatio === '16:9'
+                                                ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
+                                                : 'border-slate-200 dark:border-slate-700 hover:border-primary/50 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'
+                                        }`}
+                                    >
+                                        <div className={`w-12 h-8 border-2 rounded transition-colors ${screen.aspectRatio === '16:9' ? 'border-primary bg-primary/20' : 'border-slate-400 dark:border-slate-500 group-hover:border-primary/50'}`} />
+                                        <span className="text-sm font-semibold">Liggande (16:9)</span>
+                                        {screen.aspectRatio === '16:9' && (
+                                            <div className="absolute top-2 right-2 text-primary">
+                                                <CheckCircleIcon className="w-5 h-5" />
+                                            </div>
+                                        )}
+                                    </button>
+
+                                    {/* Portrait Option */}
+                                    <button
+                                        onClick={() => onUpdateScreen({ aspectRatio: '9:16' })}
+                                        className={`relative flex-1 p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 group ${
+                                            screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4'
+                                                ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
+                                                : 'border-slate-200 dark:border-slate-700 hover:border-primary/50 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'
+                                        }`}
+                                    >
+                                        <div className={`w-6 h-10 border-2 rounded transition-colors ${screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? 'border-primary bg-primary/20' : 'border-slate-400 dark:border-slate-500 group-hover:border-primary/50'}`} />
+                                        <span className="text-sm font-semibold">Stående (9:16)</span>
+                                        {(screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4') && (
+                                            <div className="absolute top-2 right-2 text-primary">
+                                                <CheckCircleIcon className="w-5 h-5" />
+                                            </div>
+                                        )}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">Välj format baserat på hur din fysiska TV är monterad.</p>
                             </div>
                         </div>
 
