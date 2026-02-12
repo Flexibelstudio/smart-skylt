@@ -134,6 +134,22 @@ const getItemSpanClass = (layout: string | undefined, index: number) => {
     return '';
 };
 
+// --- NEW HELPER: Get Shadow Style ---
+const getShadowStyle = (type: string | undefined, color: string | undefined, organization?: Organization, mode?: string) => {
+    if (!type || type === 'none') return undefined;
+    const resolvedColor = resolveColor(color, 'rgba(0,0,0,0.5)', organization);
+    
+    const scale = isPreviewMode(mode as any) ? 0.25 : 1;
+    const s = (val: number) => `${val * scale}px`;
+
+    switch (type) {
+        case 'soft': return `0 ${s(4)} ${s(10)} ${resolvedColor}`;
+        case 'hard': return `${s(3)} ${s(3)} 0px ${resolvedColor}`;
+        case 'glow': return `0 0 ${s(10)} ${resolvedColor}, 0 0 ${s(20)} ${resolvedColor}`;
+        default: return undefined;
+    }
+};
+
 // --- COMPONENTS ---
 
 const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
@@ -314,7 +330,7 @@ const SubImageCarousel: React.FC<{
     );
 };
 
-const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
+const PostMarkdownRenderer: React.FC<{ content: string; className?: string; style?: React.CSSProperties }> = ({ content, className, style }) => {
     const renderMarkdown = useMemo(() => {
         if (!content) return { __html: '' };
         const lines = content.split('\n');
@@ -340,12 +356,13 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string }> = 
         closeListIfNeeded();
         return { __html: htmlLines.join('\n') };
     }, [content]);
-    return <div className={className} dangerouslySetInnerHTML={renderMarkdown} />;
+    return <div className={className} style={style} dangerouslySetInnerHTML={renderMarkdown} />;
 };
 
 const DraggableTextElement: React.FC<any> = ({ 
     type, text, x, y, width, textAlign, fontSize, fontFamily, color, 
     bgEnabled, bgColor, mode, organization, isDraggable, 
+    shadowType, shadowColor, outlineWidth, outlineColor,
     onUpdatePosition, onUpdateWidth 
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -434,17 +451,23 @@ const DraggableTextElement: React.FC<any> = ({
         opacity: isDragging ? 0.7 : 1
     };
     
+    // Compute Effects Styles
+    const textEffectStyle: React.CSSProperties = {
+        textShadow: getShadowStyle(shadowType, shadowColor, organization, mode),
+        WebkitTextStroke: outlineWidth && outlineWidth > 0 
+            ? `${outlineWidth * (isPreviewMode(mode) ? 0.25 : 1)}px ${resolveColor(outlineColor, '#000000', organization)}` 
+            : undefined,
+    };
+
     const fontClass = type === 'headline' 
-        ? `${getHeadlineFontSizeClass(fontSize, mode)} font-bold leading-tight drop-shadow-md break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
-        : `${getBodyFontSizeClass(fontSize, mode)} mt-4 break-words drop-shadow-md ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
+        ? `${getHeadlineFontSizeClass(fontSize, mode)} font-bold leading-tight break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
+        : `${getBodyFontSizeClass(fontSize, mode)} mt-4 break-words ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
 
     const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-6 rounded-xl';
     
     // Resolve background color and check alpha
     const resolvedBgColor = bgEnabled ? resolveColor(bgColor, 'rgba(0,0,0,0.5)', organization) : 'transparent';
     const bgAlpha = getAlpha(resolvedBgColor);
-    // Apply backdrop blur only if background is enabled AND color is not effectively transparent.
-    // This prevents the "dark/dirty" look when user sets opacity to 0 but backdrop-blur remains.
     const showBackdrop = bgEnabled && bgAlpha > 0.01;
 
     return (
@@ -465,14 +488,13 @@ const DraggableTextElement: React.FC<any> = ({
                 </>
             )}
             <div 
-                // Always apply padding to maintain layout stability, even if bg is disabled.
                 className={`${paddingClass} ${showBackdrop ? 'backdrop-blur-md' : ''}`}
                 style={bgEnabled ? { backgroundColor: resolvedBgColor } : {}}
             >
                 {type === 'headline' ? (
-                    <h1 className={fontClass}>{text}</h1>
+                    <h1 className={fontClass} style={textEffectStyle}>{text}</h1>
                 ) : (
-                    <PostMarkdownRenderer content={text} className={fontClass} />
+                    <PostMarkdownRenderer content={text} className={fontClass} style={textEffectStyle} />
                 )}
             </div>
         </div>
@@ -783,6 +805,12 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     color={post.headlineTextColor || post.textColor}
                     bgEnabled={post.headlineBackgroundEnabled ?? post.textBackgroundEnabled}
                     bgColor={post.headlineBackgroundColor || post.textBackgroundColor}
+                    // NEW: Effects props
+                    shadowType={post.headlineShadowType}
+                    shadowColor={post.headlineShadowColor}
+                    outlineWidth={post.headlineOutlineWidth}
+                    outlineColor={post.headlineOutlineColor}
+                    // ---
                     mode={mode}
                     organization={organization}
                     isDraggable={isTextDraggable}
@@ -803,6 +831,12 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     color={post.bodyTextColor || post.textColor}
                     bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
                     bgColor={post.bodyBackgroundColor || post.textBackgroundColor}
+                    // NEW: Effects props
+                    shadowType={post.bodyShadowType}
+                    shadowColor={post.bodyShadowColor}
+                    outlineWidth={post.bodyOutlineWidth}
+                    outlineColor={post.bodyOutlineColor}
+                    // ---
                     mode={mode}
                     organization={organization}
                     isDraggable={isTextDraggable}

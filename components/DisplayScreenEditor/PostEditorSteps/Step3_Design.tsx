@@ -131,6 +131,84 @@ const ColorOpacityControl: React.FC<{
     );
 };
 
+// --- NEW: Text Effects Control ---
+const TextEffectsControl: React.FC<{
+    prefix: 'headline' | 'body';
+    post: DisplayPost;
+    organization: Organization;
+    onFieldChange: (field: keyof DisplayPost, value: any) => void;
+}> = ({ prefix, post, organization, onFieldChange }) => {
+    
+    const shadowType = post[`${prefix}ShadowType`] || 'none';
+    const shadowColor = post[`${prefix}ShadowColor`] || '#000000';
+    const outlineWidth = post[`${prefix}OutlineWidth`] || 0;
+    const outlineColor = post[`${prefix}OutlineColor`] || '#000000';
+
+    return (
+        <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <h4 className="font-semibold text-slate-900 dark:text-white">Texteffekter</h4>
+            
+            {/* Shadow Section */}
+            <div>
+                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Skugga</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                    {[
+                        { id: 'none', label: 'Ingen' },
+                        { id: 'soft', label: '☁️ Mjuk' },
+                        { id: 'hard', label: '🧱 Hård' },
+                        { id: 'glow', label: '✨ Glöd' }
+                    ].map(opt => (
+                        <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => onFieldChange(`${prefix}ShadowType` as any, opt.id)}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${shadowType === opt.id ? 'bg-white dark:bg-slate-700 border-primary text-primary shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+                {shadowType !== 'none' && (
+                    <div className="animate-fade-in">
+                        <ColorPaletteInput 
+                            label="Skuggfärg" 
+                            value={shadowColor} 
+                            onChange={(color) => onFieldChange(`${prefix}ShadowColor` as any, color)} 
+                            organization={organization} 
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* Outline Section */}
+            <div>
+                <div className="flex justify-between items-center mb-1">
+                    <label className="text-sm font-medium text-slate-500 dark:text-slate-400">Kantlinje</label>
+                    <span className="text-xs font-mono text-slate-400">{outlineWidth}px</span>
+                </div>
+                <input 
+                    type="range" 
+                    min="0" max="10" step="1" 
+                    value={outlineWidth} 
+                    onChange={e => onFieldChange(`${prefix}OutlineWidth` as any, parseInt(e.target.value))}
+                    className="w-full h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary mb-3"
+                />
+                
+                {outlineWidth > 0 && (
+                    <div className="animate-fade-in">
+                        <ColorPaletteInput 
+                            label="Färg på kantlinje" 
+                            value={outlineColor} 
+                            onChange={(color) => onFieldChange(`${prefix}OutlineColor` as any, color)} 
+                            organization={organization} 
+                        />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 interface ElementDesignProps {
     type: 'headline' | 'body';
     post: DisplayPost;
@@ -226,6 +304,13 @@ const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organiz
                      )}
                 </div>
             </div>
+
+            <TextEffectsControl 
+                prefix={prefix} 
+                post={post} 
+                organization={organization} 
+                onFieldChange={onFieldChange} 
+            />
         </div>
     );
 };

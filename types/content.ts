@@ -81,6 +81,11 @@ export interface DisplayPost {
   headlineBackgroundEnabled?: boolean;
   headlineBackgroundColor?: string;
   headlineTextColor?: string;
+  // NEW: Headline Effects
+  headlineShadowType?: 'none' | 'soft' | 'hard' | 'glow';
+  headlineShadowColor?: string;
+  headlineOutlineWidth?: number; // 0-10px
+  headlineOutlineColor?: string;
 
   // Body specific
   body?: string;
@@ -93,6 +98,11 @@ export interface DisplayPost {
   bodyBackgroundEnabled?: boolean;
   bodyBackgroundColor?: string;
   bodyTextColor?: string;
+  // NEW: Body Effects
+  bodyShadowType?: 'none' | 'soft' | 'hard' | 'glow';
+  bodyShadowColor?: string;
+  bodyOutlineWidth?: number; // 0-10px
+  bodyOutlineColor?: string;
 
   // Legacy / Shared style fields (keep for compatibility)
   textPosition?: ContentPosition;
