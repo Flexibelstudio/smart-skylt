@@ -6,10 +6,10 @@ import { StyledSelect, StyledInput } from '../Forms';
 import { PrimaryButton } from '../Buttons';
 import { 
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
-    ShareIcon, DownloadIcon, DuplicateIcon, 
+    ShareIcon, DownloadIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
     ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
-    Cog6ToothIcon, ChevronDownIcon
+    Cog6ToothIcon, ChevronDownIcon, DuplicateIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -388,7 +388,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 onDragStart={(e) => handleDragStart(e, index)}
                                 onDragOver={(e) => handleDragOver(e, index)}
                                 onDrop={(e) => handleDrop(e, index)}
-                                className={`group bg-white dark:bg-slate-800 p-3 rounded-lg border flex items-center gap-4 transition-all hover:shadow-md border-slate-200 dark:border-slate-700 ${opacityClass} ${dragIndex === index ? 'opacity-50 ring-2 ring-primary border-transparent scale-[0.98]' : ''}`}
+                                className={`group bg-white dark:bg-slate-800 p-3 rounded-lg border flex items-center gap-4 transition-all hover:shadow-md border-slate-200 dark:border-slate-700 ${opacityClass} ${dragIndex === index ? 'opacity-50 ring-2 ring-primary border-transparent scale-[0.98]' : ''} ${isMenuOpen ? 'relative z-20' : 'relative z-0'}`}
                             >
                                 {/* Drag Handle */}
                                 {canDrag && (
