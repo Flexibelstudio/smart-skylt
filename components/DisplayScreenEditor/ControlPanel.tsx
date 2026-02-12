@@ -28,8 +28,8 @@ interface ControlPanelProps {
     dropdownRef: React.RefObject<HTMLDivElement>;
 }
 
-type PostStatus = 'active' | 'scheduled' | 'ended' | 'archived';
-type FilterOption = 'all' | 'active' | 'scheduled' | 'ended' | 'archived';
+type PostStatus = 'active' | 'scheduled' | 'ended' | 'archived' | 'draft';
+type FilterOption = 'all' | 'active' | 'scheduled' | 'ended' | 'archived' | 'draft';
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
     screen,
@@ -61,11 +61,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
     const getPostStatus = (post: DisplayPost): PostStatus => {
         if (post.status === 'archived') return 'archived';
+        if (!post.startDate) return 'draft'; // New: Missing start date = Draft
+
         const now = new Date();
-        const start = post.startDate ? new Date(post.startDate) : null;
+        const start = new Date(post.startDate);
         const end = post.endDate ? new Date(post.endDate) : null;
 
-        if (start && start > now) return 'scheduled';
+        if (start > now) return 'scheduled';
         if (end && end < now) return 'ended';
         return 'active';
     };
@@ -176,9 +178,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     };
 
     const StatusPill: React.FC<{ status: PostStatus, post: DisplayPost }> = ({ status, post }) => {
-        let bgClass = 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+        let bgClass = 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600';
         let dotClass = 'bg-slate-400';
-        let text = 'Utkast';
+        let text = 'Okänd status';
 
         switch (status) {
             case 'active':
@@ -200,6 +202,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 bgClass = 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-500 border border-yellow-200 dark:border-yellow-800';
                 dotClass = 'bg-yellow-500';
                 text = 'Arkiverad';
+                break;
+            case 'draft':
+                bgClass = 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 dashed-border';
+                dotClass = 'bg-gray-400';
+                text = 'Utkast (inget datum)';
                 break;
         }
 
@@ -333,6 +340,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                             >
                                 <option value="all">Visa alla</option>
                                 <option value="active">Endast Publicerade</option>
+                                <option value="draft">Utkast</option>
                                 <option value="scheduled">Endast Schemalagda</option>
                                 <option value="ended">Endast Avslutade</option>
                                 <option value="archived">Arkiverade</option>
