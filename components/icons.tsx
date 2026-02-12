@@ -318,7 +318,7 @@ export const ChatBubbleLeftRightIcon: React.FC<{className?: string}> = ({classNa
 );
 export const PaintBrushIcon: React.FC<{className?: string}> = ({className}) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.433 2.433c-.498.056-.982.11-1.465.166a2.25 2.25 0 00-1.878 2.18c.22.879.683 1.72 1.28 2.47a2.25 2.25 0 003.844-1.19c.125-.49.25-.98.39-1.458a3 3 0 015.78-1.128 2.25 2.25 0 002.433-2.433c.056-.498.11-.982.166-1.465a2.25 2.25 0 012.18-1.878c.879-.22 1.72-.683 2.47-1.28a2.25 2.25 0 01-1.19-3.844c-.49-.125-.98-.25-1.458-.39a3 3 0 00-1.128-5.78 2.25 2.25 0 01-2.433-2.433c-.056-.498-.11-.982-.166-1.465a2.25 2.25 0 00-1.878-2.18c-.879-.22-1.72-.683-2.47-1.28a2.25 2.25 0 00-3.844 1.19c-.125.49-.25.98-.39 1.458a3 3 0 01-5.78 1.128 2.25 2.25 0 00-2.433 2.433c-.056.498-.11.982-.166 1.465a2.25 2.25 0 01-2.18 1.878c-.879.22-1.72.683-2.47 1.28a2.25 2.25 0 00-3.844 1.19c-.125.49-.25.98-.39 1.458a3 3 0 01-5.78 1.128 2.25 2.25 0 00-2.433 2.433c-.056.498-.11.982-.166 1.465a2.25 2.25 0 01-2.18 1.878c-.879.22-1.72.683-2.47 1.28a2.25 2.25 0 00-3.844 1.19c-.125.49-.25.98-.39 1.458a3 3 0 01-5.78 1.128 2.25 2.25 0 00-2.433 2.433c-.056.498-.11.982-.166 1.465a2.25 2.25 0 01-2.18 1.878c-.879.22-1.72.683-2.47 1.28a2.25 2.25 0 011.19 3.844c.49.125.98.25 1.458.39a3 3 0 001.128 5.78z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.433 2.433c-.498.056-.982.11-1.465.166a2.25 2.25 0 00-1.878 2.18c.22.879.683 1.72 1.28 2.47a2.25 2.25 0 003.844-1.19c.125-.49.25-.98.39-1.458a3 3 0 015.78-1.128 2.25 2.25 0 002.433-2.433c.056-.498.11-.982.166-1.465a2.25 2.25 0 012.18-1.878c.879-.22 1.72-.683 2.47-1.28a2.25 2.25 0 01-1.19-3.844c-.49-.125-.98-.25-1.458-.39a3 3 0 00-1.128-5.78 2.25 2.25 0 01-2.433-2.433c-.056.498-.11.982-.166 1.465a2.25 2.25 0 00-1.878-2.18c-.879-.22-1.72-.683-2.47-1.28a2.25 2.25 0 00-3.844 1.19c-.125.49-.25.98-.39 1.458a3 3 0 01-5.78 1.128 2.25 2.25 0 00-2.433 2.433c-.056.498-.11.982-.166 1.465a2.25 2.25 0 01-2.18 1.878c-.879.22-1.72.683-2.47 1.28a2.25 2.25 0 011.19 3.844c.49.125.98.25 1.458.39a3 3 0 001.128 5.78z" />
     </svg>
 );
 export const MegaphoneIcon: React.FC<{className?: string}> = ({className}) => (
@@ -398,5 +398,17 @@ export const LayoutImageTopIcon: React.FC<{className?: string}> = ({className}) 
 export const LayoutImageBottomIcon: React.FC<{className?: string}> = ({className}) => (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="12" x2="21" y2="12"></line>
+    </svg>
+);
+
+export const ListBulletIcon: React.FC<{className?: string}> = ({className}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 17.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+    </svg>
+);
+
+export const FunnelIcon: React.FC<{className?: string}> = ({className}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
     </svg>
 );

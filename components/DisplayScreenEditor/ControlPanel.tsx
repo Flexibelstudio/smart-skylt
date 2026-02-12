@@ -1,18 +1,17 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DisplayScreen, Organization, DisplayPost, BrandingOptions } from '../../types';
 import { useToast } from '../../context/ToastContext';
-import { StyledInput, StyledSelect } from '../../Forms';
-import { PrimaryButton, SecondaryButton, DestructiveButton } from '../../Buttons';
+import { StyledSelect } from '../../Forms';
+import { PrimaryButton } from '../../Buttons';
 import { 
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
     CalendarIcon, ShareIcon, DownloadIcon, DuplicateIcon, 
-    VideoCameraIcon, PhotoIcon, MagnifyingGlassIcon, MoveIcon,
-    CubeIcon, ToggleSwitch, CheckCircleIcon, ListBulletIcon, FunnelIcon
+    VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
+    CubeIcon, ToggleSwitch, ListBulletIcon, FunnelIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { RealityCheckModal } from '../RealityCheckModal';
-import { parseToDate } from '../../utils/dateUtils';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 
 interface ControlPanelProps {
@@ -44,17 +43,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     setOpenDropdownId,
     dropdownRef
 }) => {
-    const [isSaving, setIsSaving] = useState(false);
     const [dragIndex, setDragIndex] = useState<number | null>(null);
     const [remixPost, setRemixPost] = useState<DisplayPost | null>(null);
     const { showToast } = useToast();
     const [isRealityCheckOpen, setIsRealityCheckOpen] = useState(false);
     
-    // Default to 'manual' to ensure Drag-and-Drop works immediately. 
-    // New posts are prepended to the top automatically by the parent component.
+    // Default sort is 'manual' to allow drag and drop. 
+    // Logic in parent component now prepends new posts to the list, effectively giving "Newest first" behavior for recent additions while keeping manual control.
     const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'status' | 'alpha'>('manual');
     const [searchQuery, setSearchQuery] = useState('');
-    const [showFilters, setShowFilters] = useState(false);
     
     // Branding Settings State
     const [showBrandingSettings, setShowBrandingSettings] = useState(false);
@@ -69,9 +66,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
         switch (sortOption) {
             case 'newest':
-                // Sort by ID assuming timestamp-based IDs or creation order approximation
                 return posts.sort((a, b) => {
-                    // Fallback logic: Try to extract timestamp from ID, otherwise rely on list position if we knew creation date
                     const timeA = parseInt(a.id.split('-')[1] || '0');
                     const timeB = parseInt(b.id.split('-')[1] || '0');
                     return timeB - timeA;
@@ -90,14 +85,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         if (sortOption !== 'manual' || searchQuery) return;
         setDragIndex(index);
         e.dataTransfer.effectAllowed = "move";
-        // Optional: Set ghost image
     };
 
     const handleDragOver = (e: React.DragEvent, index: number) => {
         if (sortOption !== 'manual' || searchQuery || dragIndex === null || dragIndex === index) return;
         e.preventDefault();
-        
-        // Visual Reorder (Optimistic) would happen here in a fuller implementation.
     };
 
     const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
