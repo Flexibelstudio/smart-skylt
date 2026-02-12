@@ -8,10 +8,9 @@ import {
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
     CalendarIcon, ShareIcon, DownloadIcon, DuplicateIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
-    CubeIcon, ToggleSwitch, ListBulletIcon, FunnelIcon
+    ToggleSwitch, ListBulletIcon, FunnelIcon
 } from '../icons';
 import { RemixModal } from './Modals';
-import { RealityCheckModal } from '../RealityCheckModal';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 
 interface ControlPanelProps {
@@ -49,7 +48,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const [dragIndex, setDragIndex] = useState<number | null>(null);
     const [remixPost, setRemixPost] = useState<DisplayPost | null>(null);
     const { showToast } = useToast();
-    const [isRealityCheckOpen, setIsRealityCheckOpen] = useState(false);
     
     // View State
     const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'alpha'>('manual');
@@ -199,14 +197,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                        <button 
-                            onClick={() => setIsRealityCheckOpen(true)}
-                            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="Reality Check (3D)"
-                        >
-                            <CubeIcon className="w-5 h-5" />
-                            <span className="hidden sm:inline">Reality Check</span>
-                        </button>
                         <button 
                             onClick={() => setShowBrandingSettings(!showBrandingSettings)}
                             className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${showBrandingSettings ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
@@ -423,26 +413,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     onSelectVariant={handleRemixSelect} 
                 />
             )}
-            
-            <RealityCheckModal 
-                isOpen={isRealityCheckOpen} 
-                onClose={() => setIsRealityCheckOpen(false)}
-                aspectRatio={screen.aspectRatio}
-            >
-                {/* We need to render the current channel content inside the Reality Check. 
-                    Since we don't have the 'live' cycling view here easily without duplicating DisplayWindowScreen logic, 
-                    we can render the first active post or a placeholder message if empty. */}
-                {filteredPosts.length > 0 ? (
-                    <DisplayPostRenderer post={filteredPosts[0]} organization={organization} mode="live" aspectRatio={screen.aspectRatio} />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-black text-white p-10 text-center">
-                        <div>
-                            <h1 className="text-4xl font-bold mb-4">{organization.brandName}</h1>
-                            <p className="text-xl">Välkommen! Just nu finns inget innehåll.</p>
-                        </div>
-                    </div>
-                )}
-            </RealityCheckModal>
         </div>
     );
 };
