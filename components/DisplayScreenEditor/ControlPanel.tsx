@@ -8,7 +8,7 @@ import {
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
     CalendarIcon, ShareIcon, DownloadIcon, DuplicateIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
-    ToggleSwitch, ListBulletIcon, FunnelIcon
+    ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -29,7 +29,7 @@ interface ControlPanelProps {
 }
 
 type PostStatus = 'active' | 'scheduled' | 'ended' | 'archived';
-type FilterOption = 'all' | 'active' | 'scheduled' | 'ended';
+type FilterOption = 'all' | 'active' | 'scheduled' | 'ended' | 'archived';
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
     screen,
@@ -72,8 +72,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         let posts = [...(screen.posts || [])];
 
         // 1. Filter by Status
-        if (filterStatus !== 'all') {
-            posts = posts.filter(p => getPostStatus(p) === filterStatus);
+        if (filterStatus === 'archived') {
+            // Only show archived posts
+            posts = posts.filter(p => p.status === 'archived');
+        } else {
+            // For all other views, HIDE archived posts first
+            posts = posts.filter(p => p.status !== 'archived');
+
+            if (filterStatus !== 'all') {
+                posts = posts.filter(p => getPostStatus(p) === filterStatus);
+            }
         }
 
         // 2. Filter by Search
@@ -94,14 +102,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 return posts.sort((a, b) => a.internalTitle.localeCompare(b.internalTitle));
             case 'manual':
             default:
-                // If manual sort is selected but we are filtering/searching, we can't really reorder manually comfortably
-                // but we return the list as is (which is manual order).
                 return posts;
         }
     }, [screen.posts, sortOption, searchQuery, filterStatus]);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
-        // Dragging only allowed in "Show All" and "Manual Sort" and "No Search"
         if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all') return;
         setDragIndex(index);
         e.dataTransfer.effectAllowed = "move";
@@ -131,9 +136,24 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         await onUpdateScreen({ branding: newBranding });
     };
 
+    const handleArchivePost = async (post: DisplayPost) => {
+        const updatedPosts = (screen.posts || []).map(p => 
+            p.id === post.id ? { ...p, status: 'archived' as const } : p
+        );
+        await onUpdateScreen({ posts: updatedPosts });
+        showToast({ message: "Inlägget har arkiverats.", type: 'success' });
+    };
+
+    const handleRestorePost = async (post: DisplayPost) => {
+        const updatedPosts = (screen.posts || []).map(p => 
+            p.id === post.id ? { ...p, status: 'active' as const } : p
+        );
+        await onUpdateScreen({ posts: updatedPosts });
+        showToast({ message: "Inlägget har återställts.", type: 'success' });
+    };
+
     const handleRemixSelect = (variant: DisplayPost) => {
         const newPost = { ...variant, id: `post-${Date.now()}` };
-        // Prepend new post
         const updatedPosts = [newPost, ...(screen.posts || [])];
         onUpdateScreen({ posts: updatedPosts }).then(() => {
             showToast({ message: "Remix tillagd!", type: 'success' });
@@ -168,8 +188,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 text = `Avslutades ${formatDate(post.endDate)}`;
                 break;
             case 'archived':
-                bgClass = 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700';
-                dotClass = 'bg-slate-300';
+                bgClass = 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-500 border border-yellow-200 dark:border-yellow-800';
+                dotClass = 'bg-yellow-500';
                 text = 'Arkiverad';
                 break;
         }
@@ -235,6 +255,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 <option value="active">Endast Publicerade</option>
                                 <option value="scheduled">Endast Schemalagda</option>
                                 <option value="ended">Endast Avslutade</option>
+                                <option value="archived">Arkiverade</option>
                             </select>
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                 <FunnelIcon className="w-4 h-4" />
@@ -311,6 +332,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         const status = getPostStatus(post);
                         const isMenuOpen = openDropdownId === post.id;
                         const canDrag = sortOption === 'manual' && !searchQuery && filterStatus === 'all';
+                        const isArchivedView = filterStatus === 'archived';
                         
                         let opacityClass = status === 'ended' || status === 'archived' ? 'opacity-75 bg-slate-50 dark:bg-slate-800/50' : 'opacity-100';
                         
@@ -363,25 +385,39 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                     {isMenuOpen && (
                                         <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-10 overflow-hidden animate-fade-in origin-top-right ring-1 ring-black/5">
                                             <div className="py-1">
-                                                <button onClick={() => { onEditPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                    <PencilIcon className="w-4 h-4 text-slate-400" /> Redigera
-                                                </button>
-                                                <button onClick={() => { setRemixPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3">
-                                                    <SparklesIcon className="w-4 h-4" /> Remixa med AI
-                                                </button>
-                                                <button onClick={() => { onSharePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                    <ShareIcon className="w-4 h-4 text-slate-400" /> Dela till kanal
-                                                </button>
-                                                <button onClick={() => { onSaveAsTemplate(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                    <DuplicateIcon className="w-4 h-4 text-slate-400" /> Spara som mall
-                                                </button>
-                                                <button onClick={() => { onDownloadPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                    <DownloadIcon className="w-4 h-4 text-slate-400" /> Ladda ner
-                                                </button>
-                                                <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
-                                                <button onClick={() => { onDeletePost(post.id); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3">
-                                                    <TrashIcon className="w-4 h-4" /> Ta bort
-                                                </button>
+                                                {isArchivedView ? (
+                                                    <>
+                                                        <button onClick={() => { handleRestorePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-3">
+                                                            <ArrowUturnLeftIcon className="w-4 h-4" /> Återställ
+                                                        </button>
+                                                        <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
+                                                        <button onClick={() => { onDeletePost(post.id); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3">
+                                                            <TrashIcon className="w-4 h-4" /> Radera permanent
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => { onEditPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                            <PencilIcon className="w-4 h-4 text-slate-400" /> Redigera
+                                                        </button>
+                                                        <button onClick={() => { setRemixPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3">
+                                                            <SparklesIcon className="w-4 h-4" /> Remixa med AI
+                                                        </button>
+                                                        <button onClick={() => { onSharePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                            <ShareIcon className="w-4 h-4 text-slate-400" /> Dela till kanal
+                                                        </button>
+                                                        <button onClick={() => { onSaveAsTemplate(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                            <DuplicateIcon className="w-4 h-4 text-slate-400" /> Spara som mall
+                                                        </button>
+                                                        <button onClick={() => { onDownloadPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                            <DownloadIcon className="w-4 h-4 text-slate-400" /> Ladda ner
+                                                        </button>
+                                                        <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
+                                                        <button onClick={() => { handleArchivePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                            <TrashIcon className="w-4 h-4" /> Arkivera
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -396,9 +432,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         </div>
                         <h4 className="text-lg font-bold text-slate-900 dark:text-white">Inga inlägg hittades</h4>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-6 max-w-xs mx-auto">
-                            {filterStatus !== 'all' ? 'Prova att ändra filtret till "Visa alla".' : 'Kanalen är tom. Skapa ditt första inlägg manuellt eller låt AI:n hjälpa dig.'}
+                            {filterStatus !== 'all' ? 'Inga inlägg matchar ditt filter.' : 'Kanalen är tom. Skapa ditt första inlägg manuellt eller låt AI:n hjälpa dig.'}
                         </p>
-                        <PrimaryButton onClick={onInitiateCreatePost}>Skapa första inlägget</PrimaryButton>
+                        {filterStatus === 'all' && (
+                            <PrimaryButton onClick={onInitiateCreatePost}>Skapa första inlägget</PrimaryButton>
+                        )}
                     </div>
                 )}
             </div>
