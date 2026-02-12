@@ -2,13 +2,14 @@
 import React, { useState, useMemo } from 'react';
 import { DisplayScreen, Organization, DisplayPost, BrandingOptions } from '../../types';
 import { useToast } from '../../context/ToastContext';
-import { StyledSelect } from '../Forms';
-import { PrimaryButton } from '../Buttons';
+import { StyledSelect, StyledInput } from '../Forms';
+import { PrimaryButton, SecondaryButton } from '../Buttons';
 import { 
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
     CalendarIcon, ShareIcon, DownloadIcon, DuplicateIcon, 
     VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
-    ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon
+    ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
+    Cog6ToothIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
@@ -54,8 +55,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const [filterStatus, setFilterStatus] = useState<FilterOption>('all');
     const [searchQuery, setSearchQuery] = useState('');
     
-    // Branding Settings State
+    // Panels State
     const [showBrandingSettings, setShowBrandingSettings] = useState(false);
+    const [showChannelSettings, setShowChannelSettings] = useState(false);
+    
+    // Local state for channel settings editing
+    const [channelName, setChannelName] = useState(screen.name);
 
     const getPostStatus = (post: DisplayPost): PostStatus => {
         if (post.status === 'archived') return 'archived';
@@ -134,6 +139,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         const currentBranding = screen.branding || { isEnabled: false, showLogo: false, showName: false, position: 'bottom-right' };
         const newBranding = { ...currentBranding, [key]: value };
         await onUpdateScreen({ branding: newBranding });
+    };
+    
+    const handleChannelSettingsSave = async () => {
+        if (channelName.trim()) {
+            await onUpdateScreen({ name: channelName });
+            showToast({ message: "Kanalinställningar sparade.", type: 'success' });
+        }
     };
 
     const handleArchivePost = async (post: DisplayPost) => {
@@ -218,9 +230,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                         <button 
-                            onClick={() => setShowBrandingSettings(!showBrandingSettings)}
+                            onClick={() => { setShowChannelSettings(!showChannelSettings); setShowBrandingSettings(false); }}
+                            className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${showChannelSettings ? 'bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                            title="Kanalinställningar"
+                        >
+                            <Cog6ToothIcon className="w-5 h-5" />
+                            <span className="hidden sm:inline">Inställningar</span>
+                        </button>
+                        <button 
+                            onClick={() => { setShowBrandingSettings(!showBrandingSettings); setShowChannelSettings(false); }}
                             className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${showBrandingSettings ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                            title="Skärminställningar"
+                            title="Skärmdesign"
                         >
                             <SparklesIcon className="w-5 h-5" />
                             <span className="hidden sm:inline">Design</span>
@@ -279,6 +299,43 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Channel Settings Panel */}
+            {showChannelSettings && (
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 animate-fade-in shadow-sm relative">
+                    <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                        <Cog6ToothIcon className="w-5 h-5 text-slate-500" />
+                        Kanalinställningar
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Kanalens namn</label>
+                            <div className="flex gap-2">
+                                <StyledInput 
+                                    type="text" 
+                                    value={channelName} 
+                                    onChange={(e) => setChannelName(e.target.value)} 
+                                    placeholder="Namn på kanalen"
+                                />
+                                <PrimaryButton onClick={handleChannelSettingsSave} disabled={channelName === screen.name}>Spara</PrimaryButton>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Bildformat (Aspect Ratio)</label>
+                            <StyledSelect 
+                                value={screen.aspectRatio} 
+                                onChange={(e) => onUpdateScreen({ aspectRatio: e.target.value as any })}
+                            >
+                                <option value="16:9">Liggande (16:9)</option>
+                                <option value="9:16">Stående (9:16)</option>
+                                <option value="4:3">Liggande (4:3)</option>
+                                <option value="3:4">Stående (3:4)</option>
+                            </StyledSelect>
+                            <p className="text-xs text-slate-400 mt-1">Ändrar formatet på förhandsgranskningen. Påverkar inte den fysiska skärmens orientering.</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Branding Settings Panel */}
             {showBrandingSettings && (
