@@ -29,6 +29,8 @@ interface ControlPanelProps {
     dropdownRef: React.RefObject<HTMLDivElement>;
 }
 
+type PostStatus = 'active' | 'scheduled' | 'ended' | 'archived';
+
 export const ControlPanel: React.FC<ControlPanelProps> = ({
     screen,
     organization,
@@ -48,13 +50,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const { showToast } = useToast();
     const [isRealityCheckOpen, setIsRealityCheckOpen] = useState(false);
     
-    // Default sort is 'manual' to allow drag and drop. 
-    // Logic in parent component now prepends new posts to the list, effectively giving "Newest first" behavior for recent additions while keeping manual control.
     const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'status' | 'alpha'>('manual');
     const [searchQuery, setSearchQuery] = useState('');
     
     // Branding Settings State
     const [showBrandingSettings, setShowBrandingSettings] = useState(false);
+
+    const getPostStatus = (post: DisplayPost): PostStatus => {
+        if (post.status === 'archived') return 'archived';
+        const now = new Date();
+        const start = post.startDate ? new Date(post.startDate) : null;
+        const end = post.endDate ? new Date(post.endDate) : null;
+
+        if (start && start > now) return 'scheduled';
+        if (end && end < now) return 'ended';
+        return 'active';
+    };
 
     const filteredPosts = useMemo(() => {
         let posts = [...(screen.posts || [])];
@@ -74,7 +85,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             case 'alpha':
                 return posts.sort((a, b) => a.internalTitle.localeCompare(b.internalTitle));
             case 'status':
-                return posts.sort((a, b) => (a.status || 'active').localeCompare(b.status || 'active'));
+                return posts.sort((a, b) => {
+                    const statusOrder: Record<PostStatus, number> = { active: 0, scheduled: 1, ended: 2, archived: 3 };
+                    const sA = getPostStatus(a);
+                    const sB = getPostStatus(b);
+                    return statusOrder[sA] - statusOrder[sB];
+                });
             case 'manual':
             default:
                 return posts;
@@ -124,14 +140,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const formatDate = (isoString?: string) => {
         if (!isoString) return 'Tills vidare';
         return new Date(isoString).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' });
-    };
-
-    const isActive = (post: DisplayPost) => {
-        if (post.status === 'archived') return false;
-        const now = new Date();
-        if (post.startDate && new Date(post.startDate) > now) return false;
-        if (post.endDate && new Date(post.endDate) < now) return false;
-        return true;
     };
 
     return (
@@ -253,9 +261,34 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             <div className="space-y-3">
                 {filteredPosts.length > 0 ? (
                     filteredPosts.map((post, index) => {
-                        const active = isActive(post);
+                        const status = getPostStatus(post);
                         const isMenuOpen = openDropdownId === post.id;
                         const canDrag = sortOption === 'manual' && !searchQuery;
+                        
+                        let statusColorClass = 'text-slate-500 dark:text-slate-400';
+                        let statusText = '';
+                        let opacityClass = 'opacity-100';
+
+                        switch (status) {
+                            case 'active':
+                                statusColorClass = 'text-green-600 dark:text-green-400';
+                                statusText = `Publicerad: ${formatDate(post.startDate)} - ${formatDate(post.endDate)}`;
+                                break;
+                            case 'scheduled':
+                                statusColorClass = 'text-blue-600 dark:text-blue-400';
+                                statusText = `Schemalagd: ${formatDate(post.startDate)} - ${formatDate(post.endDate)}`;
+                                break;
+                            case 'ended':
+                                statusColorClass = 'text-slate-500 dark:text-slate-500';
+                                statusText = `Avslutades: ${formatDate(post.endDate)}`;
+                                opacityClass = 'opacity-75 bg-slate-50 dark:bg-slate-800/50';
+                                break;
+                            case 'archived':
+                                statusColorClass = 'text-slate-400 dark:text-slate-600';
+                                statusText = 'Arkiverad';
+                                opacityClass = 'opacity-60 bg-slate-50 dark:bg-slate-800/50';
+                                break;
+                        }
                         
                         return (
                             <div 
@@ -264,9 +297,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 onDragStart={(e) => handleDragStart(e, index)}
                                 onDragOver={(e) => handleDragOver(e, index)}
                                 onDrop={(e) => handleDrop(e, index)}
-                                className={`group bg-white dark:bg-slate-800 p-3 rounded-lg border flex items-center gap-4 transition-all hover:shadow-md ${
-                                    active ? 'border-slate-200 dark:border-slate-700' : 'border-slate-200 dark:border-slate-700 opacity-60 bg-slate-50'
-                                } ${dragIndex === index ? 'opacity-50 ring-2 ring-primary border-transparent scale-[0.98]' : ''}`}
+                                className={`group bg-white dark:bg-slate-800 p-3 rounded-lg border flex items-center gap-4 transition-all hover:shadow-md border-slate-200 dark:border-slate-700 ${opacityClass} ${dragIndex === index ? 'opacity-50 ring-2 ring-primary border-transparent scale-[0.98]' : ''}`}
                             >
                                 {/* Drag Handle */}
                                 {canDrag && (
@@ -285,12 +316,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 <div className="flex-grow min-w-0">
                                     <div className="flex items-center gap-2">
                                         <h4 className="font-bold text-slate-800 dark:text-slate-200 truncate text-sm sm:text-base" title={post.internalTitle}>{post.internalTitle}</h4>
-                                        {!active && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-600 uppercase">Inaktiv</span>}
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                        {post.startDate && <span className="flex items-center gap-1"><CalendarIcon className="w-3 h-3"/> {formatDate(post.startDate)} - {formatDate(post.endDate)}</span>}
-                                        <span className="bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-[10px] font-mono">{post.durationSeconds}s</span>
-                                        <span className="capitalize">{post.layout.replace(/-/g, ' ')}</span>
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-x-3 gap-y-1 mt-1">
+                                        <span className={`text-xs font-semibold flex items-center gap-1 ${statusColorClass}`}>
+                                            <CalendarIcon className="w-3 h-3"/> {statusText}
+                                        </span>
+                                        <div className="hidden sm:block w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                            <span className="bg-slate-100 dark:bg-slate-700 px-1.5 rounded font-mono">{post.durationSeconds}s</span>
+                                            <span className="capitalize">{post.layout.replace(/-/g, ' ')}</span>
+                                        </div>
                                     </div>
                                 </div>
 
