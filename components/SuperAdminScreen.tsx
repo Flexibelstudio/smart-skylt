@@ -6,12 +6,13 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { PrimaryButton, SecondaryButton } from './Buttons';
 import { StyledInput, StyledSelect } from './Forms';
-import { SparklesIcon, CodeBracketIcon, ShareIcon } from './icons';
+import { SparklesIcon, CodeBracketIcon, ShareIcon, ChevronDownIcon, PlayIcon, PauseIcon } from './icons';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
 import { parseToDate } from '../utils/dateUtils';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { AIGuideModal } from './AIGuideModal';
 import { useLocation } from '../context/StudioContext';
+import { ResolutionScaler } from './ResolutionScaler';
 
 // Import the extracted tabs
 import { SkyltfonsterTab } from './admin/SkyltfonsterTab';
@@ -19,10 +20,6 @@ import { AdminTab } from './admin/AdminTab';
 import { AiAutomationTab } from './admin/AiAutomationTab';
 import { OrganisationTab } from './OrganisationTab';
 import { MediaGalleryTab } from './admin/MediaGalleryTab';
-
-// Import Modals (We can move these too later, but let's keep them here for now to minimize file explosion in one step)
-// or assume they are internal to this file for simplicity if they weren't extracted.
-// However, since I can't update non-existent files, I will keep the modals here but streamlined.
 
 interface SuperAdminScreenProps {
     organization: Organization;
@@ -37,21 +34,13 @@ interface SuperAdminScreenProps {
     onUpdateDisplayScreens: (organizationId: string, displayScreens: DisplayScreen[]) => Promise<void>;
 }
 
-const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): string => {
-    switch (ratio) {
-        case '9:16': return 'aspect-[9/16]';
-        case '4:3': return 'aspect-[4/3]';
-        case '3:4': return 'aspect-[3/4]';
-        case '16:9': default: return 'aspect-[16/9]';
-    }
-};
-
 const DisplayScreenPreviewModal: React.FC<{
     screen: DisplayScreen;
     organization: Organization;
     onClose: () => void;
 }> = ({ screen, organization, onClose }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
     const timerRef = React.useRef<number | null>(null);
 
     const activePosts = useMemo(() => {
@@ -70,48 +59,94 @@ const DisplayScreenPreviewModal: React.FC<{
         if (currentIndex >= activePosts.length) setCurrentIndex(0);
     }, [activePosts, currentIndex]);
 
-    const advance = React.useCallback(() => {
+    const advance = React.useCallback((direction: 'next' | 'prev') => {
         if (activePosts.length <= 1) return;
-        setCurrentIndex(prev => (prev + 1) % activePosts.length);
+        if (direction === 'next') {
+            setCurrentIndex(prev => (prev + 1) % activePosts.length);
+        } else {
+            setCurrentIndex(prev => (prev - 1 + activePosts.length) % activePosts.length);
+        }
     }, [activePosts.length]);
 
     useEffect(() => {
         if (timerRef.current) clearTimeout(timerRef.current);
-        if (activePosts.length <= 1) return;
+        if (activePosts.length <= 1 || isPaused) return;
 
         const currentPost = activePosts[currentIndex];
+        // Don't auto-advance if video (let video end trigger it, or user manual nav)
         if (!currentPost || (currentPost.layout === 'video-fullscreen' && currentPost.videoUrl)) return;
 
         const duration = (currentPost.durationSeconds || 15) * 1000;
-        timerRef.current = window.setTimeout(advance, duration);
+        timerRef.current = window.setTimeout(() => advance('next'), duration);
 
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [currentIndex, activePosts, advance]);
+    }, [currentIndex, activePosts, advance, isPaused]);
 
     const currentPost = activePosts[currentIndex];
     
     return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 w-full max-w-4xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-bold mb-4">Förhandsgranskning: {screen.name}</h2>
-                <div className={`${getAspectRatioClass(screen.aspectRatio)} w-full bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
-                    {currentPost ? (
-                        <DisplayPostRenderer 
-                            post={currentPost} 
-                            allTags={organization.tags} 
-                            primaryColor={organization.primaryColor}
-                            onVideoEnded={advance}
-                            organization={organization}
-                            aspectRatio={screen.aspectRatio}
-                        />
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
-                            Inga aktiva inlägg.
-                        </div>
-                    )}
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+            <div className="bg-slate-900 rounded-xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl border border-slate-700 animate-fade-in overflow-hidden" onClick={e => e.stopPropagation()}>
+                
+                {/* Header */}
+                <div className="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-800">
+                    <div>
+                        <h2 className="text-xl font-bold text-white">{screen.name}</h2>
+                        <p className="text-sm text-slate-400">
+                            {activePosts.length > 0 
+                                ? `Visar inlägg ${currentIndex + 1} av ${activePosts.length}` 
+                                : 'Inga aktiva inlägg'}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-700">
+                        <span className="text-2xl">&times;</span>
+                    </button>
                 </div>
-                <div className="flex justify-end mt-4">
-                    <SecondaryButton onClick={onClose}>Stäng</SecondaryButton>
+
+                {/* Main Content Area - Uses ResolutionScaler */}
+                <div className="flex-grow bg-black relative flex items-center justify-center p-4">
+                    <ResolutionScaler aspectRatio={screen.aspectRatio}>
+                        {currentPost ? (
+                            <DisplayPostRenderer 
+                                post={currentPost} 
+                                allTags={organization.tags} 
+                                primaryColor={organization.primaryColor}
+                                onVideoEnded={() => !isPaused && advance('next')}
+                                organization={organization}
+                                aspectRatio={screen.aspectRatio}
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center h-full w-full bg-slate-900 text-slate-500">
+                                <p className="text-3xl font-bold">Inga inlägg att visa</p>
+                            </div>
+                        )}
+                    </ResolutionScaler>
+                </div>
+
+                {/* Footer Controls */}
+                <div className="p-4 bg-slate-800 border-t border-slate-700 flex justify-center items-center gap-6">
+                    <button 
+                        onClick={() => advance('prev')} 
+                        className="p-3 rounded-full bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+                        disabled={activePosts.length <= 1}
+                    >
+                        <ChevronDownIcon className="h-6 w-6 rotate-90" />
+                    </button>
+                    
+                    <button 
+                        onClick={() => setIsPaused(!isPaused)} 
+                        className={`p-4 rounded-full text-white transition-all shadow-lg ${isPaused ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-primary hover:brightness-110'}`}
+                    >
+                        {isPaused ? <PlayIcon className="h-8 w-8 ml-1" /> : <PauseIcon className="h-8 w-8" />}
+                    </button>
+                    
+                    <button 
+                        onClick={() => advance('next')} 
+                        className="p-3 rounded-full bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+                        disabled={activePosts.length <= 1}
+                    >
+                        <ChevronDownIcon className="h-6 w-6 -rotate-90" />
+                    </button>
                 </div>
             </div>
         </div>
