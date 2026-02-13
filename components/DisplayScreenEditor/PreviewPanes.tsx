@@ -134,8 +134,8 @@ const SinglePostPreview: React.FC<{
             <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
                 <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                    // Ramen borttagen, behåller en snygg skugga. 70vh höjd.
-                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl overflow-hidden ${isPortrait ? 'h-[70vh] w-auto' : 'w-full'}`}
+                    // Ramen borttagen, behåller en snygg skugga. 60vh höjd.
+                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                 >
                     <DisplayPostRenderer 
                         post={post} 
