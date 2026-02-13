@@ -17,8 +17,8 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * En container som renderar barnen i en fast "virtuell" upplösning
  * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
  * 
- * Vi använder 720p (720x1280) som logisk upplösning. Detta är standard för
- * många Smart TV-browsers och ger oftast bäst matchning för radbrytningar.
+ * Vi använder 640x1138 som logisk upplösning. Detta är ett "gyllene medelväg"
+ * mellan 540p (mobilt) och 720p (HD), vilket ofta matchar hur text flödar på TV-skärmar.
  */
 const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
@@ -28,13 +28,13 @@ const ScaledPreviewWrapper: React.FC<{
     const containerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
 
-    // Definiera basupplösning (720p - HD Ready Standard)
+    // Definiera basupplösning (640p - Mellanting)
     const { width: baseWidth, height: baseHeight } = useMemo(() => {
         switch (aspectRatio) {
-            case '9:16': return { width: 720, height: 1280 }; // Stående HD
-            case '3:4': return { width: 768, height: 1024 };  // Stående Tablet-ish
-            case '4:3': return { width: 1024, height: 768 };  // Liggande Tablet-ish
-            case '16:9': default: return { width: 1280, height: 720 }; // Liggande HD
+            case '9:16': return { width: 640, height: 1138 }; // Stående (Mellan 540 och 720)
+            case '3:4': return { width: 768, height: 1024 };  // Stående Tablet
+            case '4:3': return { width: 1024, height: 768 };  // Liggande Tablet
+            case '16:9': default: return { width: 1138, height: 640 }; // Liggande
         }
     }, [aspectRatio]);
 
@@ -133,7 +133,7 @@ const SinglePostPreview: React.FC<{
             <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
                 <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                    // Borttagen border och justerad shadow för renare look
+                    // Ramen borttagen, behåller skugga och rundning
                     className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                 >
                     <DisplayPostRenderer 
@@ -150,7 +150,7 @@ const SinglePostPreview: React.FC<{
                         isTextDraggable={isTextDraggable}
                         organization={organization}
                         aspectRatio={screen.aspectRatio}
-                        // Vi använder 'live'-läge internt för att använda korrekta storlekar mot den virtuella upplösningen
+                        // Vi använder 'live'-läge internt för att matcha den virtuella upplösningen
                         mode="live" 
                     />
                     {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
@@ -165,7 +165,7 @@ const SinglePostPreview: React.FC<{
             </div>
             
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 text-center">
-                Dra i text och objekt för att flytta dem. Innehållet skalas för att matcha TV-skärmen.
+                Dra i text och objekt för att flytta dem.
             </p>
         </div>
     );
@@ -244,7 +244,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
                  <div className="flex justify-center bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50">
                      <ScaledPreviewWrapper 
                         aspectRatio={screen.aspectRatio}
-                        // Borttagen border
+                        // Ramen borttagen
                         className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-lg overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                      >
                         {currentPost ? (
