@@ -18,7 +18,8 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
  * 
  * Vi använder 640x1138 som logisk upplösning. Detta är ett "gyllene medelväg"
- * mellan 540p (mobilt) och 720p (HD), vilket ofta matchar hur text flödar på TV-skärmar.
+ * mellan 540p (mobilt) och 720p (HD), vilket ofta matchar hur text flödar på TV-skärmar
+ * som kör webbläsare i inzoomat läge.
  */
 const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
@@ -133,8 +134,8 @@ const SinglePostPreview: React.FC<{
             <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
                 <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                    // Ramen borttagen, behåller skugga och rundning
-                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
+                    // Ramen borttagen, behåller en snygg skugga
+                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                 >
                     <DisplayPostRenderer 
                         post={post} 
@@ -245,7 +246,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
                      <ScaledPreviewWrapper 
                         aspectRatio={screen.aspectRatio}
                         // Ramen borttagen
-                        className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-lg overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
+                        className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                      >
                         {currentPost ? (
                             <DisplayPostRenderer 
