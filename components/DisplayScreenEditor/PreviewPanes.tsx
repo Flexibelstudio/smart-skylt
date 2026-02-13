@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DisplayPost, DisplayScreen, Organization, BrandingOptions, Tag, TagPositionOverride } from '../../types';
+import { DisplayPost, DisplayScreen, Organization, BrandingOptions } from '../../types';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ChevronDownIcon, PlayIcon, PauseIcon } from '../icons';
 
@@ -11,6 +11,78 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
         case '3:4': return 'aspect-[3/4]';
         case '16:9': default: return 'aspect-[16/9]';
     }
+};
+
+/**
+ * En container som renderar barnen i en fast "virtuell" upplösning
+ * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
+ * 
+ * Vi använder en "logisk" upplösning (t.ex. 540x960) snarare än fysisk (1080x1920).
+ * Detta gör att textstorlekar (som definieras i rem/px i Tailwind) upplevs som större
+ * i förhållande till skärmytan, vilket matchar hur det ser ut på en TV på avstånd.
+ */
+const ScaledPreviewWrapper: React.FC<{ 
+    aspectRatio: DisplayScreen['aspectRatio']; 
+    children: React.ReactNode;
+    className?: string;
+}> = ({ aspectRatio, children, className }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
+
+    // Definiera basupplösning (Logisk upplösning för layout)
+    const { width: baseWidth, height: baseHeight } = useMemo(() => {
+        switch (aspectRatio) {
+            case '9:16': return { width: 540, height: 960 }; // Stående (Halv 1080p för bättre textskala)
+            case '3:4': return { width: 600, height: 800 };  // Stående Tablet
+            case '4:3': return { width: 800, height: 600 };  // Liggande äldre
+            case '16:9': default: return { width: 960, height: 540 }; // Liggande (Halv 1080p)
+        }
+    }, [aspectRatio]);
+
+    useEffect(() => {
+        const updateScale = () => {
+            if (containerRef.current) {
+                const parentWidth = containerRef.current.clientWidth;
+                // Räkna ut skalan: Tillgänglig bredd / Virtuell bredd
+                if (parentWidth > 0) {
+                    setScale(parentWidth / baseWidth);
+                }
+            }
+        };
+
+        // Kör vid start och när fönstret ändras
+        updateScale();
+        const observer = new ResizeObserver(updateScale);
+        if (containerRef.current) observer.observe(containerRef.current);
+        
+        return () => observer.disconnect();
+    }, [baseWidth]);
+
+    return (
+        <div 
+            ref={containerRef} 
+            className={`relative w-full overflow-hidden ${className || ''}`}
+            style={{ 
+                // Containern behåller rätt proportioner så att den tar upp rätt plats i UI:t
+                aspectRatio: `${baseWidth}/${baseHeight}` 
+            }}
+        >
+            <div 
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: `${baseWidth}px`,
+                    height: `${baseHeight}px`,
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top left',
+                    pointerEvents: 'auto' // Tillåt interaktion (dra/släpp)
+                }}
+            >
+                {children}
+            </div>
+        </div>
+    );
 };
 
 const SinglePostPreview: React.FC<{ 
@@ -31,7 +103,10 @@ const SinglePostPreview: React.FC<{
     onUpdateBodyPosition, onUpdateBodyWidth,
     onUpdateQrPosition, onUpdateQrWidth, isTextDraggable 
 }) => {
+    
+    // För stående skärmar vill vi begränsa höjden så den inte tar upp hela webbläsarfönstret
     const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+    
     const branding = screen.branding;
     const logoUrl = organization?.logoUrlDark || organization?.logoUrlLight;
     const getPositionClasses = (position: BrandingOptions['position'] = 'bottom-right') => {
@@ -49,38 +124,49 @@ const SinglePostPreview: React.FC<{
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white">Förhandsgranskning</h3>
                 <div className="flex items-center gap-2">
                     {isTextDraggable && (
-                        <span className="bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold px-2 py-1 rounded-full animate-pulse mr-2">
+                        <span className="bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold px-2 py-1 rounded-full animate-pulse">
                             Interaktivt läge
                         </span>
                     )}
                 </div>
             </div>
-            <div className={`${getAspectRatioClass(screen.aspectRatio)} ${isPortrait ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
-                <DisplayPostRenderer 
-                    post={post} 
-                    allTags={organization.tags} 
-                    primaryColor={organization.primaryColor}
-                    onUpdateTagPosition={onUpdateTagPosition}
-                    onUpdateHeadlinePosition={onUpdateHeadlinePosition}
-                    onUpdateHeadlineWidth={onUpdateHeadlineWidth}
-                    onUpdateBodyPosition={onUpdateBodyPosition}
-                    onUpdateBodyWidth={onUpdateBodyWidth}
-                    onUpdateQrPosition={onUpdateQrPosition}
-                    onUpdateQrWidth={onUpdateQrWidth}
-                    isTextDraggable={isTextDraggable}
-                    organization={organization}
+            
+            <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
+                <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                />
-                {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
-                    <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
-                        <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-                            {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
-                            {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
+                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl border-4 border-slate-800 dark:border-slate-600 overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
+                >
+                    <DisplayPostRenderer 
+                        post={post} 
+                        allTags={organization.tags} 
+                        primaryColor={organization.primaryColor}
+                        onUpdateTagPosition={onUpdateTagPosition}
+                        onUpdateHeadlinePosition={onUpdateHeadlinePosition}
+                        onUpdateHeadlineWidth={onUpdateHeadlineWidth}
+                        onUpdateBodyPosition={onUpdateBodyPosition}
+                        onUpdateBodyWidth={onUpdateBodyWidth}
+                        onUpdateQrPosition={onUpdateQrPosition}
+                        onUpdateQrWidth={onUpdateQrWidth}
+                        isTextDraggable={isTextDraggable}
+                        organization={organization}
+                        aspectRatio={screen.aspectRatio}
+                        // Vi använder 'live'-läge internt i wrappern för att fontstorlekar ska beräknas mot den virtuella upplösningen
+                        mode="live" 
+                    />
+                    {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
+                        <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
+                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+                                {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
+                                {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </ScaledPreviewWrapper>
             </div>
-            <p className="text-xs text-slate-500 dark:text-gray-500 mt-2">Dra i text, QR-kod och taggar för att placera dem fritt. Dra i handtagen på sidorna av rutorna för att ändra bredd.</p>
+            
+            <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 text-center">
+                Innehållet skalas för att visa exakt hur det ser ut på skärmen. Dra i text och objekt för att flytta dem.
+            </p>
         </div>
     );
 };
@@ -147,35 +233,43 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
         }
     };
     
+    const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+
     return (
         <div className="space-y-4">
              <div className="flex justify-between items-center">
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white">Live-förhandsgranskning</h3>
              </div>
              <div className="space-y-4">
-                 <div className={`${getAspectRatioClass(screen.aspectRatio)} ${screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? 'max-h-[75vh] mx-auto' : 'w-full'} bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
-                    {currentPost ? (
-                        <DisplayPostRenderer 
-                            post={currentPost} 
-                            allTags={organization.tags} 
-                            primaryColor={organization.primaryColor}
-                            onVideoEnded={() => advance('next')}
-                            organization={organization}
-                            aspectRatio={screen.aspectRatio}
-                        />
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
-                           {screen.posts?.length > 0 ? 'Inga aktiva inlägg.' : 'Lägg till inlägg.'}
-                        </div>
-                    )}
-                    {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
-                        <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
-                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-                                {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
-                                {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
+                 <div className="flex justify-center bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50">
+                     <ScaledPreviewWrapper 
+                        aspectRatio={screen.aspectRatio}
+                        className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-lg border-2 border-slate-300 dark:border-gray-600 overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
+                     >
+                        {currentPost ? (
+                            <DisplayPostRenderer 
+                                post={currentPost} 
+                                allTags={organization.tags} 
+                                primaryColor={organization.primaryColor}
+                                onVideoEnded={() => advance('next')}
+                                organization={organization}
+                                aspectRatio={screen.aspectRatio}
+                                mode="live"
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
+                               {screen.posts?.length > 0 ? 'Inga aktiva inlägg.' : 'Lägg till inlägg.'}
                             </div>
-                        </div>
-                    )}
+                        )}
+                        {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
+                            <div className={`absolute ${getPositionClasses(branding.position)} z-10`}>
+                                <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
+                                    {branding.showLogo && logoUrl && <img src={logoUrl} alt={`${organization.name} logo`} className="max-h-6 max-w-[75px] object-contain" />}
+                                    {branding.showName && <p className="font-semibold text-xs text-white/90">{organization.brandName || organization.name}</p>}
+                                </div>
+                            </div>
+                        )}
+                     </ScaledPreviewWrapper>
                  </div>
 
                  {activePosts.length > 1 && (
