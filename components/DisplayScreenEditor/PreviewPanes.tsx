@@ -17,9 +17,8 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * En container som renderar barnen i en fast "virtuell" upplösning
  * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
  * 
- * Vi använder en "logisk" upplösning (t.ex. 540x960) snarare än fysisk (1080x1920).
- * Detta gör att textstorlekar (som definieras i rem/px i Tailwind) upplevs som större
- * i förhållande till skärmytan, vilket matchar hur det ser ut på en TV på avstånd.
+ * Vi använder 720p (720x1280) som logisk upplösning. Detta är standard för
+ * många Smart TV-browsers och ger oftast bäst matchning för radbrytningar.
  */
 const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
@@ -29,13 +28,13 @@ const ScaledPreviewWrapper: React.FC<{
     const containerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
 
-    // Definiera basupplösning (Logisk upplösning för layout)
+    // Definiera basupplösning (720p - HD Ready Standard)
     const { width: baseWidth, height: baseHeight } = useMemo(() => {
         switch (aspectRatio) {
-            case '9:16': return { width: 540, height: 960 }; // Stående (Halv 1080p för bättre textskala)
-            case '3:4': return { width: 600, height: 800 };  // Stående Tablet
-            case '4:3': return { width: 800, height: 600 };  // Liggande äldre
-            case '16:9': default: return { width: 960, height: 540 }; // Liggande (Halv 1080p)
+            case '9:16': return { width: 720, height: 1280 }; // Stående HD
+            case '3:4': return { width: 768, height: 1024 };  // Stående Tablet-ish
+            case '4:3': return { width: 1024, height: 768 };  // Liggande Tablet-ish
+            case '16:9': default: return { width: 1280, height: 720 }; // Liggande HD
         }
     }, [aspectRatio]);
 
@@ -134,7 +133,8 @@ const SinglePostPreview: React.FC<{
             <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
                 <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl border-4 border-slate-800 dark:border-slate-600 overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
+                    // Borttagen border och justerad shadow för renare look
+                    className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                 >
                     <DisplayPostRenderer 
                         post={post} 
@@ -150,7 +150,7 @@ const SinglePostPreview: React.FC<{
                         isTextDraggable={isTextDraggable}
                         organization={organization}
                         aspectRatio={screen.aspectRatio}
-                        // Vi använder 'live'-läge internt i wrappern för att fontstorlekar ska beräknas mot den virtuella upplösningen
+                        // Vi använder 'live'-läge internt för att använda korrekta storlekar mot den virtuella upplösningen
                         mode="live" 
                     />
                     {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
@@ -165,7 +165,7 @@ const SinglePostPreview: React.FC<{
             </div>
             
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 text-center">
-                Innehållet skalas för att visa exakt hur det ser ut på skärmen. Dra i text och objekt för att flytta dem.
+                Dra i text och objekt för att flytta dem. Innehållet skalas för att matcha TV-skärmen.
             </p>
         </div>
     );
@@ -244,7 +244,8 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
                  <div className="flex justify-center bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50">
                      <ScaledPreviewWrapper 
                         aspectRatio={screen.aspectRatio}
-                        className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-lg border-2 border-slate-300 dark:border-gray-600 overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
+                        // Borttagen border
+                        className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-lg overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                      >
                         {currentPost ? (
                             <DisplayPostRenderer 
