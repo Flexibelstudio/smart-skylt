@@ -17,9 +17,9 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * En container som renderar barnen i en fast "virtuell" upplösning
  * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
  * 
- * Vi använder 540x960 (qHD) som logisk upplösning. Detta ger en "maffig" känsla
- * där text och bilder blir stora och tydliga, vilket efterliknar upplevelsen
- * av en digital skylt sedd på avstånd.
+ * Vi använder 600x1067 som logisk upplösning. Detta är ett "gyllene medelväg"
+ * mellan 540p (mobilt) och 640p/720p, vilket ger en bra balans där texten är tydlig
+ * och stor ("maffig") utan att radbrytningar blir konstiga.
  */
 const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
@@ -29,13 +29,13 @@ const ScaledPreviewWrapper: React.FC<{
     const containerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
 
-    // Definiera basupplösning (540p - qHD)
+    // Definiera basupplösning (600p - Lite större än 640p)
     const { width: baseWidth, height: baseHeight } = useMemo(() => {
         switch (aspectRatio) {
-            case '9:16': return { width: 540, height: 960 }; // Stående qHD
+            case '9:16': return { width: 600, height: 1067 }; // Stående (Mellan 540 och 640)
             case '3:4': return { width: 768, height: 1024 };  // Stående Tablet
             case '4:3': return { width: 1024, height: 768 };  // Liggande Tablet
-            case '16:9': default: return { width: 960, height: 540 }; // Liggande qHD
+            case '16:9': default: return { width: 1067, height: 600 }; // Liggande
         }
     }, [aspectRatio]);
 
@@ -134,7 +134,7 @@ const SinglePostPreview: React.FC<{
             <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
                 <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                    // Ramen borttagen, behåller en snygg skugga. 60vh höjd.
+                    // Ramen borttagen, behåller en snygg skugga. Ökad höjd till 60vh för bättre vy.
                     className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                 >
                     <DisplayPostRenderer 
@@ -245,7 +245,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
                  <div className="flex justify-center bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50">
                      <ScaledPreviewWrapper 
                         aspectRatio={screen.aspectRatio}
-                        // Ramen borttagen, 70vh höjd
+                        // Ramen borttagen, ökad höjd till 70vh
                         className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-xl overflow-hidden ${isPortrait ? 'h-[70vh] w-auto' : 'w-full'}`}
                      >
                         {currentPost ? (
