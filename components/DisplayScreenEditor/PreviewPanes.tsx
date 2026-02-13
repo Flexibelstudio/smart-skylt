@@ -17,8 +17,9 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * En container som renderar barnen i en fast "virtuell" upplösning
  * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
  * 
- * Vi använder FULL HD-upplösning (1080x1920 eller tvärtom) som bas.
- * Detta garanterar att layouten (radbrytningar etc) blir identisk med den fysiska skärmen.
+ * Vi använder en "logisk" upplösning (t.ex. 540x960) snarare än fysisk (1080x1920).
+ * Detta gör att textstorlekar (som definieras i rem/px i Tailwind) upplevs som större
+ * i förhållande till skärmytan, vilket matchar hur det ser ut på en TV på avstånd.
  */
 const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
@@ -28,13 +29,13 @@ const ScaledPreviewWrapper: React.FC<{
     const containerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
 
-    // Definiera basupplösning (Full HD Standard)
+    // Definiera basupplösning (Logisk upplösning för layout)
     const { width: baseWidth, height: baseHeight } = useMemo(() => {
         switch (aspectRatio) {
-            case '9:16': return { width: 1080, height: 1920 }; // Stående Full HD
-            case '3:4': return { width: 1200, height: 1600 };  // Stående Tablet/Äldre skärm
-            case '4:3': return { width: 1600, height: 1200 };  // Liggande äldre
-            case '16:9': default: return { width: 1920, height: 1080 }; // Liggande Full HD
+            case '9:16': return { width: 540, height: 960 }; // Stående (Halv 1080p för bättre textskala)
+            case '3:4': return { width: 600, height: 800 };  // Stående Tablet
+            case '4:3': return { width: 800, height: 600 };  // Liggande äldre
+            case '16:9': default: return { width: 960, height: 540 }; // Liggande (Halv 1080p)
         }
     }, [aspectRatio]);
 
@@ -149,7 +150,7 @@ const SinglePostPreview: React.FC<{
                         isTextDraggable={isTextDraggable}
                         organization={organization}
                         aspectRatio={screen.aspectRatio}
-                        // Vi använder 'live'-läge internt för att använda exakt samma storlekar som på TV:n
+                        // Vi använder 'live'-läge internt i wrappern för att fontstorlekar ska beräknas mot den virtuella upplösningen
                         mode="live" 
                     />
                     {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && (
@@ -164,7 +165,7 @@ const SinglePostPreview: React.FC<{
             </div>
             
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 text-center">
-                Visar en exakt miniatyr av skärmen (Full HD). Dra i text och objekt för att flytta dem.
+                Innehållet skalas för att visa exakt hur det ser ut på skärmen. Dra i text och objekt för att flytta dem.
             </p>
         </div>
     );
