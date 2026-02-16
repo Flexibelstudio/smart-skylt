@@ -69,6 +69,8 @@ const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') 
         case 'xl': return isPreview ? 'text-sm' : 'text-xl';
         case '2xl': return isPreview ? 'text-base' : 'text-2xl';
         case '3xl': return isPreview ? 'text-lg' : 'text-3xl';
+        case '4xl': return isPreview ? 'text-2xl' : 'text-3xl';
+        case '5xl': return isPreview ? 'text-3xl' : 'text-4xl';
         default: return isPreview ? 'text-[10px]' : 'text-base';
     }
 };
@@ -85,10 +87,8 @@ const getTagFontFamilyClass = (family?: Tag['fontFamily']) => {
 
 // --- NEW: Fluid Typography Logic (Container Queries) ---
 // Returns a style object with fontSize in 'cqw' units.
+// This guarantees that text scales perfectly with the container width.
 const getFluidFontSizeStyle = (type: 'headline' | 'body', size?: string) => {
-    // Map standard sizes to percentage of container width (cqw)
-    // This ensures WYSIWYG consistency across all resolutions.
-    
     if (type === 'headline') {
         switch (size) {
             case 'sm': return { fontSize: '4cqw', lineHeight: '1.2' };
@@ -100,6 +100,9 @@ const getFluidFontSizeStyle = (type: 'headline' | 'body', size?: string) => {
             case '4xl': return { fontSize: '15cqw', lineHeight: '1' }; // Huge
             case '5xl': return { fontSize: '18cqw', lineHeight: '1' };
             case '6xl': return { fontSize: '22cqw', lineHeight: '0.9' }; // Massive
+            case '7xl': return { fontSize: '26cqw', lineHeight: '0.9' };
+            case '8xl': return { fontSize: '30cqw', lineHeight: '0.9' };
+            case '9xl': return { fontSize: '35cqw', lineHeight: '0.9' };
             default: return { fontSize: '10cqw', lineHeight: '1.1' };
         }
     } else {
@@ -111,7 +114,8 @@ const getFluidFontSizeStyle = (type: 'headline' | 'body', size?: string) => {
             case 'lg': return { fontSize: '4.8cqw', lineHeight: '1.3' }; // Default normal
             case 'xl': return { fontSize: '6cqw', lineHeight: '1.2' };
             case '2xl': return { fontSize: '8cqw', lineHeight: '1.2' };
-            default: return { fontSize: '3.8cqw', lineHeight: '1.3' };
+            case '3xl': return { fontSize: '10cqw', lineHeight: '1.2' };
+            default: return { fontSize: '4.8cqw', lineHeight: '1.3' };
         }
     }
 };
@@ -144,8 +148,6 @@ const getShadowStyle = (type: string | undefined, color: string | undefined, org
     const resolvedColor = resolveColor(color, 'rgba(0,0,0,0.5)', organization);
     
     // Scale shadow relative to container width using cqw for consistency too
-    // Note: cqw works in modern browsers. Fallback to px if needed but we assume modern env for digital signage.
-    
     switch (type) {
         case 'soft': return `0 0.5cqw 1.5cqw ${resolvedColor}`;
         case 'hard': return `0.4cqw 0.4cqw 0px ${resolvedColor}`;
