@@ -17,9 +17,10 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * En container som renderar barnen i en fast "virtuell" upplösning
  * men skalar ner hela resultatet med CSS transform för att passa i föräldern.
  * 
- * Vi använder 600x1067 som logisk upplösning. Detta är ett "gyllene medelväg"
- * mellan 540p (mobilt) och 640p/720p, vilket ger en bra balans där texten är tydlig
- * och stor ("maffig") utan att radbrytningar blir konstiga.
+ * Vi använder 640x1138 som logisk upplösning. 
+ * Detta är "Gyllene medelvägen":
+ * - Bredare än 600px (löser radbrytningsproblemen/gröten).
+ * - Smalare än 720px (gör att texten inte blir pytteliten på laptop).
  */
 const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
@@ -29,13 +30,13 @@ const ScaledPreviewWrapper: React.FC<{
     const containerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
 
-    // Definiera basupplösning (600p - Lite större än 640p)
+    // Definiera basupplösning (640p)
     const { width: baseWidth, height: baseHeight } = useMemo(() => {
         switch (aspectRatio) {
-            case '9:16': return { width: 600, height: 1067 }; // Stående (Mellan 540 och 640)
-            case '3:4': return { width: 768, height: 1024 };  // Stående Tablet
+            case '9:16': return { width: 640, height: 1138 }; // Stående (16:9 ratio på 640 bredd)
+            case '3:4': return { width: 768, height: 1024 };  // Stående Tablet (Standard iPad)
             case '4:3': return { width: 1024, height: 768 };  // Liggande Tablet
-            case '16:9': default: return { width: 1067, height: 600 }; // Liggande
+            case '16:9': default: return { width: 1138, height: 640 }; // Liggande
         }
     }, [aspectRatio]);
 
@@ -134,7 +135,7 @@ const SinglePostPreview: React.FC<{
             <div className={`bg-slate-200 dark:bg-black/20 p-4 rounded-xl border border-slate-300 dark:border-slate-700/50 flex justify-center`}>
                 <ScaledPreviewWrapper 
                     aspectRatio={screen.aspectRatio}
-                    // Ramen borttagen, behåller en snygg skugga. Ökad höjd till 60vh för bättre vy.
+                    // Ramen borttagen, ökad höjd till 0vh för bättre vy
                     className={`bg-slate-300 dark:bg-slate-900 rounded-lg shadow-2xl overflow-hidden ${isPortrait ? 'h-[60vh] w-auto' : 'w-full'}`}
                 >
                     <DisplayPostRenderer 
