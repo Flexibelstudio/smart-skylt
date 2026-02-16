@@ -60,6 +60,7 @@ const mapLegacyPosition = (position?: string) => ({ x: 90, y: 90 });
 const isPreviewMode = (mode?: 'preview' | 'live') => mode === 'preview';
 
 const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') => {
+    // Tags still use fixed sizes for now as they are stamps, but could be upgraded later.
     const isPreview = isPreviewMode(mode);
     switch (size) {
         case 'sm': return isPreview ? 'text-[8px]' : 'text-sm';
@@ -82,33 +83,36 @@ const getTagFontFamilyClass = (family?: Tag['fontFamily']) => {
     }
 };
 
-const getHeadlineFontSizeClass = (size?: string, mode?: string) => {
-    const isPreview = isPreviewMode(mode as any);
-    if (isPreview) return 'text-sm';
-    switch (size) {
-        case 'sm': return 'text-xl';
-        case 'md': return 'text-2xl';
-        case 'lg': return 'text-3xl';
-        case 'xl': return 'text-4xl';
-        case '2xl': return 'text-5xl';
-        case '3xl': return 'text-6xl';
-        case '4xl': return 'text-7xl';
-        case '5xl': return 'text-8xl';
-        case '6xl': return 'text-9xl';
-        default: return 'text-5xl';
-    }
-};
-
-const getBodyFontSizeClass = (size?: string, mode?: string) => {
-    const isPreview = isPreviewMode(mode as any);
-    switch (size) {
-        case 'xs': return isPreview ? 'text-[8px]' : 'text-base';
-        case 'sm': return isPreview ? 'text-[10px]' : 'text-lg';
-        case 'md': return isPreview ? 'text-xs' : 'text-xl';
-        case 'lg': return isPreview ? 'text-sm' : 'text-2xl';
-        case 'xl': return isPreview ? 'text-base' : 'text-3xl';
-        case '2xl': return isPreview ? 'text-lg' : 'text-4xl';
-        default: return isPreview ? 'text-xs' : 'text-xl';
+// --- NEW: Fluid Typography Logic (Container Queries) ---
+// Returns a style object with fontSize in 'cqw' units.
+const getFluidFontSizeStyle = (type: 'headline' | 'body', size?: string) => {
+    // Map standard sizes to percentage of container width (cqw)
+    // This ensures WYSIWYG consistency across all resolutions.
+    
+    if (type === 'headline') {
+        switch (size) {
+            case 'sm': return { fontSize: '4cqw', lineHeight: '1.2' };
+            case 'md': return { fontSize: '5cqw', lineHeight: '1.2' };
+            case 'lg': return { fontSize: '6cqw', lineHeight: '1.1' };
+            case 'xl': return { fontSize: '8cqw', lineHeight: '1.1' };   // Default normal
+            case '2xl': return { fontSize: '10cqw', lineHeight: '1.1' };
+            case '3xl': return { fontSize: '12cqw', lineHeight: '1.05' };
+            case '4xl': return { fontSize: '15cqw', lineHeight: '1' }; // Huge
+            case '5xl': return { fontSize: '18cqw', lineHeight: '1' };
+            case '6xl': return { fontSize: '22cqw', lineHeight: '0.9' }; // Massive
+            default: return { fontSize: '10cqw', lineHeight: '1.1' };
+        }
+    } else {
+        // Body text
+        switch (size) {
+            case 'xs': return { fontSize: '2.5cqw', lineHeight: '1.4' };
+            case 'sm': return { fontSize: '3cqw', lineHeight: '1.4' };
+            case 'md': return { fontSize: '3.8cqw', lineHeight: '1.3' };
+            case 'lg': return { fontSize: '4.8cqw', lineHeight: '1.3' }; // Default normal
+            case 'xl': return { fontSize: '6cqw', lineHeight: '1.2' };
+            case '2xl': return { fontSize: '8cqw', lineHeight: '1.2' };
+            default: return { fontSize: '3.8cqw', lineHeight: '1.3' };
+        }
     }
 };
 
@@ -139,13 +143,13 @@ const getShadowStyle = (type: string | undefined, color: string | undefined, org
     if (!type || type === 'none') return undefined;
     const resolvedColor = resolveColor(color, 'rgba(0,0,0,0.5)', organization);
     
-    const scale = isPreviewMode(mode as any) ? 0.25 : 1;
-    const s = (val: number) => `${val * scale}px`;
-
+    // Scale shadow relative to container width using cqw for consistency too
+    // Note: cqw works in modern browsers. Fallback to px if needed but we assume modern env for digital signage.
+    
     switch (type) {
-        case 'soft': return `0 ${s(4)} ${s(10)} ${resolvedColor}`;
-        case 'hard': return `${s(3)} ${s(3)} 0px ${resolvedColor}`;
-        case 'glow': return `0 0 ${s(10)} ${resolvedColor}, 0 0 ${s(20)} ${resolvedColor}`;
+        case 'soft': return `0 0.5cqw 1.5cqw ${resolvedColor}`;
+        case 'hard': return `0.4cqw 0.4cqw 0px ${resolvedColor}`;
+        case 'glow': return `0 0 1cqw ${resolvedColor}, 0 0 2cqw ${resolvedColor}`;
         default: return undefined;
     }
 };
@@ -452,18 +456,23 @@ const DraggableTextElement: React.FC<any> = ({
     };
     
     // Compute Effects Styles
+    // We use the new fluid logic for font sizing
+    const fluidStyle = getFluidFontSizeStyle(type, fontSize);
+    
     const textEffectStyle: React.CSSProperties = {
+        ...fluidStyle, // Applies fontSize (cqw) and lineHeight
         textShadow: getShadowStyle(shadowType, shadowColor, organization, mode),
         WebkitTextStroke: outlineWidth && outlineWidth > 0 
-            ? `${outlineWidth * (isPreviewMode(mode) ? 0.25 : 1)}px ${resolveColor(outlineColor, '#000000', organization)}` 
+            ? `${outlineWidth * 0.15}cqw ${resolveColor(outlineColor, '#000000', organization)}` // Use cqw for stroke too
             : undefined,
     };
 
+    // Removed font size class since we use inline style now. Only font family and weight remain.
     const fontClass = type === 'headline' 
-        ? `${getHeadlineFontSizeClass(fontSize, mode)} font-bold leading-tight break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
-        : `${getBodyFontSizeClass(fontSize, mode)} mt-4 break-words ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
+        ? `font-bold break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
+        : `mt-[1.5cqw] break-words ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
 
-    const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-6 rounded-xl';
+    const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-[2cqw] rounded-xl';
     
     // Resolve background color and check alpha
     const resolvedBgColor = bgEnabled ? resolveColor(bgColor, 'rgba(0,0,0,0.5)', organization) : 'transparent';
@@ -854,7 +863,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const bAlign = post.bodyTextAlign ?? post.textAlign ?? 'center';
 
     return (
-        <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor }}>
+        // IMPORTANT: containerType: 'size' is critical for fluid typography (cqw units) to work correctly.
+        <div className="w-full h-full relative overflow-hidden" style={{ backgroundColor, containerType: 'size' }}>
             {isMediaLayout && post.layout !== 'collage' && (
                 <>
                     {(post.imageUrl || isBridgeOnly) && (
