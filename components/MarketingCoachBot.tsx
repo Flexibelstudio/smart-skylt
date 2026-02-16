@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Chat, GenerateContentResponse, FunctionDeclaration, Type } from '@google/genai';
 import { ChatMessage, Organization, DisplayPost, DisplayScreen } from '../types';
 import { initializeMarketingCoachChat, fileToBase64, generateCompletePost, createDisplayPostFunctionDeclaration } from '../services/geminiService';
-import { getVoiceServerConfig } from '../services/firebaseService';
+import { getVoiceServerConfig, uploadPostAsset } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon } from './icons';
 import { useToast } from '../context/ToastContext';
@@ -118,6 +118,18 @@ const ensureString = (val: any, fallback: string): string => {
     return fallback;
 };
 
+// Helper to convert base64 data URI to Blob
+const dataUriToBlob = (dataURI: string): Blob => {
+    const byteString = atob(dataURI.split(',')[1]);
+    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], { type: mimeString });
+};
+
 /* -------------------------------- MAIN ----------------------------- */
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -133,7 +145,13 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const { currentUser } = useAuth();
   const { showToast } = useToast();
   const assistantProfile = useAssistantProfile();
-  const { updateDisplayScreen } = useLocation();
+  const { updateDisplayScreen, displayScreens } = useLocation();
+
+  // We use a ref to the latest organization data to prevent stale closures in async callbacks
+  const organizationRef = useRef(organization);
+  useEffect(() => {
+    organizationRef.current = organization;
+  }, [organization]);
 
   // Robust check: ensure assistantName is absolutely a string to prevent "Object invalid as child" errors
   const assistantName = ensureString(assistantProfile?.name, 'Skylie');
@@ -386,41 +404,65 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     setConnectionState('disconnected');
   }, [cleanupVoiceResources]);
 
-  const handleMultiChannelSelect = async (screens: DisplayScreen[]) => {
+  const handleMultiChannelSelect = async (selectedScreens: DisplayScreen[]) => {
     if (!postPrompt) {
         showToast({ message: "Kunde inte hitta instruktionerna för inlägget. Försök igen.", type: 'error' });
         return;
     }
     
-    if (screens.length === 0) return;
+    if (selectedScreens.length === 0) return;
+    
+    // Access the latest organization data via ref to avoid stale closures
+    const currentOrg = organizationRef.current;
     
     setIsChannelSelectOpen(false);
     setIsLoading(true);
     ensureAssistantRow();
-    const screenNames = screens.map(s => `"${s.name}"`).join(', ');
+    const screenNames = selectedScreens.map(s => `"${s.name}"`).join(', ');
     appendToAssistant(`Jag förstår! Jag skapar nu utkast för ${screenNames}... Det kan ta en liten stund.`);
 
     try {
-        const promises = screens.map(async (screen) => {
-            const { postData, imageData } = await generateCompletePost(postPrompt, organization, screen.aspectRatio);
-            const imageUrl = imageData ? `data:${imageData.mimeType};base64,${imageData.imageBytes}` : undefined;
+        const promises = selectedScreens.map(async (screen) => {
+            const { postData, imageData } = await generateCompletePost(postPrompt, currentOrg, screen.aspectRatio);
+            
+            // Create a unique ID for the new post
+            const newPostId = `post-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+            let imageUrl: string | undefined = undefined;
+
+            // FIX: If we have an AI generated image (base64), upload it to Storage FIRST.
+            // Firestore documents have a 1MB limit. Base64 images often exceed this, causing writes to fail.
+            if (imageData) {
+                try {
+                    const blob = dataUriToBlob(`data:${imageData.mimeType};base64,${imageData.imageBytes}`);
+                    const file = new File([blob], `ai-generated-image.jpg`, { type: 'image/jpeg' });
+                    // Upload to Firebase Storage
+                    imageUrl = await uploadPostAsset(currentOrg.id, newPostId, file, () => {});
+                } catch (uploadError) {
+                    console.error("Failed to upload AI image to storage", uploadError);
+                    // Fallback to base64 if upload fails (might crash Firestore if too big, but better than nothing)
+                    imageUrl = `data:${imageData.mimeType};base64,${imageData.imageBytes}`;
+                }
+            }
             
             const newPost: DisplayPost = {
-                id: `post-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                id: newPostId,
                 internalTitle: postData.headline || 'AI-genererat inlägg',
                 ...(postData as Omit<DisplayPost, 'id' | 'internalTitle'>),
                 imageUrl,
                 isAiGeneratedImage: !!imageUrl,
             };
 
-            const targetScreen = organization.displayScreens?.find(s => s.id === screen.id);
+            // Re-fetch the target screen from the latest displayScreens list (from context via hook, passed as prop)
+            // or rely on organizationRef if displayScreens are synced there.
+            // Using the `organizationRef` which should be updated by the useEffect above.
+            const targetScreen = currentOrg.displayScreens?.find(s => s.id === screen.id);
+            
             if (targetScreen) {
                 // FIX: Prepend the new post so it appears first
                 const updatedPosts = [newPost, ...(targetScreen.posts || [])];
                 await updateDisplayScreen(screen.id, { posts: updatedPosts });
                 
                 // IMPORTANT: Construct an updated screen object manually to pass to navigation.
-                // The 'targetScreen' from props might be stale by the time navigation happens.
                 const updatedScreen = { ...targetScreen, posts: updatedPosts };
                 return { screen: updatedScreen, post: newPost };
             }
