@@ -145,8 +145,12 @@ const TextBlock: React.FC<{
     // Style props
     fontFamily: string;
     onFontChange: (val: any) => void;
-    fontSize: string;
-    onSizeChange: (val: string) => void;
+    
+    // NEW: Font Scale props
+    fontScale?: number;
+    onScaleChange: (val: number) => void;
+    defaultScale: number;
+
     color: string;
     onColorChange: (val: string) => void;
     textAlign: string;
@@ -177,7 +181,7 @@ const TextBlock: React.FC<{
 }> = ({ 
     label, textValue, onTextChange, 
     fontFamily, onFontChange, 
-    fontSize, onSizeChange, 
+    fontScale, onScaleChange, defaultScale,
     color, onColorChange, 
     textAlign, onAlignChange,
     bgEnabled, onBgEnabledChange,
@@ -223,26 +227,14 @@ const TextBlock: React.FC<{
             />
 
             {/* Inline Design Controls */}
-            <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-600/50">
+            <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
+                
+                {/* Row 1: Font, Align, Color */}
                 <div className="flex flex-wrap gap-3 items-center">
                     <div className="flex-grow min-w-[140px]">
                         <FontSelector value={fontFamily as any} onChange={onFontChange} />
                     </div>
                     
-                    <div className="w-20">
-                        <StyledSelect value={fontSize} onChange={e => onSizeChange(e.target.value)} className="!h-10 !py-1 !text-sm">
-                            <option value="xs">XS</option>
-                            <option value="sm">Liten</option>
-                            <option value="md">Mellan</option>
-                            <option value="lg">Stor</option>
-                            <option value="xl">XL</option>
-                            <option value="2xl">2XL</option>
-                            <option value="3xl">3XL</option>
-                            <option value="4xl">4XL</option>
-                            <option value="5xl">Massiv</option>
-                        </StyledSelect>
-                    </div>
-
                     <div className="flex bg-slate-200 dark:bg-slate-600 rounded-lg p-1 gap-1">
                         {[
                             { id: 'left', icon: <TextAlignLeftIcon className="w-4 h-4"/> },
@@ -263,8 +255,31 @@ const TextBlock: React.FC<{
                     <ColorPaletteInput value={color} onChange={onColorChange} organization={organization} />
                 </div>
 
+                {/* Row 2: Size Slider */}
+                <div className="flex items-center gap-3">
+                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase w-12 flex-shrink-0">Storlek</label>
+                    <input
+                        type="range"
+                        min="1.0"
+                        max="40.0"
+                        step="0.5"
+                        value={fontScale ?? defaultScale}
+                        onChange={(e) => onScaleChange(parseFloat(e.target.value))}
+                        className="flex-grow h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                    <input
+                        type="number"
+                        min="1.0"
+                        max="40.0"
+                        step="0.5"
+                        value={fontScale ?? defaultScale}
+                        onChange={(e) => onScaleChange(parseFloat(e.target.value))}
+                        className="w-16 p-1.5 text-center text-sm font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-primary focus:border-primary"
+                    />
+                </div>
+
                 {/* Effects Section */}
-                <div className="flex flex-wrap gap-x-6 gap-y-3 pt-2 items-center">
+                <div className="flex flex-wrap gap-x-6 gap-y-3 items-center">
                     {/* Shadow */}
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Skugga</span>
@@ -611,8 +626,11 @@ export const Step2_Content: React.FC<{
                     onTextChange={val => handleFieldChange('headline', val)}
                     fontFamily={post.headlineFontFamily || organization.headlineFontFamily || 'display'}
                     onFontChange={val => handleFieldChange('headlineFontFamily', val)}
-                    fontSize={post.headlineFontSize || '4xl'}
-                    onSizeChange={val => handleFieldChange('headlineFontSize', val)}
+                    
+                    fontScale={post.headlineFontScale}
+                    onScaleChange={val => handleFieldChange('headlineFontScale', val)}
+                    defaultScale={8.0}
+
                     color={post.headlineTextColor || post.textColor || 'white'}
                     onColorChange={val => handleFieldChange('headlineTextColor', val)}
                     textAlign={post.headlineTextAlign || post.textAlign || 'center'}
@@ -644,8 +662,11 @@ export const Step2_Content: React.FC<{
                     onTextChange={val => handleFieldChange('body', val)}
                     fontFamily={post.bodyFontFamily || organization.bodyFontFamily || 'sans'}
                     onFontChange={val => handleFieldChange('bodyFontFamily', val)}
-                    fontSize={post.bodyFontSize || 'lg'}
-                    onSizeChange={val => handleFieldChange('bodyFontSize', val)}
+                    
+                    fontScale={post.bodyFontScale}
+                    onScaleChange={val => handleFieldChange('bodyFontScale', val)}
+                    defaultScale={4.8}
+
                     color={post.bodyTextColor || post.textColor || 'white'}
                     onColorChange={val => handleFieldChange('bodyTextColor', val)}
                     textAlign={post.bodyTextAlign || post.textAlign || 'center'}
