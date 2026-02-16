@@ -13,6 +13,7 @@ import {
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
+import { ScaledPreviewWrapper } from './PreviewPanes';
 
 interface ControlPanelProps {
     screen: DisplayScreen;
@@ -217,6 +218,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </span>
         );
     };
+
+    const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+    const thumbClass = isPortrait ? 'w-12 h-20' : 'w-20 h-12';
 
     return (
         <div className="space-y-6">
@@ -433,10 +437,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                     </div>
                                 )}
                                 
-                                {/* Thumbnail */}
-                                <div className="w-20 h-12 bg-slate-100 dark:bg-slate-900 rounded overflow-hidden flex-shrink-0 relative border border-slate-100 dark:border-slate-700 shadow-sm">
-                                    <DisplayPostRenderer post={post} organization={organization} mode="preview" showTags={false} />
-                                    {post.layout.includes('video') && <div className="absolute inset-0 flex items-center justify-center bg-black/20"><VideoCameraIcon className="w-4 h-4 text-white drop-shadow-md"/></div>}
+                                {/* Thumbnail - Responsive to Aspect Ratio */}
+                                <div className={`${thumbClass} bg-slate-100 dark:bg-slate-900 rounded overflow-hidden flex-shrink-0 relative border border-slate-100 dark:border-slate-700 shadow-sm`}>
+                                    <ScaledPreviewWrapper aspectRatio={screen.aspectRatio}>
+                                        <DisplayPostRenderer 
+                                            post={post} 
+                                            organization={organization} 
+                                            mode="preview" 
+                                            showTags={false} 
+                                            aspectRatio={screen.aspectRatio}
+                                        />
+                                    </ScaledPreviewWrapper>
+                                    {post.layout.includes('video') && <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none"><VideoCameraIcon className="w-4 h-4 text-white drop-shadow-md"/></div>}
                                 </div>
 
                                 {/* Info */}
