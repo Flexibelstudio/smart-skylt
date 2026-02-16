@@ -399,7 +399,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     appendToAssistant(`Jag förstår! Jag skapar nu utkast för ${screenNames}... Det kan ta en liten stund.`);
 
     try {
-        const results = await Promise.allSettled(screens.map(async (screen) => {
+        const promises = screens.map(async (screen) => {
             const { postData, imageData } = await generateCompletePost(postPrompt, organization, screen.aspectRatio);
             const imageUrl = imageData ? `data:${imageData.mimeType};base64,${imageData.imageBytes}` : undefined;
             
@@ -413,27 +413,45 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
 
             const targetScreen = organization.displayScreens?.find(s => s.id === screen.id);
             if (targetScreen) {
-                const updatedPosts = [...(targetScreen.posts || []), newPost];
+                // FIX: Prepend the new post so it appears first
+                const updatedPosts = [newPost, ...(targetScreen.posts || [])];
                 await updateDisplayScreen(screen.id, { posts: updatedPosts });
+                return { screen: targetScreen, post: newPost };
             }
-            return screen.name;
-        }));
+            throw new Error(`Screen ${screen.id} not found`);
+        });
 
-        const successCount = results.filter(r => r.status === 'fulfilled').length;
-        const failureCount = results.length - successCount;
+        const results = await Promise.allSettled(promises);
 
-        if (successCount > 0) {
-            appendToAssistant(`\n\nKlart! ✨ Jag har skapat ${successCount} nya utkast. Du hittar dem i respektive kanals planeringsvy.`);
-            showToast({ message: "Nya utkast har skapats!", type: "success" });
+        const successfulResults = results
+            .filter((r): r is PromiseFulfilledResult<{ screen: DisplayScreen, post: DisplayPost }> => r.status === 'fulfilled')
+            .map(r => r.value);
+
+        const failureCount = results.length - successfulResults.length;
+
+        if (successfulResults.length > 0) {
+            // Pick the first one to navigate to
+            const { screen, post } = successfulResults[0];
+            
+            showToast({ message: "Utkast skapat! Öppnar redigeraren...", type: "success" });
+            
+            // Close bot
+            onClose();
+            
+            // Navigate directly to the editor
+            onEditDisplayScreenFromBot(screen, post);
+            
+            // Stop here so we don't continue adding chat messages
+            return;
         }
         
         if (failureCount > 0) {
-             appendToAssistant(`\n\nOBS: Några inlägg kunde tyvärr inte skapas. Prova gärna igen för de kanalerna.`);
+             appendToAssistant(`\n\nTyvärr, jag kunde inte skapa inläggen just nu. Ett fel inträffade.`);
         }
 
     } catch (e) {
         console.error("Multi-channel post creation failed", e);
-        appendToAssistant(`\n\nUrsäkta, ett fel inträffade när jag försökte skapa inläggen. Prova att fråga igen!`);
+        appendToAssistant(`\n\nUrsäkta, ett allvarligt fel inträffade.`);
     } finally {
         setIsLoading(false);
         setPostPrompt(null);
