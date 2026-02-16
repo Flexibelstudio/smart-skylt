@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DisplayPost, DisplayScreen, Organization, BrandingOptions } from '../../types';
+import { DisplayPost, DisplayScreen, Organization, BrandingOptions, AdditionalTextElement } from '../../types';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ChevronDownIcon, PlayIcon, PauseIcon } from '../icons';
 
@@ -103,6 +103,9 @@ const SinglePostPreview: React.FC<{
     // NEW: Text Content Handlers
     onUpdateHeadlineText?: (text: string) => void,
     onUpdateBodyText?: (text: string) => void,
+    // NEW: Additional Elements Handler
+    onUpdateAdditionalElement?: (id: string, updates: Partial<AdditionalTextElement>) => void,
+    
     isTextDraggable?: boolean,
 }> = ({ 
     post, screen, organization, onUpdateTagPosition, 
@@ -111,6 +114,7 @@ const SinglePostPreview: React.FC<{
     onUpdateQrPosition, onUpdateQrWidth, 
     onUpdateHeadlineFontScale, onUpdateBodyFontScale,
     onUpdateHeadlineText, onUpdateBodyText,
+    onUpdateAdditionalElement,
     isTextDraggable 
 }) => {
     
@@ -163,6 +167,7 @@ const SinglePostPreview: React.FC<{
                         onUpdateBodyFontScale={onUpdateBodyFontScale}
                         onUpdateHeadlineText={onUpdateHeadlineText}
                         onUpdateBodyText={onUpdateBodyText}
+                        onUpdateAdditionalElement={onUpdateAdditionalElement}
                         
                         isTextDraggable={isTextDraggable}
                         organization={organization}
@@ -325,6 +330,8 @@ interface PreviewPaneProps {
     // NEW Text Props
     onUpdateHeadlineText?: (text: string) => void;
     onUpdateBodyText?: (text: string) => void;
+    // NEW Handler for additional elements
+    onUpdateAdditionalElement?: (id: string, updates: Partial<AdditionalTextElement>) => void;
     isTextDraggable?: boolean;
 }
 export const PreviewPane: React.FC<PreviewPaneProps> = ({ 
@@ -334,6 +341,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
     onUpdateQrPosition, onUpdateQrWidth, 
     onUpdateHeadlineFontScale, onUpdateBodyFontScale,
     onUpdateHeadlineText, onUpdateBodyText,
+    onUpdateAdditionalElement,
     isTextDraggable 
 }) => {
     if (editingPost) {
@@ -354,6 +362,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
                 onUpdateBodyFontScale={onUpdateBodyFontScale}
                 onUpdateHeadlineText={onUpdateHeadlineText}
                 onUpdateBodyText={onUpdateBodyText}
+                onUpdateAdditionalElement={onUpdateAdditionalElement}
                 isTextDraggable={isTextDraggable}
             />
         );

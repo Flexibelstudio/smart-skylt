@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import { DisplayPost, Organization, SkyltIdeSuggestion } from '../../../types';
+import { DisplayPost, Organization, SkyltIdeSuggestion, AdditionalTextElement } from '../../../types';
 import { StyledInput, FontSelector, StyledSelect } from '../../Forms';
-import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon } from '../../icons';
+import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { 
     refineDisplayPostContent,
@@ -172,12 +172,15 @@ const TextBlock: React.FC<{
     outlineColor: string;
     onOutlineColorChange: (val: string) => void;
     
-    // AI props
-    onAiSuggest: () => void;
-    onRefine: (command: string) => void;
-    aiLoading: boolean | string;
+    // AI props (optional)
+    onAiSuggest?: () => void;
+    onRefine?: (command: string) => void;
+    aiLoading?: boolean | string;
     organization: Organization;
     rows?: number;
+    
+    // Delete action (for extra text boxes)
+    onDelete?: () => void;
 }> = ({ 
     label, textValue, onTextChange, 
     fontFamily, onFontChange, 
@@ -190,7 +193,8 @@ const TextBlock: React.FC<{
     shadowColor, onShadowColorChange,
     outlineWidth, onOutlineWidthChange,
     outlineColor, onOutlineColorChange,
-    onAiSuggest, onRefine, aiLoading, organization, rows = 2 
+    onAiSuggest, onRefine, aiLoading, organization, rows = 2,
+    onDelete
 }) => {
     
     const aiActions = [
@@ -203,149 +207,173 @@ const TextBlock: React.FC<{
         { label: 'Emojis', command: 'add_emojis' },
     ];
 
+    const [isExpanded, setIsExpanded] = useState(!onDelete); // Default expanded for main blocks, collapsed for optional ones if initially created empty? Actually always expanded is fine for now.
+
     return (
         <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
             <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</label>
-                <button
-                    type="button"
-                    onClick={onAiSuggest}
-                    disabled={!!aiLoading}
-                    className="flex items-center gap-1 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50"
-                >
-                    <SparklesIcon className="h-3 w-3" />
-                    AI-förslag
-                </button>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                    {label}
+                    {onDelete && (
+                        <button onClick={() => setIsExpanded(!isExpanded)} className="text-slate-400 hover:text-slate-600">
+                            {isExpanded ? '▼' : '▶'}
+                        </button>
+                    )}
+                </label>
+                <div className="flex items-center gap-2">
+                    {onAiSuggest && (
+                        <button
+                            type="button"
+                            onClick={onAiSuggest}
+                            disabled={!!aiLoading}
+                            className="flex items-center gap-1 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50"
+                        >
+                            <SparklesIcon className="h-3 w-3" />
+                            AI-förslag
+                        </button>
+                    )}
+                    {onDelete && (
+                        <button onClick={onDelete} className="p-1 text-slate-400 hover:text-red-500 rounded transition-colors" title="Ta bort textruta">
+                            <TrashIcon className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
             </div>
             
-            <textarea 
-                rows={rows} 
-                value={textValue} 
-                onChange={e => onTextChange(e.target.value)} 
-                className="w-full bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-300 dark:border-slate-600 mb-3 focus:ring-2 focus:ring-primary focus:outline-none transition-shadow"
-                placeholder={`Skriv din ${label.toLowerCase()} här...`}
-            />
-
-            {/* Inline Design Controls */}
-            <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
-                
-                {/* Row 1: Font, Align, Color */}
-                <div className="flex flex-wrap gap-3 items-center">
-                    <div className="flex-grow min-w-[140px]">
-                        <FontSelector value={fontFamily as any} onChange={onFontChange} />
-                    </div>
-                    
-                    <div className="flex bg-slate-200 dark:bg-slate-600 rounded-lg p-1 gap-1">
-                        {[
-                            { id: 'left', icon: <TextAlignLeftIcon className="w-4 h-4"/> },
-                            { id: 'center', icon: <TextAlignCenterIcon className="w-4 h-4"/> },
-                            { id: 'right', icon: <TextAlignRightIcon className="w-4 h-4"/> }
-                        ].map(opt => (
-                            <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => onAlignChange(opt.id)}
-                                className={`p-1.5 rounded-md transition-all ${textAlign === opt.id ? 'bg-white dark:bg-slate-800 text-primary shadow-sm' : 'text-slate-500 dark:text-slate-300 hover:text-slate-700'}`}
-                            >
-                                {opt.icon}
-                            </button>
-                        ))}
-                    </div>
-
-                    <ColorPaletteInput value={color} onChange={onColorChange} organization={organization} />
-                </div>
-
-                {/* Row 2: Size Slider */}
-                <div className="flex items-center gap-3">
-                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase w-12 flex-shrink-0">Storlek</label>
-                    <input
-                        type="range"
-                        min="1.0"
-                        max="40.0"
-                        step="0.5"
-                        value={fontScale ?? defaultScale}
-                        onChange={(e) => onScaleChange(parseFloat(e.target.value))}
-                        className="flex-grow h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
+            {isExpanded && (
+                <>
+                    <textarea 
+                        rows={rows} 
+                        value={textValue} 
+                        onChange={e => onTextChange(e.target.value)} 
+                        className="w-full bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-300 dark:border-slate-600 mb-3 focus:ring-2 focus:ring-primary focus:outline-none transition-shadow"
+                        placeholder={`Skriv din ${label.toLowerCase()} här...`}
                     />
-                    <input
-                        type="number"
-                        min="1.0"
-                        max="40.0"
-                        step="0.5"
-                        value={fontScale ?? defaultScale}
-                        onChange={(e) => onScaleChange(parseFloat(e.target.value))}
-                        className="w-16 p-1.5 text-center text-sm font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-primary focus:border-primary"
-                    />
-                </div>
 
-                {/* Effects Section */}
-                <div className="flex flex-wrap gap-x-6 gap-y-3 items-center">
-                    {/* Shadow */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Skugga</span>
-                        <div className="flex bg-slate-200 dark:bg-slate-600 rounded-md p-0.5">
-                            {[
-                                { id: 'none', label: '🚫' },
-                                { id: 'soft', label: '☁️' },
-                                { id: 'hard', label: '🧱' },
-                                { id: 'glow', label: '✨' }
-                            ].map(opt => (
-                                <button
-                                    key={opt.id}
-                                    type="button"
-                                    onClick={() => onShadowTypeChange(opt.id)}
-                                    className={`px-2 py-1 text-xs rounded transition-all ${shadowType === opt.id ? 'bg-white dark:bg-slate-800 shadow-sm text-primary' : 'text-slate-500 dark:text-slate-300 hover:text-slate-700'}`}
-                                    title={opt.id}
-                                >
-                                    {opt.label}
-                                </button>
-                            ))}
+                    {/* Inline Design Controls */}
+                    <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
+                        
+                        {/* Row 1: Font, Align, Color */}
+                        <div className="flex flex-wrap gap-3 items-center">
+                            <div className="flex-grow min-w-[140px]">
+                                <FontSelector value={fontFamily as any} onChange={onFontChange} />
+                            </div>
+                            
+                            <div className="flex bg-slate-200 dark:bg-slate-600 rounded-lg p-1 gap-1">
+                                {[
+                                    { id: 'left', icon: <TextAlignLeftIcon className="w-4 h-4"/> },
+                                    { id: 'center', icon: <TextAlignCenterIcon className="w-4 h-4"/> },
+                                    { id: 'right', icon: <TextAlignRightIcon className="w-4 h-4"/> }
+                                ].map(opt => (
+                                    <button
+                                        key={opt.id}
+                                        type="button"
+                                        onClick={() => onAlignChange(opt.id)}
+                                        className={`p-1.5 rounded-md transition-all ${textAlign === opt.id ? 'bg-white dark:bg-slate-800 text-primary shadow-sm' : 'text-slate-500 dark:text-slate-300 hover:text-slate-700'}`}
+                                    >
+                                        {opt.icon}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <ColorPaletteInput value={color} onChange={onColorChange} organization={organization} />
                         </div>
-                        {shadowType !== 'none' && (
-                            <EffectColorPicker value={shadowColor} onChange={onShadowColorChange} organization={organization} />
+
+                        {/* Row 2: Size Slider */}
+                        <div className="flex items-center gap-3">
+                            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase w-12 flex-shrink-0">Storlek</label>
+                            <input
+                                type="range"
+                                min="1.0"
+                                max="40.0"
+                                step="0.5"
+                                value={fontScale ?? defaultScale}
+                                onChange={(e) => onScaleChange(parseFloat(e.target.value))}
+                                className="flex-grow h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <input
+                                type="number"
+                                min="1.0"
+                                max="40.0"
+                                step="0.5"
+                                value={fontScale ?? defaultScale}
+                                onChange={(e) => onScaleChange(parseFloat(e.target.value))}
+                                className="w-16 p-1.5 text-center text-sm font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-primary focus:border-primary"
+                            />
+                        </div>
+
+                        {/* Effects Section */}
+                        <div className="flex flex-wrap gap-x-6 gap-y-3 items-center">
+                            {/* Shadow */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Skugga</span>
+                                <div className="flex bg-slate-200 dark:bg-slate-600 rounded-md p-0.5">
+                                    {[
+                                        { id: 'none', label: '🚫' },
+                                        { id: 'soft', label: '☁️' },
+                                        { id: 'hard', label: '🧱' },
+                                        { id: 'glow', label: '✨' }
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.id}
+                                            type="button"
+                                            onClick={() => onShadowTypeChange(opt.id)}
+                                            className={`px-2 py-1 text-xs rounded transition-all ${shadowType === opt.id ? 'bg-white dark:bg-slate-800 shadow-sm text-primary' : 'text-slate-500 dark:text-slate-300 hover:text-slate-700'}`}
+                                            title={opt.id}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {shadowType !== 'none' && (
+                                    <EffectColorPicker value={shadowColor} onChange={onShadowColorChange} organization={organization} />
+                                )}
+                            </div>
+
+                            {/* Outline */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Kant</span>
+                                <input 
+                                    type="range" 
+                                    min="0" max="5" step="1" 
+                                    value={outlineWidth} 
+                                    onChange={e => onOutlineWidthChange(parseInt(e.target.value))}
+                                    className="w-16 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
+                                    title={`${outlineWidth}px`}
+                                />
+                                {outlineWidth > 0 && (
+                                    <EffectColorPicker value={outlineColor} onChange={onOutlineColorChange} organization={organization} />
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4 border-t border-slate-200 dark:border-slate-600/30 pt-3">
+                            <div className="flex-grow">
+                                <ToggleSwitch label="Textbakgrund" checked={bgEnabled} onChange={onBgEnabledChange} />
+                                {bgEnabled && (
+                                    <ColorOpacityControl value={bgColor} onChange={onBgColorChange} organization={organization} />
+                                )}
+                            </div>
+                        </div>
+
+                        {onRefine && (
+                            <div className="flex flex-wrap gap-1.5 pt-2">
+                                {aiActions.map(({ label: btnLabel, command }) => (
+                                    <button
+                                        key={command}
+                                        type="button"
+                                        onClick={() => onRefine(command)}
+                                        disabled={!!aiLoading}
+                                        className="px-2 py-1 text-[10px] uppercase font-bold rounded-md border transition-all bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-purple-400 hover:text-purple-500 flex items-center justify-center min-w-[50px]"
+                                    >
+                                        {aiLoading === `text-${command}` ? <LoadingSpinnerIcon className="h-3 w-3" /> : btnLabel}
+                                    </button>
+                                ))}
+                            </div>
                         )}
                     </div>
-
-                    {/* Outline */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Kant</span>
-                        <input 
-                            type="range" 
-                            min="0" max="5" step="1" 
-                            value={outlineWidth} 
-                            onChange={e => onOutlineWidthChange(parseInt(e.target.value))}
-                            className="w-16 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
-                            title={`${outlineWidth}px`}
-                        />
-                        {outlineWidth > 0 && (
-                            <EffectColorPicker value={outlineColor} onChange={onOutlineColorChange} organization={organization} />
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-4 border-t border-slate-200 dark:border-slate-600/30 pt-3">
-                    <div className="flex-grow">
-                        <ToggleSwitch label="Textbakgrund" checked={bgEnabled} onChange={onBgEnabledChange} />
-                        {bgEnabled && (
-                            <ColorOpacityControl value={bgColor} onChange={onBgColorChange} organization={organization} />
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                    {aiActions.map(({ label: btnLabel, command }) => (
-                        <button
-                            key={command}
-                            type="button"
-                            onClick={() => onRefine(command)}
-                            disabled={!!aiLoading}
-                            className="px-2 py-1 text-[10px] uppercase font-bold rounded-md border transition-all bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-purple-400 hover:text-purple-500 flex items-center justify-center min-w-[50px]"
-                        >
-                            {aiLoading === `text-${command}` ? <LoadingSpinnerIcon className="h-3 w-3" /> : btnLabel}
-                        </button>
-                    ))}
-                </div>
-            </div>
+                </>
+            )}
         </div>
     );
 };
@@ -548,6 +576,35 @@ export const Step2_Content: React.FC<{
         }
     };
 
+    // --- Handling Additional Text Elements ---
+    
+    const handleAddAdditionalText = () => {
+        const newElement: AdditionalTextElement = {
+            id: `text-${Date.now()}`,
+            text: 'Ny text',
+            x: 50, y: 50, width: 50,
+            fontScale: 5.0,
+            color: 'white',
+            textAlign: 'center',
+            shadowType: 'none',
+            outlineWidth: 0
+        };
+        const currentElements = post.additionalTextElements || [];
+        onPostChange({ ...post, additionalTextElements: [...currentElements, newElement] });
+    };
+
+    const handleUpdateAdditionalText = (id: string, updates: Partial<AdditionalTextElement>) => {
+        const currentElements = post.additionalTextElements || [];
+        const newElements = currentElements.map(el => el.id === id ? { ...el, ...updates } : el);
+        onPostChange({ ...post, additionalTextElements: newElements });
+    };
+
+    const handleRemoveAdditionalText = (id: string) => {
+        const currentElements = post.additionalTextElements || [];
+        const newElements = currentElements.filter(el => el.id !== id);
+        onPostChange({ ...post, additionalTextElements: newElements });
+    };
+
     if (post.layout === 'webpage') {
         return (
             <div className="space-y-6">
@@ -691,6 +748,65 @@ export const Step2_Content: React.FC<{
                     organization={organization}
                     rows={4}
                 />
+            </div>
+            
+            {/* --- ADDITIONAL TEXT ELEMENTS --- */}
+            <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex justify-between items-center">
+                    <h4 className="font-bold text-slate-800 dark:text-slate-200">Övriga texter</h4>
+                    <button onClick={handleAddAdditionalText} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1">
+                        <span>+</span> Lägg till textruta
+                    </button>
+                </div>
+                
+                {post.additionalTextElements && post.additionalTextElements.length > 0 ? (
+                    <div className="space-y-4">
+                        {post.additionalTextElements.map((el, index) => (
+                            <TextBlock
+                                key={el.id}
+                                label={`Extra text ${index + 1}`}
+                                textValue={el.text}
+                                onTextChange={val => handleUpdateAdditionalText(el.id, { text: val })}
+                                
+                                fontFamily={el.fontFamily || organization.bodyFontFamily || 'sans'}
+                                onFontChange={val => handleUpdateAdditionalText(el.id, { fontFamily: val })}
+                                
+                                fontScale={el.fontScale}
+                                onScaleChange={val => handleUpdateAdditionalText(el.id, { fontScale: val })}
+                                defaultScale={5.0}
+
+                                color={el.color || 'white'}
+                                onColorChange={val => handleUpdateAdditionalText(el.id, { color: val })}
+                                textAlign={el.textAlign || 'center'}
+                                onAlignChange={val => handleUpdateAdditionalText(el.id, { textAlign: val })}
+                                
+                                bgEnabled={el.backgroundEnabled || false}
+                                onBgEnabledChange={val => handleUpdateAdditionalText(el.id, { backgroundEnabled: val })}
+                                bgColor={el.backgroundColor || 'rgba(0,0,0,0.5)'}
+                                onBgColorChange={val => handleUpdateAdditionalText(el.id, { backgroundColor: val })}
+                                
+                                shadowType={el.shadowType || 'none'}
+                                onShadowTypeChange={val => handleUpdateAdditionalText(el.id, { shadowType: val as any })}
+                                shadowColor={el.shadowColor || '#000000'}
+                                onShadowColorChange={val => handleUpdateAdditionalText(el.id, { shadowColor: val })}
+                                outlineWidth={el.outlineWidth || 0}
+                                onOutlineWidthChange={val => handleUpdateAdditionalText(el.id, { outlineWidth: val })}
+                                outlineColor={el.outlineColor || '#000000'}
+                                onOutlineColorChange={val => handleUpdateAdditionalText(el.id, { outlineColor: val })}
+                                
+                                onDelete={() => handleRemoveAdditionalText(el.id)}
+                                // AI not supported for arbitrary extra blocks yet to keep it simple
+                                organization={organization}
+                                aiLoading={false}
+                                onAiSuggest={() => {}}
+                                onRefine={() => {}}
+                                rows={1}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-slate-500 italic">Inga extra textrutor tillagda.</p>
+                )}
             </div>
 
             {activeSuggestions === 'headline' && (

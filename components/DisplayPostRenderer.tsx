@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride, CollageItem, SubImage, SubImageConfig } from '../types';
+import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride, CollageItem, SubImage, SubImageConfig, AdditionalTextElement } from '../types';
 import QRCode from 'https://esm.sh/qrcode@1.5.3';
 import { MoveIcon } from './icons';
 
@@ -883,6 +883,9 @@ export interface DisplayPostRendererProps {
     onUpdateHeadlineText?: (text: string) => void;
     onUpdateBodyText?: (text: string) => void;
 
+    // NEW: Additional Text Handler
+    onUpdateAdditionalElement?: (id: string, updates: Partial<AdditionalTextElement>) => void;
+
     isTextDraggable?: any; isForDownload?: any;
 
     // Legacy support
@@ -913,6 +916,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     onUpdateBodyFontScale,
     onUpdateHeadlineText,
     onUpdateBodyText,
+    onUpdateAdditionalElement, // Handler for extra text
     isTextDraggable,
     // Legacy support
     onUpdateTextPosition, onUpdateTextWidth
@@ -1139,6 +1143,35 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     onUpdateText={onUpdateBodyText} // Handler for inline editing
                 />
             )}
+
+            {/* Additional Text Elements */}
+            {(post.additionalTextElements || []).map((element) => (
+                <DraggableTextElement
+                    key={element.id}
+                    type="body" // Treat as body for scaling logic, or make distinct if needed
+                    text={element.text}
+                    x={element.x} y={element.y} width={element.width}
+                    textAlign={element.textAlign}
+                    fontScale={element.fontScale}
+                    fontFamily={element.fontFamily}
+                    color={element.color}
+                    bgEnabled={element.backgroundEnabled}
+                    bgColor={element.backgroundColor}
+                    shadowType={element.shadowType}
+                    shadowColor={element.shadowColor}
+                    outlineWidth={element.outlineWidth}
+                    outlineColor={element.outlineColor}
+                    // ---
+                    mode={mode}
+                    organization={organization}
+                    isDraggable={isTextDraggable}
+                    // Create specific handlers for this element using the ID
+                    onUpdatePosition={(pos: {x: number, y: number}) => onUpdateAdditionalElement?.(element.id, { x: pos.x, y: pos.y })}
+                    onUpdateWidth={(w: number) => onUpdateAdditionalElement?.(element.id, { width: w })}
+                    onUpdateFontScale={(s: number) => onUpdateAdditionalElement?.(element.id, { fontScale: s })}
+                    onUpdateText={(t: string) => onUpdateAdditionalElement?.(element.id, { text: t })}
+                />
+            ))}
             
             {showTags && post.tagIds?.map(tagId => {
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);

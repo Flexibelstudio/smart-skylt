@@ -66,6 +66,25 @@ export interface TagColorOverride {
   textColor?: '#FFFFFF' | '#000000';
 }
 
+// NEW: Interface for additional free-floating text elements
+export interface AdditionalTextElement {
+  id: string;
+  text: string;
+  x: number; // %
+  y: number; // %
+  width: number; // %
+  fontScale: number; // numeric scale
+  fontFamily?: Tag['fontFamily'];
+  color?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  backgroundEnabled?: boolean;
+  backgroundColor?: string;
+  shadowType?: 'none' | 'soft' | 'hard' | 'glow';
+  shadowColor?: string;
+  outlineWidth?: number;
+  outlineColor?: string;
+}
+
 export interface DisplayPost {
   id: string;
   internalTitle: string;
@@ -107,6 +126,9 @@ export interface DisplayPost {
   bodyShadowColor?: string;
   bodyOutlineWidth?: number; // 0-10px
   bodyOutlineColor?: string;
+
+  // NEW: Additional text elements
+  additionalTextElements?: AdditionalTextElement[];
 
   // Legacy / Shared style fields (keep for compatibility)
   textPosition?: ContentPosition;

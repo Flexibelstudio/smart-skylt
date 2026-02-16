@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant } from '../types';
+import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant, AdditionalTextElement } from '../types';
 import { useToast } from '../context/ToastContext';
 import { StarIcon } from './icons';
 import { useLocation } from '../context/StudioContext';
@@ -431,6 +431,13 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             // NEW: Text Content Handlers
                             onUpdateHeadlineText={(text) => setEditingPost({ ...editingPost, headline: text })}
                             onUpdateBodyText={(text) => setEditingPost({ ...editingPost, body: text })}
+                            // NEW: Additional Text Elements Handler
+                            onUpdateAdditionalElement={(id, updates) => {
+                                const updatedElements = (editingPost.additionalTextElements || []).map(el => 
+                                    el.id === id ? { ...el, ...updates } : el
+                                );
+                                setEditingPost({ ...editingPost, additionalTextElements: updatedElements });
+                            }}
                             
                             isTextDraggable={true}
                         />
