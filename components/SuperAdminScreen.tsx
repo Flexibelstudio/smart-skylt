@@ -21,10 +21,7 @@ import { OrganisationTab } from './OrganisationTab';
 import { MediaGalleryTab } from './admin/MediaGalleryTab';
 import { ScaledPreviewWrapper } from './DisplayScreenEditor/PreviewPanes';
 
-// Import Modals (We can move these too later, but let's keep them here for now to minimize file explosion in one step)
-// or assume they are internal to this file for simplicity if they weren't extracted.
-// However, since I can't update non-existent files, I will keep the modals here but streamlined.
-
+// Import Modals
 interface SuperAdminScreenProps {
     organization: Organization;
     adminRole: 'superadmin' | 'admin';
@@ -91,39 +88,69 @@ const DisplayScreenPreviewModal: React.FC<{
 
     const currentPost = activePosts[currentIndex];
     
-    // Determine modal width based on aspect ratio
-    // If portrait (9:16 or 3:4), use a narrower max-width to fit height on screen
+    // För stående skärmar vill vi ha en "hög" modal som passar i viewporten.
     const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
-    const modalWidthClass = isPortrait ? 'max-w-sm' : 'max-w-4xl';
 
     return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className={`bg-white dark:bg-slate-800 rounded-xl p-4 w-full ${modalWidthClass} text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in`} onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-bold mb-4">Förhandsgranskning: {screen.name}</h2>
-                <div className="w-full">
-                    <ScaledPreviewWrapper 
-                        aspectRatio={screen.aspectRatio}
-                        className="bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg"
-                    >
-                        {currentPost ? (
-                            <DisplayPostRenderer 
-                                post={currentPost} 
-                                allTags={organization.tags} 
-                                primaryColor={organization.primaryColor}
-                                onVideoEnded={advance}
-                                organization={organization}
-                                aspectRatio={screen.aspectRatio}
-                                mode="live" // Use 'live' mode to ensure consistent rendering scale with ScaledPreviewWrapper
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
-                                Inga aktiva inlägg.
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[60] p-4" onClick={onClose}>
+            <div 
+                className={`bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-2xl flex flex-col border border-slate-200 dark:border-slate-700 animate-fade-in ${isPortrait ? 'h-[90vh] w-auto aspect-[9/16] max-w-[90vw]' : 'w-full max-w-5xl max-h-[90vh]'}`}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="p-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 shrink-0">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        <h3 className="font-bold text-lg text-slate-900 dark:text-white truncate">
+                            {screen.name}
+                        </h3>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            Live Preview
+                        </span>
+                    </div>
+                    <button onClick={onClose} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-500 dark:text-slate-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Content Area - dark background to simulate screen environment */}
+                <div className="flex-1 bg-slate-100 dark:bg-black/80 p-4 sm:p-8 overflow-hidden flex items-center justify-center relative">
+                     {/* 
+                        Vi använder en wrapper som antingen fyller höjden (för stående) eller bredden (för liggande)
+                        och låter ScaledPreviewWrapper sköta skalningen inuti.
+                     */}
+                     <div className={`relative shadow-2xl ring-4 ring-slate-900 rounded-lg overflow-hidden bg-black ${isPortrait ? 'h-full w-auto aspect-[9/16]' : 'w-full aspect-[16/9]'}`}>
+                        <ScaledPreviewWrapper 
+                            aspectRatio={screen.aspectRatio}
+                            className="w-full h-full"
+                        >
+                            {currentPost ? (
+                                <DisplayPostRenderer 
+                                    post={currentPost} 
+                                    allTags={organization.tags} 
+                                    primaryColor={organization.primaryColor}
+                                    onVideoEnded={advance}
+                                    organization={organization}
+                                    aspectRatio={screen.aspectRatio}
+                                    mode="live" // IMPORTANT: Live mode for correct scaling (1:1 with editor/screen)
+                                />
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
+                                    <div className="w-12 h-12 rounded-full border-2 border-slate-700 border-t-slate-500 animate-spin" />
+                                    <span>Väntar på innehåll...</span>
+                                </div>
+                            )}
+                        </ScaledPreviewWrapper>
+                        
+                        {/* Overlay Controls */}
+                        {activePosts.length > 1 && (
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-full flex items-center gap-4 opacity-0 hover:opacity-100 transition-opacity duration-200">
+                                <button onClick={advance} className="hover:text-primary transition-colors">Nästa &rarr;</button>
+                                <span className="text-xs text-white/50">{currentIndex + 1} / {activePosts.length}</span>
                             </div>
                         )}
-                    </ScaledPreviewWrapper>
-                </div>
-                <div className="flex justify-end mt-4">
-                    <SecondaryButton onClick={onClose}>Stäng</SecondaryButton>
+                     </div>
                 </div>
             </div>
         </div>
