@@ -377,13 +377,20 @@ const DraggableTextElement: React.FC<any> = ({
     type, text, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
     bgEnabled, bgColor, mode, organization, isDraggable, 
     shadowType, shadowColor, outlineWidth, outlineColor,
-    onUpdatePosition, onUpdateWidth, onUpdateFontScale
+    onUpdatePosition, onUpdateWidth, onUpdateFontScale, onUpdateText
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [tempText, setTempText] = useState(text);
+
+    // Update temp text when prop changes
+    useEffect(() => {
+        setTempText(text);
+    }, [text]);
 
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
+        if (!isDraggable || !onUpdatePosition || !containerRef.current || isEditing) return;
         e.preventDefault(); e.stopPropagation();
         setIsDragging(true);
         const parent = containerRef.current.parentElement;
@@ -422,7 +429,7 @@ const DraggableTextElement: React.FC<any> = ({
     };
 
     const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, direction: 'left' | 'right') => {
-        if (!isDraggable || !onUpdateWidth || !containerRef.current) return;
+        if (!isDraggable || !onUpdateWidth || !containerRef.current || isEditing) return;
         e.preventDefault(); e.stopPropagation();
         const parent = containerRef.current.parentElement;
         if (!parent) return;
@@ -455,7 +462,7 @@ const DraggableTextElement: React.FC<any> = ({
     };
 
     const handleScaleStart = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isDraggable || !onUpdateFontScale || !containerRef.current) return;
+        if (!isDraggable || !onUpdateFontScale || !containerRef.current || isEditing) return;
         e.preventDefault(); e.stopPropagation();
         
         const parent = containerRef.current.parentElement;
@@ -501,6 +508,35 @@ const DraggableTextElement: React.FC<any> = ({
             window.addEventListener('mouseup', onScaleEnd, { once: true });
         }
     };
+    
+    // --- Inline Editing Handlers ---
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        if (!isDraggable || !onUpdateText) return;
+        e.stopPropagation();
+        setIsEditing(true);
+    };
+
+    const handleBlur = () => {
+        setIsEditing(false);
+        if (onUpdateText && tempText !== text) {
+            onUpdateText(tempText);
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) { // Prevent save on simple enter if we want multi-line
+             // Optional: Allow multiline body, single line headline? 
+             // For now, let's treat Enter as Save for headline, Shift+Enter for newline in body
+             if (type === 'headline') {
+                 e.preventDefault();
+                 e.currentTarget.blur();
+             }
+        }
+        if (e.key === 'Escape') {
+            setIsEditing(false);
+            setTempText(text); // Revert
+        }
+    };
 
     const style: React.CSSProperties = {
         position: 'absolute',
@@ -509,9 +545,9 @@ const DraggableTextElement: React.FC<any> = ({
         transform: 'translate(-50%, -50%)',
         width: `${width ?? 80}%`,
         textAlign: textAlign || 'center',
-        zIndex: 40,
+        zIndex: isEditing ? 100 : 40,
         color: resolveColor(color, '#ffffff', organization),
-        cursor: isDraggable ? 'move' : 'default',
+        cursor: isDraggable ? (isEditing ? 'text' : 'move') : 'default',
         opacity: isDragging ? 0.7 : 1
     };
     
@@ -539,8 +575,15 @@ const DraggableTextElement: React.FC<any> = ({
     const showBackdrop = bgEnabled && bgAlpha > 0.01;
 
     return (
-        <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} className="group">
-            {isDraggable && (
+        <div 
+            ref={containerRef} 
+            style={style} 
+            onMouseDown={!isEditing && isDraggable ? handleDragStart : undefined} 
+            onTouchStart={!isEditing && isDraggable ? handleDragStart : undefined} 
+            onDoubleClick={handleDoubleClick}
+            className="group"
+        >
+            {isDraggable && !isEditing && (
                 <>
                      {/* Move Handle (Top-Right) */}
                      <div className="absolute -top-3 -right-3 p-1.5 bg-teal-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
@@ -572,10 +615,27 @@ const DraggableTextElement: React.FC<any> = ({
                 className={`${paddingClass} ${showBackdrop ? 'backdrop-blur-md' : ''}`}
                 style={bgEnabled ? { backgroundColor: resolvedBgColor } : {}}
             >
-                {type === 'headline' ? (
-                    <h1 className={fontClass} style={textEffectStyle}>{text}</h1>
+                {isEditing ? (
+                     <textarea
+                        value={tempText}
+                        onChange={(e) => setTempText(e.target.value)}
+                        onBlur={handleBlur}
+                        onKeyDown={handleKeyDown}
+                        autoFocus
+                        className={`${fontClass} w-full h-full bg-transparent outline-none resize-none overflow-hidden text-inherit p-0 m-0`}
+                        style={{
+                            ...textEffectStyle,
+                            // Ensure text matches the rendered look exactly
+                            textAlign: textAlign || 'center',
+                            minHeight: '1.2em'
+                        }}
+                     />
                 ) : (
-                    <PostMarkdownRenderer content={text} className={fontClass} style={textEffectStyle} />
+                    type === 'headline' ? (
+                        <h1 className={fontClass} style={textEffectStyle}>{text}</h1>
+                    ) : (
+                        <PostMarkdownRenderer content={text} className={fontClass} style={textEffectStyle} />
+                    )
                 )}
             </div>
         </div>
@@ -818,6 +878,10 @@ export interface DisplayPostRendererProps {
     // NEW: Font Scale Updates
     onUpdateHeadlineFontScale?: (scale: number) => void;
     onUpdateBodyFontScale?: (scale: number) => void;
+    
+    // NEW: Text Updates
+    onUpdateHeadlineText?: (text: string) => void;
+    onUpdateBodyText?: (text: string) => void;
 
     isTextDraggable?: any; isForDownload?: any;
 
@@ -847,6 +911,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     // NEW Props
     onUpdateHeadlineFontScale,
     onUpdateBodyFontScale,
+    onUpdateHeadlineText,
+    onUpdateBodyText,
     isTextDraggable,
     // Legacy support
     onUpdateTextPosition, onUpdateTextWidth
@@ -1041,6 +1107,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     onUpdatePosition={onUpdateHeadlinePosition || onUpdateTextPosition}
                     onUpdateWidth={onUpdateHeadlineWidth || onUpdateTextWidth}
                     onUpdateFontScale={onUpdateHeadlineFontScale} // Handler for scaling
+                    onUpdateText={onUpdateHeadlineText} // Handler for inline editing
                 />
             )}
 
@@ -1069,6 +1136,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     onUpdatePosition={onUpdateBodyPosition}
                     onUpdateWidth={onUpdateBodyWidth}
                     onUpdateFontScale={onUpdateBodyFontScale} // Handler for scaling
+                    onUpdateText={onUpdateBodyText} // Handler for inline editing
                 />
             )}
             

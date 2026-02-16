@@ -412,17 +412,44 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             )}
             
             {editingPost ? (
-                <PostEditor
-                    post={editingPost}
-                    originalPost={originalPost}
-                    screen={screen}
-                    organization={organization}
-                    onPostChange={setEditingPost}
-                    onSave={handleSavePost}
-                    onCancel={handleCancelEdit}
-                    onUpdateOrganization={onUpdateOrganization}
-                    userRole={userRole}
-                />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start relative">
+                    <div className="lg:sticky lg:top-24 self-start z-10">
+                        <PreviewPane
+                            editingPost={editingPost}
+                            screen={screen}
+                            organization={organization}
+                            onUpdateTagPosition={(tagId, pos) => setEditingPost({ ...editingPost, tagPositionOverrides: [...(editingPost.tagPositionOverrides || []).filter(o => o.tagId !== tagId), { tagId, ...pos }] })}
+                            onUpdateHeadlinePosition={(pos) => setEditingPost({ ...editingPost, headlinePositionX: pos.x, headlinePositionY: pos.y })}
+                            onUpdateHeadlineWidth={(width) => setEditingPost({ ...editingPost, headlineWidth: width })}
+                            onUpdateBodyPosition={(pos) => setEditingPost({ ...editingPost, bodyPositionX: pos.x, bodyPositionY: pos.y })}
+                            onUpdateBodyWidth={(width) => setEditingPost({ ...editingPost, bodyWidth: width })}
+                            onUpdateQrPosition={(pos) => setEditingPost({ ...editingPost, qrPositionX: pos.x, qrPositionY: pos.y })}
+                            onUpdateQrWidth={(width) => setEditingPost({ ...editingPost, qrWidth: width })}
+                            // NEW: Font Scale Handlers
+                            onUpdateHeadlineFontScale={(scale) => setEditingPost({ ...editingPost, headlineFontScale: scale })}
+                            onUpdateBodyFontScale={(scale) => setEditingPost({ ...editingPost, bodyFontScale: scale })}
+                            // NEW: Text Content Handlers
+                            onUpdateHeadlineText={(text) => setEditingPost({ ...editingPost, headline: text })}
+                            onUpdateBodyText={(text) => setEditingPost({ ...editingPost, body: text })}
+                            
+                            isTextDraggable={true}
+                        />
+                    </div>
+                    
+                    <div className="space-y-6">
+                        <PostEditor
+                            post={editingPost}
+                            originalPost={originalPost}
+                            screen={screen}
+                            organization={organization}
+                            onPostChange={setEditingPost}
+                            onSave={handleSavePost}
+                            onCancel={handleCancelEdit}
+                            onUpdateOrganization={onUpdateOrganization}
+                            userRole={userRole}
+                        />
+                    </div>
+                </div>
             ) : (
                 <>
                     <div className="mb-8">

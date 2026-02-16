@@ -100,6 +100,9 @@ const SinglePostPreview: React.FC<{
     // NEW: Font Scale Handlers
     onUpdateHeadlineFontScale?: (scale: number) => void,
     onUpdateBodyFontScale?: (scale: number) => void,
+    // NEW: Text Content Handlers
+    onUpdateHeadlineText?: (text: string) => void,
+    onUpdateBodyText?: (text: string) => void,
     isTextDraggable?: boolean,
 }> = ({ 
     post, screen, organization, onUpdateTagPosition, 
@@ -107,6 +110,7 @@ const SinglePostPreview: React.FC<{
     onUpdateBodyPosition, onUpdateBodyWidth,
     onUpdateQrPosition, onUpdateQrWidth, 
     onUpdateHeadlineFontScale, onUpdateBodyFontScale,
+    onUpdateHeadlineText, onUpdateBodyText,
     isTextDraggable 
 }) => {
     
@@ -131,7 +135,7 @@ const SinglePostPreview: React.FC<{
                 <div className="flex items-center gap-2">
                     {isTextDraggable && (
                         <span className="bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold px-2 py-1 rounded-full animate-pulse">
-                            Interaktivt läge
+                            Interaktivt läge: Dubbelklicka för att redigera text
                         </span>
                     )}
                 </div>
@@ -157,6 +161,8 @@ const SinglePostPreview: React.FC<{
                         // Connect new handlers
                         onUpdateHeadlineFontScale={onUpdateHeadlineFontScale}
                         onUpdateBodyFontScale={onUpdateBodyFontScale}
+                        onUpdateHeadlineText={onUpdateHeadlineText}
+                        onUpdateBodyText={onUpdateBodyText}
                         
                         isTextDraggable={isTextDraggable}
                         organization={organization}
@@ -176,7 +182,7 @@ const SinglePostPreview: React.FC<{
             </div>
             
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 text-center">
-                Dra i text och objekt för att flytta dem. Dra i hörnen för att ändra storlek.
+                Dra för att flytta. Dubbelklicka för att ändra text. Dra hörn för att ändra storlek.
             </p>
         </div>
     );
@@ -316,6 +322,9 @@ interface PreviewPaneProps {
     // NEW Props
     onUpdateHeadlineFontScale?: (scale: number) => void;
     onUpdateBodyFontScale?: (scale: number) => void;
+    // NEW Text Props
+    onUpdateHeadlineText?: (text: string) => void;
+    onUpdateBodyText?: (text: string) => void;
     isTextDraggable?: boolean;
 }
 export const PreviewPane: React.FC<PreviewPaneProps> = ({ 
@@ -324,6 +333,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
     onUpdateBodyPosition, onUpdateBodyWidth,
     onUpdateQrPosition, onUpdateQrWidth, 
     onUpdateHeadlineFontScale, onUpdateBodyFontScale,
+    onUpdateHeadlineText, onUpdateBodyText,
     isTextDraggable 
 }) => {
     if (editingPost) {
@@ -342,6 +352,8 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
                 // Connect handlers
                 onUpdateHeadlineFontScale={onUpdateHeadlineFontScale}
                 onUpdateBodyFontScale={onUpdateBodyFontScale}
+                onUpdateHeadlineText={onUpdateHeadlineText}
+                onUpdateBodyText={onUpdateBodyText}
                 isTextDraggable={isTextDraggable}
             />
         );
