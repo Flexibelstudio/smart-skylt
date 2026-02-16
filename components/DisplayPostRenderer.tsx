@@ -220,7 +220,8 @@ const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdat
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const initialWidth = containerRef.current.offsetWidth;
+        // Fix: Use getBoundingClientRect for correct scaled width
+        const initialWidth = containerRef.current.getBoundingClientRect().width;
         
         const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
@@ -420,7 +421,9 @@ const DraggableTextElement: React.FC<any> = ({
         if (!parent) return;
         const parentRect = parent.getBoundingClientRect();
         const initialX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const initialWidth = containerRef.current.offsetWidth;
+        
+        // FIX: Use getBoundingClientRect for correct scaled width
+        const initialWidth = containerRef.current.getBoundingClientRect().width;
         
         const onResizeMove = (moveEvent: MouseEvent | TouchEvent) => {
             const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
@@ -618,8 +621,9 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         const parentRect = parent.getBoundingClientRect();
         
         const initialClientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        // If width is undefined, we need to grab computed width
-        const initialPixelWidth = containerRef.current.offsetWidth;
+        
+        // FIX: Use getBoundingClientRect for correct scaled width
+        const initialPixelWidth = containerRef.current.getBoundingClientRect().width;
         const initialWidthPercent = override?.width || (initialPixelWidth / parentRect.width * 100);
         const initialOverride = override || { x: 50, y: 50, rotation: 0, scale: 1, width: initialWidthPercent };
 
