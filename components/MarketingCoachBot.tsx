@@ -197,8 +197,8 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
       }
     })();
     // FIX: Only re-initialize if organization ID changes, NOT on every update to the org object.
-    // This prevents chat reset when posts are added/updated.
-  }, [organization.id, assistantName]);
+    // Removed assistantName to prevent reset on profile load.
+  }, [organization.id]); 
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

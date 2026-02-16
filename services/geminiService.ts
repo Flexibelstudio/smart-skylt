@@ -166,9 +166,13 @@ async function getCachedAIResponse<T>(
 // Proxy Functions
 // -------------------------------------------------------------
 
+// Increased timeouts for heavier operations to prevent deadline-exceeded
+const TIMEOUT_TEXT = 180000; // 3 min (was 2 min)
+const TIMEOUT_MEDIA = 300000; // 5 min (was 3 min)
+
 async function generateContentViaProxy(model: string, contents: any, config?: any): Promise<{ text: string, functionCalls?: any[] }> {
     if (!functions) throw new Error("Cloud functions not initialized.");
-    const geminiFn = functions.httpsCallable('gemini');
+    const geminiFn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
     const result = await geminiFn({
         action: 'generateContent',
         params: { model, contents, config }
@@ -178,7 +182,7 @@ async function generateContentViaProxy(model: string, contents: any, config?: an
 
 async function generateImagesViaProxy(model: string, prompt: string, config?: any): Promise<{ imageBytes: string, mimeType: string }> {
     if (!functions) throw new Error("Cloud functions not initialized.");
-    const geminiFn = functions.httpsCallable('gemini');
+    const geminiFn = functions.httpsCallable('gemini', { timeout: TIMEOUT_MEDIA });
     const result = await geminiFn({
         action: 'generateImages',
         params: { model, prompt, config }
@@ -197,12 +201,13 @@ async function retryWithBackoff<T>(
   } catch (error: any) {
     const errorString = error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
     
-    // Retry on 429 (Resource Exhausted) and 5xx (Server Errors)
+    // Retry on 429 (Resource Exhausted) and 5xx (Server Errors) or deadline-exceeded
     const isRetryable = 
         errorString.includes("429") || 
         errorString.includes("resource_exhausted") || 
         errorString.includes("too many requests") || 
         errorString.includes("503") || 
+        errorString.includes("deadline-exceeded") ||
         errorString.includes("internal");
 
     if (retries > 0 && isRetryable) {
@@ -229,7 +234,7 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
     if (errorString.includes("permission_denied")) throw new Error("Behörighet saknas. Kontakta support.");
     if (errorString.includes("safety")) throw new Error("Blockerades av säkerhetsskäl.");
     if (errorString.includes("not found")) throw new Error("AI-modellen hittades inte.");
-    if (errorString.includes("timeout")) throw new Error("Tidsgränsen överskreds.");
+    if (errorString.includes("timeout") || errorString.includes("deadline-exceeded")) throw new Error("Tidsgränsen överskreds. Försök igen med en enklare förfrågan.");
     
     throw new Error(error instanceof Error ? error.message : "Ett fel inträffade hos AI-tjänsten.");
   }
@@ -256,7 +261,7 @@ export async function initializeMarketingCoachChat(organization: Organization): 
 export const formatPageWithAI = (rawContent: string): Promise<string> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
         const result = await fn({ action: 'formatPageWithAI', params: { rawContent } });
         return result.data as string;
     }
@@ -268,7 +273,7 @@ export const formatPageWithAI = (rawContent: string): Promise<string> =>
 export const generatePageContentFromPrompt = (userPrompt: string): Promise<string> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
         const result = await fn({ action: 'generatePageContentFromPrompt', params: { userPrompt } });
         return result.data as string;
     }
@@ -280,7 +285,7 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
 export const generateDisplayPostContent = (userPrompt: string, organizationName: string): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
         const result = await fn({ action: 'generateDisplayPostContent', params: { userPrompt, organizationName } });
         return result.data as { headline: string; body: string };
     }
@@ -431,7 +436,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
 export const generateHeadlineSuggestions = (body: string, existingHeadlines?: string[]): Promise<string[]> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
         const result = await fn({ action: 'generateHeadlineSuggestions', params: { body, existingHeadlines } });
         return result.data as string[];
     }
@@ -463,7 +468,7 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
 export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
         const result = await fn({ action: 'refineDisplayPostContent', params: { content, command } });
         return result.data as { headline: string; body: string };
     }
@@ -492,7 +497,7 @@ export const refineTextWithCustomPrompt = (content: { headline: string; body: st
 export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" = "16:9"): Promise<{ imageBytes: string; mimeType: string }> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_MEDIA });
         const result = await fn({ action: 'generateDisplayPostImage', params: { prompt, aspectRatio } });
         const dataUri = result.data as string;
         const [meta, data] = dataUri.split(',');
@@ -512,7 +517,7 @@ export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "1
 export const editDisplayPostImage = (base64ImageData: string, mimeType: string, prompt: string, logo?: { base64Data: string; mimeType: string }): Promise<{ imageBytes: string; mimeType: string }> =>
   handleAIError(async () => {
     if (functions) {
-        const fn = functions.httpsCallable('gemini');
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_MEDIA });
         // Passing the prompt to the proxy, which will handle prefixing the instruction.
         const result = await fn({ action: 'editDisplayPostImage', params: { base64ImageData, mimeType, prompt, logo } });
         const dataUri = result.data as string;
@@ -538,7 +543,7 @@ export const generateVideoFromPrompt = (prompt: string, organizationId: string, 
   return handleAIError(async () => {
     onProgress("Beställer video från Google Veo...");
     if (!functions) throw new Error("Firebase Functions not initialized");
-    const initiateFn = functions.httpsCallable('initiateVideoGeneration');
+    const initiateFn = functions.httpsCallable('initiateVideoGeneration', { timeout: 60000 });
     
     let imagePayload = null;
     if (image) imagePayload = { imageBytes: image.data, mimeType: image.mimeType };
@@ -559,7 +564,7 @@ export const generateVideoFromPrompt = (prompt: string, organizationId: string, 
         try {
             let opResult: any;
             if (functions) {
-                const fn = functions.httpsCallable('gemini');
+                const fn = functions.httpsCallable('gemini', { timeout: 60000 });
                 const res = await fn({ action: 'getVideosOperation', params: { operation: { name: operationName } } });
                 opResult = res.data;
             } else {
@@ -581,7 +586,7 @@ export const generateVideoFromPrompt = (prompt: string, organizationId: string, 
     }
 
     onProgress("Sparar video...");
-    const saveFn = functions.httpsCallable('saveGeneratedVideo');
+    const saveFn = functions.httpsCallable('saveGeneratedVideo', { timeout: 300000 }); // 5 min for download/upload
     const saveResult = await saveFn({ videoUri, orgId: organizationId, screenId, postId });
     return (saveResult.data as any).videoUrl;
   });
@@ -737,8 +742,6 @@ export const analyzeWebsiteContent = (url: string): Promise<{
     if (functions) {
         try {
             // Sätt en längre timeout (5 min) för just detta anrop, eftersom analys kan ta tid.
-            // httpsCallable tar en andra parameter för options i nyare SDK, men vi sätter det via instansen om möjligt eller accepterar default.
-            // För att vara säker på timeouten:
             const fn = functions.httpsCallable('gemini', { timeout: 300000 }); 
             
             const result = await fn({ 
@@ -761,7 +764,6 @@ export const analyzeWebsiteContent = (url: string): Promise<{
     }
 
     // 2. Klient-side Fallback (Körs om Cloud Function inte finns eller misslyckades)
-    // Detta kräver att API-nyckeln har behörighet och att användaren har tillräcklig quota.
     const prompt = `
         Analyze the brand identity of this website: ${url}.
         Extract the following information:

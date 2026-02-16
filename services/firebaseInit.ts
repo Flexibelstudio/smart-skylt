@@ -60,6 +60,8 @@ if (!cfg || !cfg.firebaseConfig || !cfg.firebaseConfig.apiKey) {
                 });
             
             // Apply settings to improve connection stability
+            // Only apply if not already applied (though SDK throws, checking private props is flaky)
+            // We just catch the error silently if it happens.
             try {
               db.settings({
                 ignoreUndefinedProperties: true,
@@ -69,8 +71,11 @@ if (!cfg || !cfg.firebaseConfig || !cfg.firebaseConfig.apiKey) {
               if (w.DEBUG_MODE) {
                   firebase.firestore.setLogLevel('debug');
               }
-            } catch (settingsError) {
-              console.warn("Could not apply Firestore settings:", settingsError);
+            } catch (settingsError: any) {
+              // Ignore "already started" error
+              if (settingsError.code !== 'failed-precondition' && !settingsError.message.includes('already been started')) {
+                  console.warn("Could not apply Firestore settings:", settingsError);
+              }
             }
 
             storage = firebase.storage();
