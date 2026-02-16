@@ -96,7 +96,10 @@ const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organiz
     
     // Resolve current values with fallbacks
     // Prefer fontScale if available, otherwise fallback to fontSize default mapping
-    const fontSizeVal = post[`${prefix}FontScale`] || (isHeadline ? 8.0 : 4.8);
+    const fontScale = post[`${prefix}FontScale`];
+    // Default scale: 8.0 for headline, 4.8 for body (matching renderer defaults)
+    const fontSizeVal = fontScale ?? (isHeadline ? 8.0 : 4.8);
+    
     const fontFamily = post[`${prefix}FontFamily`] || organization[`${prefix}FontFamily`] || (isHeadline ? 'display' : 'sans');
     const textAlign = post[`${prefix}TextAlign`] || post.textAlign || 'center';
     const bgEnabled = post[`${prefix}BackgroundEnabled`] ?? post.textBackgroundEnabled ?? false;
@@ -120,7 +123,7 @@ const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organiz
                         <input
                             type="range"
                             min="1.0"
-                            max="30.0"
+                            max="40.0"
                             step="0.5"
                             value={fontSizeVal}
                             onChange={(e) => handleSizeChange(parseFloat(e.target.value))}
@@ -130,7 +133,7 @@ const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organiz
                             type="number"
                             min="1.0"
                             max="40.0"
-                            step="0.5"
+                            step="0.1"
                             value={fontSizeVal}
                             onChange={(e) => handleSizeChange(parseFloat(e.target.value))}
                             className="w-16 p-2 text-center text-sm font-mono bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-primary focus:border-primary"
