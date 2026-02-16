@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { DisplayPost, Organization, DisplayScreen, UserRole, PostTemplate } from '../../types';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
 import { ConfirmDialog } from '../ConfirmDialog';
-import { PreviewPane } from './PreviewPanes';
 import { Step1_Layout } from './PostEditorSteps/Step1_Layout';
 import { Step2_Content } from './PostEditorSteps/Step2_Content';
 import { Step3_Atmosphere } from './PostEditorSteps/Step3_Atmosphere';
@@ -146,27 +145,7 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start relative">
-            <div className="lg:sticky lg:top-24 self-start z-10">
-                <PreviewPane
-                    editingPost={post}
-                    screen={screen}
-                    organization={organization}
-                    onUpdateTagPosition={(tagId, pos) => onPostChange({ ...post, tagPositionOverrides: [...(post.tagPositionOverrides || []).filter(o => o.tagId !== tagId), { tagId, ...pos }] })}
-                    onUpdateHeadlinePosition={(pos) => onPostChange({ ...post, headlinePositionX: pos.x, headlinePositionY: pos.y })}
-                    onUpdateHeadlineWidth={(width) => onPostChange({ ...post, headlineWidth: width })}
-                    onUpdateBodyPosition={(pos) => onPostChange({ ...post, bodyPositionX: pos.x, bodyPositionY: pos.y })}
-                    onUpdateBodyWidth={(width) => onPostChange({ ...post, bodyWidth: width })}
-                    onUpdateQrPosition={(pos) => onPostChange({ ...post, qrPositionX: pos.x, qrPositionY: pos.y })}
-                    onUpdateQrWidth={(width) => onPostChange({ ...post, qrWidth: width })}
-                    // NEW: Font Scale Handlers
-                    onUpdateHeadlineFontScale={(scale) => onPostChange({ ...post, headlineFontScale: scale })}
-                    onUpdateBodyFontScale={(scale) => onPostChange({ ...post, bodyFontScale: scale })}
-                    
-                    isTextDraggable={true}
-                />
-            </div>
-            
+        <>
             <div className="space-y-6">
                 <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <div className="border-b border-slate-200 dark:border-slate-700 mb-6">
@@ -219,6 +198,6 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
             >
                 Är du säker på att du vill avbryta? Dina ändringar kommer inte att sparas.
             </ConfirmDialog>
-        </div>
+        </>
     );
 };
