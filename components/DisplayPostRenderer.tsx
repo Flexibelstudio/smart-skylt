@@ -75,13 +75,15 @@ const getTagFontSizeClass = (size?: Tag['fontSize'], mode?: 'preview' | 'live') 
     }
 };
 
-const getTagFontFamilyClass = (family?: Tag['fontFamily']) => {
+// Robust helper to resolve font family classes, handling aliases like 'script' -> 'font-logo'
+const getFontFamilyClass = (family?: string) => {
     switch (family) {
         case 'display': return 'font-display';
-        case 'script': return 'font-logo';
+        case 'script': return 'font-logo'; // Maps 'script' selection to 'Satisfy' (configured as 'logo' in Tailwind)
         case 'adscript': return 'font-adscript';
         case 'sans': return 'font-sans';
-        default: return `font-${family || 'sans'}`;
+        // Fallback for direct matches (e.g. 'merriweather' -> 'font-merriweather')
+        default: return family ? `font-${family}` : 'font-sans';
     }
 };
 
@@ -562,10 +564,11 @@ const DraggableTextElement: React.FC<any> = ({
             ? `${outlineWidth * 0.15}cqw ${resolveColor(outlineColor, '#000000', organization)}` // Use cqw for stroke too
             : undefined,
     };
-
+    
+    // Use the robust helper function for font family
     const fontClass = type === 'headline' 
-        ? `font-bold break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
-        : `mt-[1.5cqw] break-words ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
+        ? `font-bold break-words ${getFontFamilyClass(fontFamily || (organization?.headlineFontFamily ?? 'display'))}`
+        : `mt-[1.5cqw] break-words ${getFontFamilyClass(fontFamily || (organization?.bodyFontFamily ?? 'sans'))}`;
 
     const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-[2cqw] rounded-xl';
     
@@ -819,7 +822,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
 
      return (
          <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
-              className={`flex flex-col items-center justify-center group ${getTagFontSizeClass(tag.fontSize, mode)} ${getTagFontFamilyClass(tag.fontFamily)}`}>
+              className={`flex flex-col items-center justify-center group ${getTagFontSizeClass(tag.fontSize, mode)} ${getFontFamilyClass(tag.fontFamily)}`}>
              
              {/* Content */}
              <div className="flex items-center gap-2">
