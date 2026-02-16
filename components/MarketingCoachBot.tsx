@@ -196,7 +196,9 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
         setIsLoading(false);
       }
     })();
-  }, [organization, assistantName]);
+    // FIX: Only re-initialize if organization ID changes, NOT on every update to the org object.
+    // This prevents chat reset when posts are added/updated.
+  }, [organization.id, assistantName]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -416,7 +418,11 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
                 // FIX: Prepend the new post so it appears first
                 const updatedPosts = [newPost, ...(targetScreen.posts || [])];
                 await updateDisplayScreen(screen.id, { posts: updatedPosts });
-                return { screen: targetScreen, post: newPost };
+                
+                // IMPORTANT: Construct an updated screen object manually to pass to navigation.
+                // The 'targetScreen' from props might be stale by the time navigation happens.
+                const updatedScreen = { ...targetScreen, posts: updatedPosts };
+                return { screen: updatedScreen, post: newPost };
             }
             throw new Error(`Screen ${screen.id} not found`);
         });
@@ -602,7 +608,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
       showToast({ message: 'Kunde inte starta röstchatt.', type: 'error' });
       setConnectionState('error');
     }
-  }, [currentUser, showToast, stopVoiceChat, organization]);
+  }, [currentUser, showToast, stopVoiceChat, organization.id]); // Use organization.id
 
   const handleMicClick = useCallback(() => {
     if (connectionState === 'connected' || connectionState === 'connecting') stopVoiceChat();
@@ -630,7 +636,7 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
       setIsLoading(false);
       setIsClearConfirmOpen(false);
     }
-  }, [organization, showToast, assistantName]);
+  }, [organization.id, showToast, assistantName]); // Use organization.id
 
   const getMicButtonClasses = () => {
     switch (connectionState) {
