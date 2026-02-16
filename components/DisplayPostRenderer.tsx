@@ -618,28 +618,38 @@ const DraggableTextElement: React.FC<any> = ({
                 className={`${paddingClass} ${showBackdrop ? 'backdrop-blur-md' : ''}`}
                 style={bgEnabled ? { backgroundColor: resolvedBgColor } : {}}
             >
-                {isEditing ? (
-                     <textarea
-                        value={tempText}
-                        onChange={(e) => setTempText(e.target.value)}
-                        onBlur={handleBlur}
-                        onKeyDown={handleKeyDown}
-                        autoFocus
-                        className={`${fontClass} w-full h-full bg-transparent outline-none resize-none overflow-hidden text-inherit p-0 m-0`}
-                        style={{
-                            ...textEffectStyle,
-                            // Ensure text matches the rendered look exactly
-                            textAlign: textAlign || 'center',
-                            minHeight: '1.2em'
-                        }}
-                     />
-                ) : (
-                    type === 'headline' ? (
-                        <h1 className={fontClass} style={textEffectStyle}>{text}</h1>
-                    ) : (
-                        <PostMarkdownRenderer content={text} className={fontClass} style={textEffectStyle} />
-                    )
-                )}
+                <div className="grid w-full h-full">
+                    {/* Ghost Element: Controls the height. Hidden when editing but present in DOM. */}
+                    <div className={`${isEditing ? 'invisible' : ''} col-start-1 row-start-1 min-h-[1.2em]`}>
+                        {type === 'headline' ? (
+                            <h1 className={fontClass} style={textEffectStyle}>
+                                {isEditing ? (tempText || ' ') : (text || ' ')}
+                            </h1>
+                        ) : (
+                            <PostMarkdownRenderer 
+                                content={isEditing ? (tempText || ' ') : (text || ' ')} 
+                                className={fontClass} 
+                                style={textEffectStyle} 
+                            />
+                        )}
+                    </div>
+                    
+                    {/* Textarea Overlay: Used for editing, positioned on top */}
+                    {isEditing && (
+                         <textarea
+                            value={tempText}
+                            onChange={(e) => setTempText(e.target.value)}
+                            onBlur={handleBlur}
+                            onKeyDown={handleKeyDown}
+                            autoFocus
+                            className={`${fontClass} w-full h-full bg-transparent outline-none resize-none overflow-hidden text-inherit p-0 m-0 col-start-1 row-start-1`}
+                            style={{
+                                ...textEffectStyle,
+                                textAlign: textAlign || 'center',
+                            }}
+                         />
+                    )}
+                </div>
             </div>
         </div>
     );
