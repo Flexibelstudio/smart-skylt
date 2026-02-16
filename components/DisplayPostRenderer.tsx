@@ -88,9 +88,16 @@ const getTagFontFamilyClass = (family?: Tag['fontFamily']) => {
 // --- NEW: Fluid Typography Logic (Container Queries) ---
 // Returns a style object with fontSize in 'cqw' units.
 // This guarantees that text scales perfectly with the container width.
-const getFluidFontSizeStyle = (type: 'headline' | 'body', size?: string) => {
+const getFluidFontSizeStyle = (type: 'headline' | 'body', sizeStr?: string, scaleNum?: number) => {
+    // If we have a direct numeric scale, use it (highest priority)
+    if (scaleNum !== undefined && scaleNum !== null) {
+        const lineHeight = type === 'headline' ? 1.1 : 1.3;
+        return { fontSize: `${scaleNum}cqw`, lineHeight };
+    }
+
+    // Fallback to legacy string sizes
     if (type === 'headline') {
-        switch (size) {
+        switch (sizeStr) {
             case 'sm': return { fontSize: '4cqw', lineHeight: '1.2' };
             case 'md': return { fontSize: '5cqw', lineHeight: '1.2' };
             case 'lg': return { fontSize: '6cqw', lineHeight: '1.1' };
@@ -107,7 +114,7 @@ const getFluidFontSizeStyle = (type: 'headline' | 'body', size?: string) => {
         }
     } else {
         // Body text
-        switch (size) {
+        switch (sizeStr) {
             case 'xs': return { fontSize: '2.5cqw', lineHeight: '1.4' };
             case 'sm': return { fontSize: '3cqw', lineHeight: '1.4' };
             case 'md': return { fontSize: '3.8cqw', lineHeight: '1.3' };
@@ -367,10 +374,10 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string; styl
 };
 
 const DraggableTextElement: React.FC<any> = ({ 
-    type, text, x, y, width, textAlign, fontSize, fontFamily, color, 
+    type, text, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
     bgEnabled, bgColor, mode, organization, isDraggable, 
     shadowType, shadowColor, outlineWidth, outlineColor,
-    onUpdatePosition, onUpdateWidth 
+    onUpdatePosition, onUpdateWidth, onUpdateFontScale
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -447,6 +454,54 @@ const DraggableTextElement: React.FC<any> = ({
         }
     };
 
+    const handleScaleStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggable || !onUpdateFontScale || !containerRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        
+        const parent = containerRef.current.parentElement;
+        if (!parent) return;
+        
+        // Calculate center of the element to scale relative to it
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        const initialClientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const initialClientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        
+        const initialDistance = Math.hypot(initialClientX - centerX, initialClientY - centerY);
+        // Default to a sane value if fontScale is missing, e.g. 5.0
+        const initialScale = fontScale || (type === 'headline' ? 8.0 : 4.8);
+
+        const onScaleMove = (moveEvent: MouseEvent | TouchEvent) => {
+            const moveClientX = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientX : (moveEvent as MouseEvent).clientX;
+            const moveClientY = 'touches' in moveEvent ? (moveEvent as TouchEvent).touches[0].clientY : (moveEvent as MouseEvent).clientY;
+            
+            const currentDistance = Math.hypot(moveClientX - centerX, moveClientY - centerY);
+            
+            // Calculate new font scale based on drag distance ratio
+            let newScale = initialScale * (currentDistance / initialDistance);
+            newScale = Math.max(1, Math.min(40, newScale)); // Limits: 1.0 to 40.0 cqw
+
+            onUpdateFontScale(parseFloat(newScale.toFixed(1)));
+        };
+
+        const onScaleEnd = () => {
+            window.removeEventListener('mousemove', onScaleMove as any);
+            window.removeEventListener('mouseup', onScaleEnd);
+            window.removeEventListener('touchmove', onScaleMove as any);
+            window.removeEventListener('touchend', onScaleEnd);
+        };
+
+        if ('touches' in e) {
+            window.addEventListener('touchmove', onScaleMove as any);
+            window.addEventListener('touchend', onScaleEnd, { once: true });
+        } else {
+            window.addEventListener('mousemove', onScaleMove as any);
+            window.addEventListener('mouseup', onScaleEnd, { once: true });
+        }
+    };
+
     const style: React.CSSProperties = {
         position: 'absolute',
         top: `${y ?? 50}%`,
@@ -461,8 +516,8 @@ const DraggableTextElement: React.FC<any> = ({
     };
     
     // Compute Effects Styles
-    // We use the new fluid logic for font sizing
-    const fluidStyle = getFluidFontSizeStyle(type, fontSize);
+    // We use the new fluid logic for font sizing, supporting precise numerical scale
+    const fluidStyle = getFluidFontSizeStyle(type, fontSize, fontScale);
     
     const textEffectStyle: React.CSSProperties = {
         ...fluidStyle, // Applies fontSize (cqw) and lineHeight
@@ -472,7 +527,6 @@ const DraggableTextElement: React.FC<any> = ({
             : undefined,
     };
 
-    // Removed font size class since we use inline style now. Only font family and weight remain.
     const fontClass = type === 'headline' 
         ? `font-bold break-words ${fontFamily ? `font-${fontFamily}` : (organization?.headlineFontFamily ? `font-${organization.headlineFontFamily}` : 'font-display')}`
         : `mt-[1.5cqw] break-words ${fontFamily ? `font-${fontFamily}` : (organization?.bodyFontFamily ? `font-${organization.bodyFontFamily}` : 'font-sans')}`;
@@ -488,9 +542,12 @@ const DraggableTextElement: React.FC<any> = ({
         <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} className="group">
             {isDraggable && (
                 <>
+                     {/* Move Handle (Top-Right) */}
                      <div className="absolute -top-3 -right-3 p-1.5 bg-teal-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
                         <MoveIcon className="w-4 h-4" />
                      </div>
+                     
+                     {/* Width Handles (Sides) */}
                      <div onMouseDown={(e) => handleResizeStart(e, 'left')} onTouchStart={(e) => handleResizeStart(e, 'left')}
                           className="absolute -left-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-start opacity-0 group-hover:opacity-100 z-50">
                         <div className="w-1 h-6 bg-teal-500 rounded-full shadow-lg"/>
@@ -499,6 +556,16 @@ const DraggableTextElement: React.FC<any> = ({
                           className="absolute -right-2 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-end opacity-0 group-hover:opacity-100 z-50">
                         <div className="w-1 h-6 bg-teal-500 rounded-full shadow-lg"/>
                      </div>
+
+                     {/* Scale Handles (Corners) - Only if onUpdateFontScale provided */}
+                     {onUpdateFontScale && (
+                        <>
+                            <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -top-2 -left-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nwse-resize opacity-0 group-hover:opacity-100 z-50" />
+                            <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nwse-resize opacity-0 group-hover:opacity-100 z-50" />
+                            <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nesw-resize opacity-0 group-hover:opacity-100 z-50" />
+                            <div onMouseDown={handleScaleStart} onTouchStart={handleScaleStart} className="absolute -top-2 -right-2 w-4 h-4 bg-white border border-blue-500 rounded-full cursor-nesw-resize opacity-0 group-hover:opacity-100 z-50" />
+                        </>
+                     )}
                 </>
             )}
             <div 
@@ -747,6 +814,11 @@ export interface DisplayPostRendererProps {
     onUpdateHeadlinePosition?: any; onUpdateHeadlineWidth?: any;
     onUpdateBodyPosition?: any; onUpdateBodyWidth?: any;
     onUpdateQrPosition?: any; onUpdateQrWidth?: any; 
+    
+    // NEW: Font Scale Updates
+    onUpdateHeadlineFontScale?: (scale: number) => void;
+    onUpdateBodyFontScale?: (scale: number) => void;
+
     isTextDraggable?: any; isForDownload?: any;
 
     // Legacy support
@@ -772,6 +844,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     onUpdateHeadlinePosition, onUpdateHeadlineWidth,
     onUpdateBodyPosition, onUpdateBodyWidth,
     onUpdateQrPosition, onUpdateQrWidth, 
+    // NEW Props
+    onUpdateHeadlineFontScale,
+    onUpdateBodyFontScale,
     isTextDraggable,
     // Legacy support
     onUpdateTextPosition, onUpdateTextWidth
@@ -949,6 +1024,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     x={hX} y={hY} width={hW}
                     textAlign={hAlign}
                     fontSize={post.headlineFontSize}
+                    fontScale={post.headlineFontScale} // Pass the numeric scale
                     fontFamily={post.headlineFontFamily}
                     color={post.headlineTextColor || post.textColor}
                     bgEnabled={post.headlineBackgroundEnabled ?? post.textBackgroundEnabled}
@@ -964,6 +1040,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     isDraggable={isTextDraggable}
                     onUpdatePosition={onUpdateHeadlinePosition || onUpdateTextPosition}
                     onUpdateWidth={onUpdateHeadlineWidth || onUpdateTextWidth}
+                    onUpdateFontScale={onUpdateHeadlineFontScale} // Handler for scaling
                 />
             )}
 
@@ -975,6 +1052,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     x={bX} y={bY} width={bW}
                     textAlign={bAlign}
                     fontSize={post.bodyFontSize}
+                    fontScale={post.bodyFontScale} // Pass the numeric scale
                     fontFamily={post.bodyFontFamily}
                     color={post.bodyTextColor || post.textColor}
                     bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
@@ -990,6 +1068,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     isDraggable={isTextDraggable}
                     onUpdatePosition={onUpdateBodyPosition}
                     onUpdateWidth={onUpdateBodyWidth}
+                    onUpdateFontScale={onUpdateBodyFontScale} // Handler for scaling
                 />
             )}
             

@@ -159,6 +159,10 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                     onUpdateBodyWidth={(width) => onPostChange({ ...post, bodyWidth: width })}
                     onUpdateQrPosition={(pos) => onPostChange({ ...post, qrPositionX: pos.x, qrPositionY: pos.y })}
                     onUpdateQrWidth={(width) => onPostChange({ ...post, qrWidth: width })}
+                    // NEW: Font Scale Handlers
+                    onUpdateHeadlineFontScale={(scale) => onPostChange({ ...post, headlineFontScale: scale })}
+                    onUpdateBodyFontScale={(scale) => onPostChange({ ...post, bodyFontScale: scale })}
+                    
                     isTextDraggable={true}
                 />
             </div>

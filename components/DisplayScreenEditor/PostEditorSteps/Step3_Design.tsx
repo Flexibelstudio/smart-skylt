@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { DisplayPost, Organization, DisplayScreen } from '../../../types';
-import { StyledSelect, FontSelector } from '../../Forms';
+import { StyledSelect, FontSelector, StyledInput } from '../../Forms';
 import { ToggleSwitch, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon } from '../../icons';
 import { ColorPaletteInput, ColorOpacityControl, resolveColor } from '../../SharedComponents';
 
@@ -95,12 +95,17 @@ const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organiz
     const prefix = isHeadline ? 'headline' : 'body';
     
     // Resolve current values with fallbacks
-    const fontSize = post[`${prefix}FontSize`] || (isHeadline ? '4xl' : 'lg');
+    // Prefer fontScale if available, otherwise fallback to fontSize default mapping
+    const fontSizeVal = post[`${prefix}FontScale`] || (isHeadline ? 8.0 : 4.8);
     const fontFamily = post[`${prefix}FontFamily`] || organization[`${prefix}FontFamily`] || (isHeadline ? 'display' : 'sans');
     const textAlign = post[`${prefix}TextAlign`] || post.textAlign || 'center';
     const bgEnabled = post[`${prefix}BackgroundEnabled`] ?? post.textBackgroundEnabled ?? false;
     const bgColor = post[`${prefix}BackgroundColor`] || post.textBackgroundColor || 'rgba(0,0,0,0.5)';
     const textColor = post[`${prefix}TextColor`] || post.textColor || 'white';
+
+    const handleSizeChange = (val: number) => {
+        onFieldChange(`${prefix}FontScale` as any, val);
+    };
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -111,34 +116,26 @@ const ElementDesignEditor: React.FC<ElementDesignProps> = ({ type, post, organiz
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-500 dark:text-gray-400 mb-1">Storlek</label>
-                    <StyledSelect value={fontSize} onChange={e => onFieldChange(`${prefix}FontSize` as any, e.target.value)}>
-                        {isHeadline ? (
-                            <>
-                                <option value="sm">Extra Liten</option>
-                                <option value="md">Liten</option>
-                                <option value="lg">Mindre</option>
-                                <option value="xl">Normal</option>
-                                <option value="2xl">Större</option>
-                                <option value="3xl">Stor</option>
-                                <option value="4xl">Extra Stor</option>
-                                <option value="5xl">Jättestor</option>
-                                <option value="6xl">Enorm</option>
-                                <option value="7xl">Gigantisk</option>
-                                <option value="8xl">Massiv</option>
-                                <option value="9xl">Maximal</option>
-                            </>
-                        ) : (
-                            <>
-                                <option value="xs">Extra Liten</option>
-                                <option value="sm">Liten</option>
-                                <option value="md">Mindre</option>
-                                <option value="lg">Normal</option>
-                                <option value="xl">Större</option>
-                                <option value="2xl">Stor</option>
-                                <option value="3xl">Extra Stor</option>
-                            </>
-                        )}
-                    </StyledSelect>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="range"
+                            min="1.0"
+                            max="30.0"
+                            step="0.5"
+                            value={fontSizeVal}
+                            onChange={(e) => handleSizeChange(parseFloat(e.target.value))}
+                            className="flex-grow h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <input
+                            type="number"
+                            min="1.0"
+                            max="40.0"
+                            step="0.5"
+                            value={fontSizeVal}
+                            onChange={(e) => handleSizeChange(parseFloat(e.target.value))}
+                            className="w-16 p-2 text-center text-sm font-mono bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-primary focus:border-primary"
+                        />
+                    </div>
                 </div>
             </div>
 

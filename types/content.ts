@@ -75,6 +75,7 @@ export interface DisplayPost {
   // Headline specific
   headline?: string;
   headlineFontSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | '8xl' | '9xl';
+  headlineFontScale?: number; // NEW: Numeric scale for fluid sizing (e.g., 5.5)
   headlineFontFamily?: Tag['fontFamily'];
   headlinePositionX?: number;
   headlinePositionY?: number;
@@ -92,6 +93,7 @@ export interface DisplayPost {
   // Body specific
   body?: string;
   bodyFontSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+  bodyFontScale?: number; // NEW: Numeric scale for fluid sizing
   bodyFontFamily?: Tag['fontFamily'];
   bodyPositionX?: number;
   bodyPositionY?: number;

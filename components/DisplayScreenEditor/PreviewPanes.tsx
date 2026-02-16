@@ -97,12 +97,17 @@ const SinglePostPreview: React.FC<{
     onUpdateBodyWidth: (width: number) => void,
     onUpdateQrPosition?: (pos: { x: number, y: number }) => void,
     onUpdateQrWidth?: (width: number) => void,
+    // NEW: Font Scale Handlers
+    onUpdateHeadlineFontScale?: (scale: number) => void,
+    onUpdateBodyFontScale?: (scale: number) => void,
     isTextDraggable?: boolean,
 }> = ({ 
     post, screen, organization, onUpdateTagPosition, 
     onUpdateHeadlinePosition, onUpdateHeadlineWidth,
     onUpdateBodyPosition, onUpdateBodyWidth,
-    onUpdateQrPosition, onUpdateQrWidth, isTextDraggable 
+    onUpdateQrPosition, onUpdateQrWidth, 
+    onUpdateHeadlineFontScale, onUpdateBodyFontScale,
+    isTextDraggable 
 }) => {
     
     // För stående skärmar vill vi begränsa höjden så den inte tar upp hela webbläsarfönstret
@@ -149,6 +154,10 @@ const SinglePostPreview: React.FC<{
                         onUpdateBodyWidth={onUpdateBodyWidth}
                         onUpdateQrPosition={onUpdateQrPosition}
                         onUpdateQrWidth={onUpdateQrWidth}
+                        // Connect new handlers
+                        onUpdateHeadlineFontScale={onUpdateHeadlineFontScale}
+                        onUpdateBodyFontScale={onUpdateBodyFontScale}
+                        
                         isTextDraggable={isTextDraggable}
                         organization={organization}
                         aspectRatio={screen.aspectRatio}
@@ -167,7 +176,7 @@ const SinglePostPreview: React.FC<{
             </div>
             
             <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 text-center">
-                Dra i text och objekt för att flytta dem.
+                Dra i text och objekt för att flytta dem. Dra i hörnen för att ändra storlek.
             </p>
         </div>
     );
@@ -304,13 +313,18 @@ interface PreviewPaneProps {
     onUpdateBodyWidth: (width: number) => void;
     onUpdateQrPosition?: (pos: {x: number, y: number}) => void;
     onUpdateQrWidth?: (width: number) => void;
+    // NEW Props
+    onUpdateHeadlineFontScale?: (scale: number) => void;
+    onUpdateBodyFontScale?: (scale: number) => void;
     isTextDraggable?: boolean;
 }
 export const PreviewPane: React.FC<PreviewPaneProps> = ({ 
     editingPost, screen, organization, onUpdateTagPosition, 
     onUpdateHeadlinePosition, onUpdateHeadlineWidth,
     onUpdateBodyPosition, onUpdateBodyWidth,
-    onUpdateQrPosition, onUpdateQrWidth, isTextDraggable 
+    onUpdateQrPosition, onUpdateQrWidth, 
+    onUpdateHeadlineFontScale, onUpdateBodyFontScale,
+    isTextDraggable 
 }) => {
     if (editingPost) {
         return (
@@ -325,6 +339,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
                 onUpdateBodyWidth={onUpdateBodyWidth}
                 onUpdateQrPosition={onUpdateQrPosition}
                 onUpdateQrWidth={onUpdateQrWidth}
+                // Connect handlers
+                onUpdateHeadlineFontScale={onUpdateHeadlineFontScale}
+                onUpdateBodyFontScale={onUpdateBodyFontScale}
                 isTextDraggable={isTextDraggable}
             />
         );
