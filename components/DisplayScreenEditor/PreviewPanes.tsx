@@ -22,7 +22,7 @@ export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): strin
  * - Bredare än 540px/600px (löser radbrytningsproblemen/gröten).
  * - Smalare än 720px (gör att texten inte blir pytteliten på laptop).
  */
-const ScaledPreviewWrapper: React.FC<{ 
+export const ScaledPreviewWrapper: React.FC<{ 
     aspectRatio: DisplayScreen['aspectRatio']; 
     children: React.ReactNode;
     className?: string;

@@ -19,6 +19,7 @@ import { AdminTab } from './admin/AdminTab';
 import { AiAutomationTab } from './admin/AiAutomationTab';
 import { OrganisationTab } from './OrganisationTab';
 import { MediaGalleryTab } from './admin/MediaGalleryTab';
+import { ScaledPreviewWrapper } from './DisplayScreenEditor/PreviewPanes';
 
 // Import Modals (We can move these too later, but let's keep them here for now to minimize file explosion in one step)
 // or assume they are internal to this file for simplicity if they weren't extracted.
@@ -99,21 +100,27 @@ const DisplayScreenPreviewModal: React.FC<{
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
             <div className={`bg-white dark:bg-slate-800 rounded-xl p-4 w-full ${modalWidthClass} text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in`} onClick={e => e.stopPropagation()}>
                 <h2 className="text-xl font-bold mb-4">Förhandsgranskning: {screen.name}</h2>
-                <div className={`${getAspectRatioClass(screen.aspectRatio)} w-full bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg`}>
-                    {currentPost ? (
-                        <DisplayPostRenderer 
-                            post={currentPost} 
-                            allTags={organization.tags} 
-                            primaryColor={organization.primaryColor}
-                            onVideoEnded={advance}
-                            organization={organization}
-                            aspectRatio={screen.aspectRatio}
-                        />
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
-                            Inga aktiva inlägg.
-                        </div>
-                    )}
+                <div className="w-full">
+                    <ScaledPreviewWrapper 
+                        aspectRatio={screen.aspectRatio}
+                        className="bg-slate-300 dark:bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-300 dark:border-gray-600 shadow-lg"
+                    >
+                        {currentPost ? (
+                            <DisplayPostRenderer 
+                                post={currentPost} 
+                                allTags={organization.tags} 
+                                primaryColor={organization.primaryColor}
+                                onVideoEnded={advance}
+                                organization={organization}
+                                aspectRatio={screen.aspectRatio}
+                                mode="live" // Use 'live' mode to ensure consistent rendering scale with ScaledPreviewWrapper
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
+                                Inga aktiva inlägg.
+                            </div>
+                        )}
+                    </ScaledPreviewWrapper>
                 </div>
                 <div className="flex justify-end mt-4">
                     <SecondaryButton onClick={onClose}>Stäng</SecondaryButton>
