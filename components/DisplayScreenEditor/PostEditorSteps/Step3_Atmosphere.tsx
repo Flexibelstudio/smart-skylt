@@ -402,9 +402,28 @@ const SingleMediaEditor: React.FC<{
         if (!promptToGenerate || !promptToGenerate.trim()) return;
         setAiLoading('generate-image');
         try {
+            // Spara nuvarande bild till historiken innan vi genererar en ny
+            const currentVariants = [...(post.aiImageVariants || [])];
+            if (post.imageUrl) {
+                currentVariants.push({
+                    id: `history-${Date.now()}`,
+                    url: post.imageUrl,
+                    prompt: post.aiImagePrompt || '',
+                    createdAt: new Date().toISOString(),
+                    createdByUid: currentUser?.uid || ''
+                });
+            }
+
             const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, screen.aspectRatio);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
-            onPostChange({ ...post, imageUrl: dataUri, videoUrl: undefined, isAiGeneratedImage: true });
+            
+            onPostChange({ 
+                ...post, 
+                imageUrl: dataUri, 
+                videoUrl: undefined, 
+                isAiGeneratedImage: true,
+                aiImageVariants: currentVariants
+            });
             showToast({ message: 'AI-bild genererad!', type: 'success' });
             startCooldown();
         } catch (error) {
@@ -438,6 +457,18 @@ const SingleMediaEditor: React.FC<{
              }
         }
 
+        // --- Save state for undo BEFORE generation ---
+        const currentVariants = [...(post.aiImageVariants || [])];
+        if (post.imageUrl) {
+            currentVariants.push({
+                id: `history-${Date.now()}`,
+                url: post.imageUrl,
+                prompt: post.aiImagePrompt || '',
+                createdAt: new Date().toISOString(),
+                createdByUid: currentUser.uid
+            });
+        }
+
         let finalPrompt = post.aiVideoPrompt || '';
         if (isImageAliveEnabled || useImageForVideo) {
             const technicalConstraint = "CRITICAL: The first frame MUST be identical to the source image. ABSOLUTELY NO FADE-IN FROM BLACK. START INSTANTLY.";
@@ -469,6 +500,7 @@ const SingleMediaEditor: React.FC<{
                 videoUrl: videoUrl,
                 isAiGeneratedVideo: true,
                 imageUrl: undefined,
+                aiImageVariants: currentVariants
             });
             startCooldown();
         } catch (error) {
@@ -494,14 +526,25 @@ const SingleMediaEditor: React.FC<{
     
         try {
             const { mimeType, data } = await urlToBase64(post.imageUrl);
+            
+            const currentVariant: AiImageVariant = {
+                id: `variant-${Date.now()}`,
+                url: post.imageUrl,
+                prompt: post.aiImagePrompt || '',
+                createdAt: new Date().toISOString(),
+                createdByUid: currentUser.uid,
+            };
+
             const { imageBytes: newImageBytes, mimeType: newMimeType } = await editDisplayPostImage(data, mimeType, editPrompt);
             const newDataUri = `data:${newMimeType};base64,${newImageBytes}`;
 
+            const newVariants = [...(post.aiImageVariants || []), currentVariant];
             onPostChange({ 
                 ...post, 
                 imageUrl: newDataUri, 
                 aiImagePrompt: editPrompt,
-                isAiGeneratedImage: true
+                isAiGeneratedImage: true,
+                aiImageVariants: newVariants
             });
     
             showToast({ message: 'Ny bildvariant skapad!', type: 'success' });
