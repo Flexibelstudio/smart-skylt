@@ -29,8 +29,8 @@ const QrCodePreview: React.FC<{ url: string }> = ({ url }) => {
 
     if (!dataUrl) return null;
     return (
-        <div className="bg-white p-1 rounded-xl shadow-md border border-slate-200 flex items-center justify-center">
-            <img src={dataUrl} alt="QR kod" className="w-12 h-12 md:w-16 md:h-16 object-contain select-none pointer-events-none" />
+        <div className="bg-white p-0.5 rounded shadow-md border border-slate-200/55 flex items-center justify-center">
+            <img src={dataUrl} alt="QR kod" className="w-7 h-7 md:w-8 md:h-8 object-contain select-none pointer-events-none" />
         </div>
     );
 };
@@ -212,9 +212,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             let bY = 60;
             let bW = 80;
 
-            let qrX = 86;
-            let qrY = 86;
-            let qrW = 12;
+            let qrX = 92;
+            let qrY = 92;
+            let qrW = 7.5;
 
             if (layout === 'image-fullscreen') {
                 // Placed gracefully on lower third, styled with robust shadows
@@ -226,9 +226,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 bY = 74;
                 bW = 84;
 
-                qrX = 86;
-                qrY = 86;
-                qrW = 12;
+                qrX = 92;
+                qrY = 92;
+                qrW = 7.5;
             } else if (layout === 'image-left') {
                 if (isPortraitScreen) {
                     // Portrait split: Image on Top (hY 0-50), Text Area on Bottom (hY 50-100)
@@ -240,9 +240,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     bY = 76;
                     bW = 84;
 
-                    qrX = 86;
-                    qrY = 86;
-                    qrW = 11;
+                    qrX = 92;
+                    qrY = 92;
+                    qrW = 7.5;
                 } else {
                     // Landscape split: Image on Left (wX 0-50), Text Area on Right (wX 50-100)
                     hX = 75; // middle of right text half
@@ -253,9 +253,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     bY = 52;
                     bW = 42;
 
-                    qrX = 75;
-                    qrY = 78;
-                    qrW = 11;
+                    qrX = 92;
+                    qrY = 92;
+                    qrW = 7.5;
                 }
             } else if (layout === 'image-right') {
                 if (isPortraitScreen) {
@@ -268,9 +268,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     bY = 30;
                     bW = 84;
 
-                    qrX = 86;
-                    qrY = 36;
-                    qrW = 11;
+                    qrX = 92;
+                    qrY = 92;
+                    qrW = 7.5;
                 } else {
                     // Landscape split: Text Area on Left (wX 0-50), Image on Right (wX 50-100)
                     hX = 25; // middle of left text half
@@ -281,9 +281,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     bY = 52;
                     bW = 42;
 
-                    qrX = 25;
-                    qrY = 78;
-                    qrW = 11;
+                    qrX = 92;
+                    qrY = 92;
+                    qrW = 7.5;
                 }
             } else if (layout === 'real-estate') {
                 hX = 50;
@@ -295,8 +295,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 bW = 80;
 
                 qrX = 50;
-                qrY = 80;
-                qrW = 10;
+                qrY = 82;
+                qrW = 7.5;
             }
 
             const newPost: DisplayPost = {
@@ -709,13 +709,16 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
                                         Kort beskrivning (valfritt)
                                     </label>
-                                    <span className="text-xs text-slate-400">Standardtext används om tomt</span>
+                                    <span className="text-xs text-slate-400 font-medium">
+                                        {description.length}/140 tecken
+                                    </span>
                                 </div>
                                 <textarea
                                     value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
+                                    onChange={(e) => setDescription(e.target.value.slice(0, 140))}
                                     placeholder="t.ex. Nyinkommen pärla! Endast 2400 mil. Kontakta oss för provkörning eller mer information."
                                     rows={2}
+                                    maxLength={140}
                                     className="w-full bg-slate-50/50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:ring-2 focus:ring-teal-500 transition-all outline-none resize-none text-sm"
                                 />
                             </div>
@@ -1039,8 +1042,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         <div 
                                             className="absolute" 
                                             style={{
-                                                right: isPortraitScreen ? '24px' : '16px',
-                                                bottom: isPortraitScreen ? '24px' : '16px',
+                                                right: isPortraitScreen ? '10px' : '8px',
+                                                bottom: isPortraitScreen ? '10px' : '8px',
                                                 transform: 'scale(1)',
                                                 zIndex: 35
                                             }}
