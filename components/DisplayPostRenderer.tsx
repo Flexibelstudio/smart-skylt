@@ -1014,40 +1014,48 @@ const BookingPortalRenderer: React.FC<{
                     {body}
                 </p>
 
-                {/* Checklist (Only showed when we have a bit of vertical space) */}
-                <div className={`grid grid-cols-1 gap-[1cqw] pt-[1cqw] ${isPortrait ? 'hidden sm:grid text-left max-w-md mx-auto w-full' : ''}`}>
-                    <div className="flex items-center gap-[1cqw]">
-                        <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
-                            <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Se lediga tider dygnet runt</span>
-                    </div>
-                    <div className="flex items-center gap-[1cqw]">
-                        <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
-                            <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Boka snabbt directly on your phone</span>
-                    </div>
-                    {isBokadirektUrl && (
+                {/* Checklist (Only shown when landscape / not portrait to save vertical space) */}
+                {!isPortrait && (
+                    <div className="grid grid-cols-1 gap-[1cqw] pt-[1cqw] text-left w-full">
                         <div className="flex items-center gap-[1cqw]">
                             <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
                                 <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
                             </span>
-                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Betala enkelt via Bokadirekt</span>
+                            <span style={{ fontSize: '1.5cqi' }} className="font-semibold text-white/90">Se lediga tider dygnet runt</span>
                         </div>
-                    )}
-                </div>
+                        <div className="flex items-center gap-[1cqw]">
+                            <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
+                                <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </span>
+                            <span style={{ fontSize: '1.5cqi' }} className="font-semibold text-white/90">Boka snabbt direkt i mobilen</span>
+                        </div>
+                        {isBokadirektUrl && (
+                            <div className="flex items-center gap-[1cqw]">
+                                <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
+                                    <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </span>
+                                <span style={{ fontSize: '1.5cqi' }} className="font-semibold text-white/90">Betala enkelt via Bokadirekt</span>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Right QR Area with premium floating glass card representing physical signage reception screen */}
-            <div className={`flex flex-col items-center justify-center h-full ${isPortrait ? 'w-full max-h-[45%] mt-auto pb-[2cqw]' : 'w-1/2 ml-[2cqw]'}`}>
-                <div className="relative p-[1.8cqw] sm:p-[2.2cqw] rounded-[3cqw] bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl flex flex-col items-center justify-center max-w-[360px] aspect-square w-full select-none group transform hover:scale-[1.02] transition-transform duration-300">
+            <div className={`flex flex-col items-center justify-center h-full ${isPortrait ? 'w-full max-h-[46%] mt-auto pb-[2cqw]' : 'w-1/2 ml-[2cqw]'}`}>
+                <div 
+                    className="relative p-[1.8cqw] sm:p-[2.2cqw] rounded-[3cqw] bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl flex flex-col items-center justify-center aspect-square select-none group transform hover:scale-[1.02] transition-transform duration-300"
+                    style={{
+                        width: isPortrait ? '54cqw' : '100%',
+                        maxWidth: isPortrait ? '230px' : '360px',
+                    }}
+                >
                     {/* Tiny blinking scanning corner lasers */}
                     <div className="absolute top-[2cqw] left-[2cqw] w-[1.5cqw] h-[1.5cqw] border-t-2 border-l-2 border-teal-400"></div>
                     <div className="absolute top-[2cqw] right-[2cqw] w-[1.5cqw] h-[1.5cqw] border-t-2 border-r-2 border-teal-400"></div>
