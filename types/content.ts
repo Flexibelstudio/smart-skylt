@@ -1,0 +1,264 @@
+
+import { StructuredImagePrompt, AiImageVariant } from './ai';
+
+export interface Tag {
+  id: string;
+  displayType?: 'tag' | 'stamp';
+  text: string;
+  backgroundColor: string;
+  textColor: '#FFFFFF' | '#000000';
+  fontSize: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+  fontFamily?: 'sans' | 'display' | 'script' | 'adscript' | 'roboto' | 'open-sans' | 'lato' | 'montserrat' | 'source-sans-pro' | 'nunito' | 'raleway' | 'oswald' | 'ubuntu' | 'helvetica-neue' | 'arial' | 'manrope' | 'fira-sans' | 'merriweather' | 'playfair-display' | 'lora' | 'georgia' | 'times-new-roman' | 'libre-baskerville' | 'eb-garamond' | 'cormorant-garamond' | 'pt-serif' | 'dm-sans' | 'work-sans' | 'quicksand' | 'josefin-sans' | 'exo-2' | 'cabin';
+  fontWeight?: 'bold' | 'black';
+  animation?: 'none' | 'pulse' | 'glow';
+  url?: string;
+  shape?: 'rectangle' | 'circle' | 'square';
+  border?: 'none' | 'solid' | 'dashed';
+  opacity?: number; // 0 to 1 for stamps
+}
+
+export interface SubImage {
+  id: string;
+  imageUrl: string; // base64 data URI
+}
+
+// A type for items in a collage, which can be an image or a video.
+export interface CollageItem {
+  id: string;
+  type: 'image' | 'video' | 'text';
+  imageUrl?: string; // base64 data URI
+  videoUrl?: string; // e.g., URL to an MP4 file
+  isAiGeneratedImage?: boolean;
+  isAiGeneratedVideo?: boolean;
+  mediaPositionX?: number; // 0-100%
+  mediaPositionY?: number; // 0-100%
+  mediaZoom?: number; // 1.0 - 3.0
+  text?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+  fontSize?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+}
+
+export interface SubImageConfig {
+  animation: 'fade' | 'scroll';
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'top' | 'middle' | 'bottom' | 'top-center' | 'center-left' | 'center-right' | 'bottom-center';
+  size: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  intervalSeconds: number;
+}
+
+export type ContentPosition =
+  'top-left' | 'top-left-center' | 'top-center' | 'top-right-center' | 'top-right' |
+  'middle-top-left' | 'middle-top-left-center' | 'middle-top-center' | 'middle-top-right-center' | 'middle-top-right' |
+  'middle-left' | 'middle-left-center' | 'middle-center' | 'middle-right-center' | 'middle-right' |
+  'middle-bottom-left' | 'middle-bottom-left-center' | 'middle-bottom-center' | 'middle-bottom-right-center' | 'middle-bottom-right' |
+  'bottom-left' | 'bottom-left-center' | 'bottom-center' | 'bottom-right-center' | 'bottom-right' |
+  // Legacy names for backwards compatibility
+  'center-left' | 'center' | 'center-right';
+
+export interface TagPositionOverride {
+  tagId: string;
+  x: number; // percentage from left
+  y: number; // percentage from top
+  rotation: number; // degrees
+  scale?: number; // Scaling factor (1.0 is default)
+  width?: number; // Width in percentage relative to screen width (if manual resizing is applied)
+}
+
+export interface TagColorOverride {
+  tagId: string;
+  backgroundColor?: string;
+  textColor?: '#FFFFFF' | '#000000';
+}
+
+// NEW: Interface for additional free-floating text elements
+export interface AdditionalTextElement {
+  id: string;
+  text: string;
+  x: number; // %
+  y: number; // %
+  width: number; // %
+  fontScale: number; // numeric scale
+  fontFamily?: Tag['fontFamily'];
+  color?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  backgroundEnabled?: boolean;
+  backgroundColor?: string;
+  shadowType?: 'none' | 'soft' | 'hard' | 'glow';
+  shadowColor?: string;
+  outlineWidth?: number;
+  outlineColor?: string;
+}
+
+export interface DisplayPost {
+  id: string;
+  internalTitle: string;
+  layout: 'text-only' | 'image-fullscreen' | 'video-fullscreen' | 'image-left' | 'image-right' | 'webpage' | 'collage' | 'real-estate' | 'ai-ad';
+  collageLayout?: 
+    | 'landscape-1-2' | 'landscape-3-horiz' | 'landscape-4-grid' | 'landscape-2-horiz' | 'landscape-2-vert' 
+    | 'landscape-1-top-2-bottom' | 'landscape-1-top-3-bottom' | 'landscape-6-grid' | 'landscape-3-vert'
+    | 'portrait-1-2' | 'portrait-3-vert' | 'portrait-4-grid' | 'portrait-2-horiz' | 'portrait-2-vert'
+    | 'portrait-1-top-2-bottom' | 'portrait-1-top-3-bottom' | 'portrait-6-grid' | 'portrait-3-horiz';
+  
+  // Real Estate specific
+  realEstateUrl?: string;
+  realEstateAddress?: string;
+  realEstatePrice?: string;
+  realEstateRooms?: string;
+  realEstateArea?: string;
+
+  // Headline specific
+  headline?: string;
+  headlineFontSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | '8xl' | '9xl';
+  headlineFontScale?: number; // NEW: Numeric scale for fluid sizing (e.g., 5.5)
+  headlineFontFamily?: Tag['fontFamily'];
+  headlinePositionX?: number;
+  headlinePositionY?: number;
+  headlineWidth?: number;
+  headlineTextAlign?: 'left' | 'center' | 'right';
+  headlineBackgroundEnabled?: boolean;
+  headlineBackgroundColor?: string;
+  headlineTextColor?: string;
+  // NEW: Headline Effects
+  headlineShadowType?: 'none' | 'soft' | 'hard' | 'glow';
+  headlineShadowColor?: string;
+  headlineOutlineWidth?: number; // 0-10px
+  headlineOutlineColor?: string;
+
+  // Body specific
+  body?: string;
+  bodyFontSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+  bodyFontScale?: number; // NEW: Numeric scale for fluid sizing
+  bodyFontFamily?: Tag['fontFamily'];
+  bodyPositionX?: number;
+  bodyPositionY?: number;
+  bodyWidth?: number;
+  bodyTextAlign?: 'left' | 'center' | 'right';
+  bodyBackgroundEnabled?: boolean;
+  bodyBackgroundColor?: string;
+  bodyTextColor?: string;
+  // NEW: Body Effects
+  bodyShadowType?: 'none' | 'soft' | 'hard' | 'glow';
+  bodyShadowColor?: string;
+  bodyOutlineWidth?: number; // 0-10px
+  bodyOutlineColor?: string;
+
+  // NEW: Additional text elements
+  additionalTextElements?: AdditionalTextElement[];
+
+  // Legacy / Shared style fields (keep for compatibility)
+  textPosition?: ContentPosition;
+  textAlign?: 'left' | 'center' | 'right';
+  textPositionX?: number; 
+  textPositionY?: number; 
+  textWidth?: number; 
+  backgroundColor?: 'white' | 'black' | 'primary' | 'secondary' | 'tertiary' | 'accent' | string;
+  textColor?: 'white' | 'black' | 'primary' | 'secondary' | 'tertiary' | 'accent' | string;
+  textBackgroundEnabled?: boolean;
+  textBackgroundColor?: string;
+
+  durationSeconds: number;
+  startDate?: string; // ISO string
+  endDate?: string;   // ISO string
+  tagIds?: string[]; // Array of Tag IDs
+  tagPositionOverrides?: TagPositionOverride[];
+  tagColorOverrides?: TagColorOverride[];
+  imageUrl?: string; // base64 data URI
+  videoUrl?: string; // e.g., URL to an MP4 file
+  // Main Media Position
+  mediaPositionX?: number; // 0-100%
+  mediaPositionY?: number; // 0-100%
+  mediaZoom?: number; // 1.0 - 3.0
+  
+  webpageUrl?: string;
+  webpageUseSmartPortal?: boolean;
+  subImages?: SubImage[];
+  collageItems?: CollageItem[]; 
+  subImageConfig?: SubImageConfig;
+  imageOverlayEnabled?: boolean;
+  imageOverlayColor?: string; 
+  backgroundEffect?: 'none' | 'confetti' | 'hearts';
+  shareToInspiration?: boolean; 
+  textAnimation?: 'none' | 'typewriter' | 'fade-up-word' | 'blur-in';
+  imageEffect?: 'none' | 'ken-burns-slow' | 'ken-burns-fast';
+  backgroundVideoUrl?: string;
+  backgroundVideoOverlayEnabled?: boolean;
+  isAiGeneratedImage?: boolean; 
+  isAiGeneratedVideo?: boolean; 
+  aiImagePrompt?: string; 
+  structuredImagePrompt?: Partial<StructuredImagePrompt>; 
+  aiVideoPrompt?: string; 
+  aiImageVariants?: AiImageVariant[]; 
+  transitionToNext?: 'fade' | 'slide' | 'dissolve';
+  qrCodeUrl?: string;
+  // FIX: qrCodePosition och qrCodeSize har lagts till för att stödja legacy-beräkningar i DisplayPostRenderer.
+  qrCodePosition?: string;
+  qrCodeSize?: string;
+  qrPositionX?: number; 
+  qrPositionY?: number; 
+  qrWidth?: number; 
+  splitRatio?: number; 
+  sharedFrom?: string; 
+  sharedFromPostId?: string; 
+  sharedAt?: string; 
+  suggestionOriginId?: string; 
+  automationId?: string; 
+  status?: 'active' | 'archived'; 
+  isExpressPost?: boolean;
+  isExpressSold?: boolean;
+}
+
+// A PostTemplate for creating reusable post layouts
+export interface PostTemplate {
+  id: string;
+  templateName: string; // E.g., "Nytt Objekt", "Dagens Lunch"
+  // The post object contains all styling and layout, but no scheduling.
+  // Content fields can be used as placeholders/defaults.
+  postData: Omit<DisplayPost, 'id' | 'startDate' | 'endDate' | 'internalTitle'>;
+}
+
+export interface CustomCategoryWithPrompt {
+  id:string;
+  name: string;
+  prompt: string;
+}
+
+export interface InfoMessage {
+  id: string;
+  internalTitle: string;
+  headline: string;
+  body: string;
+  layout: 'text-only' | 'image-left' | 'image-right';
+  imageUrl?: string; // base64 data URI
+  animation: 'fade' | 'slide-left' | 'slide-right';
+  durationSeconds: number;
+  startDate?: string; // ISO string
+  endDate?: string;   // ISO string
+  visibleInLocations: string[]; // Array of location IDs, or ['all']
+}
+
+export interface InfoCarousel {
+  isEnabled: boolean;
+  messages: InfoMessage[];
+}
+
+export interface CustomPageTab {
+  id: string;
+  title: string;
+  content: string; // Markdown content
+}
+
+export interface CustomPage {
+  id:string;
+  title: string; // This is the main title for the group of tabs
+  tabs: CustomPageTab[];
+}
+
+export interface CustomEvent {
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD format
+  icon: string; // Emoji
+}
