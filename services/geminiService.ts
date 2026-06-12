@@ -468,7 +468,7 @@ export const generateCompletePost = (
       let mimeType = 'image/jpeg';
       
       if (functions) {
-          const proxyImg = await generateImagesViaProxy("gemini-2.5-flash-image", (postData as any).imagePrompt, { aspectRatio });
+          const proxyImg = await generateImagesViaProxy("imagen-4.0-generate-001", (postData as any).imagePrompt, { aspectRatio });
           imageBytes = proxyImg.imageBytes;
           mimeType = proxyImg.mimeType || 'image/jpeg';
       } else {
@@ -519,7 +519,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
       let mimeType = 'image/jpeg';
       
       if (functions) {
-          const proxyImg = await generateImagesViaProxy("gemini-2.5-flash-image", (postData as any).imagePrompt, { aspectRatio });
+          const proxyImg = await generateImagesViaProxy("imagen-4.0-generate-001", (postData as any).imagePrompt, { aspectRatio });
           imageBytes = proxyImg.imageBytes;
           mimeType = proxyImg.mimeType || 'image/jpeg';
       } else {

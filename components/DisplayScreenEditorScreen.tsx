@@ -120,7 +120,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     const handleSavePost = async (postToSave: DisplayPost) => {
         if (!organization) return;
     
-        const isNewPost = postToSave.id.startsWith('new-');
+        const isNewPost = !postToSave.id || postToSave.id.startsWith('new-');
         const finalPostId = isNewPost ? `post-${Date.now()}` : postToSave.id;
         let postWithStorageUrls = { ...postToSave, id: finalPostId };
     
