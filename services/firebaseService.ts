@@ -14,6 +14,59 @@ const sanitizeForFirestore = <T>(data: T): T => {
     return JSON.parse(JSON.stringify(data));
 };
 
+const serializePostsArray = (posts: DisplayPost[] | undefined): any[] | undefined => {
+    if (!posts) return undefined;
+    return posts.map(post => {
+        const serialized: any = { ...post };
+        const arrayFields = [
+            'tagIds',
+            'tagPositionOverrides',
+            'tagColorOverrides',
+            'subImages',
+            'collageItems',
+            'additionalTextElements',
+            'aiImageVariants'
+        ];
+        arrayFields.forEach(field => {
+            if (serialized[field] !== undefined) {
+                serialized[`_serialized_${field}`] = JSON.stringify(serialized[field]);
+                delete serialized[field];
+            }
+        });
+        return serialized;
+    });
+};
+
+const deserializePostsArray = (posts: any[] | undefined): DisplayPost[] | undefined => {
+    if (!posts) return undefined;
+    return posts.map(post => {
+        const deserialized: any = { ...post };
+        const arrayFields = [
+            'tagIds',
+            'tagPositionOverrides',
+            'tagColorOverrides',
+            'subImages',
+            'collageItems',
+            'additionalTextElements',
+            'aiImageVariants'
+        ];
+        arrayFields.forEach(field => {
+            const serializedKey = `_serialized_${field}`;
+            if (deserialized[serializedKey] !== undefined) {
+                try {
+                    deserialized[field] = JSON.parse(deserialized[serializedKey]);
+                } catch (e) {
+                    deserialized[field] = [];
+                }
+                delete deserialized[serializedKey];
+            } else if (deserialized[field] === undefined) {
+                deserialized[field] = [];
+            }
+        });
+        return deserialized as DisplayPost;
+    });
+};
+
 // --- HELPER FOR OFFLINE REACTIVITY ---
 const triggerMockScreenListener = (orgId: string) => {
     if (!isOffline) return;
@@ -197,7 +250,13 @@ export const listenToDisplayScreens = (orgId: string, callback: (screens: Displa
     if (!db) return () => {};
     // Listen to subcollection
     return db.collection('organizations').doc(orgId).collection('displayScreens').onSnapshot(snapshot => {
-        const screens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DisplayScreen));
+        const screens = snapshot.docs.map(doc => {
+            const s = { id: doc.id, ...doc.data() } as DisplayScreen;
+            if (s.posts) {
+                s.posts = deserializePostsArray(s.posts) || [];
+            }
+            return s;
+        });
         callback(screens);
     });
 };
@@ -213,7 +272,11 @@ export const addDisplayScreen = async (orgId: string, screen: DisplayScreen) => 
         return offlineWarning('addDisplayScreen');
     }
     if (!db) return;
-    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(sanitizeForFirestore(screen));
+    const dbScreen = { ...screen };
+    if (dbScreen.posts) {
+        dbScreen.posts = serializePostsArray(dbScreen.posts) as any;
+    }
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(sanitizeForFirestore(dbScreen));
 };
 
 export const updateDisplayScreen = async (orgId: string, screenId: string, data: Partial<DisplayScreen>) => {
@@ -228,7 +291,11 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
         return offlineWarning('updateDisplayScreen');
     }
     if (!db) return;
-    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(sanitizeForFirestore(data));
+    const dbData = { ...data };
+    if (dbData.posts) {
+        dbData.posts = serializePostsArray(dbData.posts) as any;
+    }
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(sanitizeForFirestore(dbData));
 };
 
 export const deleteDisplayScreen = async (orgId: string, screenId: string) => {
