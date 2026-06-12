@@ -18,19 +18,12 @@ const serializePostsArray = (posts: DisplayPost[] | undefined): any[] | undefine
     if (!posts) return undefined;
     return posts.map(post => {
         const serialized: any = { ...post };
-        const arrayFields = [
-            'tagIds',
-            'tagPositionOverrides',
-            'tagColorOverrides',
-            'subImages',
-            'collageItems',
-            'additionalTextElements',
-            'aiImageVariants'
-        ];
-        arrayFields.forEach(field => {
-            if (serialized[field] !== undefined) {
-                serialized[`_serialized_${field}`] = JSON.stringify(serialized[field]);
-                delete serialized[field];
+        // Clean up any remaining fields that are arrays dynamically
+        Object.keys(serialized).forEach(key => {
+            const val = serialized[key];
+            if (Array.isArray(val)) {
+                serialized[`_serialized_${key}`] = JSON.stringify(val);
+                delete serialized[key];
             }
         });
         return serialized;
@@ -41,6 +34,20 @@ const deserializePostsArray = (posts: any[] | undefined): DisplayPost[] | undefi
     if (!posts) return undefined;
     return posts.map(post => {
         const deserialized: any = { ...post };
+        // Find serialized keys and parse them
+        Object.keys(deserialized).forEach(key => {
+            if (key.startsWith('_serialized_')) {
+                const originalKey = key.replace('_serialized_', '');
+                try {
+                    deserialized[originalKey] = JSON.parse(deserialized[key]);
+                } catch (e) {
+                    deserialized[originalKey] = [];
+                }
+                delete deserialized[key];
+            }
+        });
+
+        // Ensure these common array fields are initialized as empty arrays if they didn't exist
         const arrayFields = [
             'tagIds',
             'tagPositionOverrides',
@@ -51,19 +58,69 @@ const deserializePostsArray = (posts: any[] | undefined): DisplayPost[] | undefi
             'aiImageVariants'
         ];
         arrayFields.forEach(field => {
-            const serializedKey = `_serialized_${field}`;
-            if (deserialized[serializedKey] !== undefined) {
-                try {
-                    deserialized[field] = JSON.parse(deserialized[serializedKey]);
-                } catch (e) {
-                    deserialized[field] = [];
-                }
-                delete deserialized[serializedKey];
-            } else if (deserialized[field] === undefined) {
+            if (deserialized[field] === undefined) {
                 deserialized[field] = [];
             }
         });
+
         return deserialized as DisplayPost;
+    });
+};
+
+const serializeTemplatesArray = (templates: PostTemplate[] | undefined): any[] | undefined => {
+    if (!templates) return undefined;
+    return templates.map(tpl => {
+        const serializedData = { ...tpl.postData };
+        // Clean up arrays dynamically in the postData object
+        Object.keys(serializedData).forEach(key => {
+            const val = (serializedData as any)[key];
+            if (Array.isArray(val)) {
+                (serializedData as any)[`_serialized_${key}`] = JSON.stringify(val);
+                delete (serializedData as any)[key];
+            }
+        });
+        return {
+            ...tpl,
+            postData: serializedData
+        };
+    });
+};
+
+const deserializeTemplatesArray = (templates: any[] | undefined): PostTemplate[] | undefined => {
+    if (!templates) return undefined;
+    return templates.map(tpl => {
+        const deserializedData = { ...tpl.postData };
+        Object.keys(deserializedData).forEach(key => {
+            if (key.startsWith('_serialized_')) {
+                const originalKey = key.replace('_serialized_', '');
+                try {
+                    (deserializedData as any)[originalKey] = JSON.parse((deserializedData as any)[key]);
+                } catch (e) {
+                    (deserializedData as any)[originalKey] = [];
+                }
+                delete (deserializedData as any)[key];
+            }
+        });
+
+        const arrayFields = [
+            'tagIds',
+            'tagPositionOverrides',
+            'tagColorOverrides',
+            'subImages',
+            'collageItems',
+            'additionalTextElements',
+            'aiImageVariants'
+        ];
+        arrayFields.forEach(field => {
+            if ((deserializedData as any)[field] === undefined) {
+                (deserializedData as any)[field] = [];
+            }
+        });
+
+        return {
+            ...tpl,
+            postData: deserializedData
+        } as PostTemplate;
     });
 };
 
@@ -147,6 +204,9 @@ export const getOrganizationById = async (orgId: string): Promise<Organization |
     const doc = await db.collection('organizations').doc(orgId).get();
     if (!doc.exists) return null;
     const data = doc.data() as Organization;
+    if (data && data.postTemplates) {
+        data.postTemplates = deserializeTemplatesArray(data.postTemplates) || [];
+    }
     return { ...data, id: doc.id };
 };
 
@@ -184,7 +244,11 @@ export const updateOrganization = async (orgId: string, data: Partial<Organizati
         return offlineWarning('updateOrganization');
     }
     if (!db) return;
-    await db.collection('organizations').doc(orgId).update(sanitizeForFirestore(data));
+    const dbData = { ...data };
+    if (dbData.postTemplates) {
+        dbData.postTemplates = serializeTemplatesArray(dbData.postTemplates) as any;
+    }
+    await db.collection('organizations').doc(orgId).update(sanitizeForFirestore(dbData));
 };
 
 export const deleteOrganization = async (organizationId: string) => {
@@ -215,7 +279,25 @@ export const listenToOrganizationChanges = (orgId: string, callback: (snapshot: 
         };
     }
     if (!db) return () => {};
-    return db.collection('organizations').doc(orgId).onSnapshot(callback);
+    return db.collection('organizations').doc(orgId).onSnapshot(snapshot => {
+        if (!snapshot.exists) {
+            callback(snapshot);
+            return;
+        }
+        const wrappedSnapshot = {
+            ...snapshot,
+            exists: snapshot.exists,
+            id: snapshot.id,
+            data: () => {
+                const data = snapshot.data();
+                if (data && data.postTemplates) {
+                    data.postTemplates = deserializeTemplatesArray(data.postTemplates) || [];
+                }
+                return data;
+            }
+        };
+        callback(wrappedSnapshot);
+    });
 };
 
 export const updateOrganizationLogos = async (orgId: string, logos: { light: string; dark: string }) => {
