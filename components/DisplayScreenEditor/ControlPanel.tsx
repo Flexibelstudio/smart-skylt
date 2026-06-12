@@ -121,13 +121,26 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all' || dragIndex === null) return;
         e.preventDefault();
         
+        const draggedPost = filteredPosts[dragIndex];
+        const targetPost = filteredPosts[dropIndex];
+        if (!draggedPost || !targetPost || draggedPost.id === targetPost.id) {
+            setDragIndex(null);
+            return;
+        }
+
         const newPosts = [...(screen.posts || [])];
-        const draggedItem = newPosts[dragIndex];
-        newPosts.splice(dragIndex, 1);
-        newPosts.splice(dropIndex, 0, draggedItem);
-        
-        setDragIndex(null);
-        await onUpdateScreen({ posts: newPosts });
+        const draggedIdxInFull = newPosts.findIndex(p => p.id === draggedPost.id);
+        const targetIdxInFull = newPosts.findIndex(p => p.id === targetPost.id);
+
+        if (draggedIdxInFull > -1 && targetIdxInFull > -1) {
+            newPosts.splice(draggedIdxInFull, 1);
+            newPosts.splice(targetIdxInFull, 0, draggedPost);
+            
+            setDragIndex(null);
+            await onUpdateScreen({ posts: newPosts });
+        } else {
+            setDragIndex(null);
+        }
     };
 
     const handleArchivePost = async (post: DisplayPost) => {

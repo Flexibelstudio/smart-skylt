@@ -25,7 +25,7 @@ export function copyPostToScreens(
       };
       
       const targetScreen = updatedScreens[targetScreenIndex];
-      targetScreen.posts = [...(targetScreen.posts || []), newPost];
+      targetScreen.posts = [newPost, ...(targetScreen.posts || [])];
       updatedScreens[targetScreenIndex] = targetScreen;
     }
   });

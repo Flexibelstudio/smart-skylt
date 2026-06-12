@@ -420,6 +420,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
         if (!screen.isEnabled || !screen.posts) return [];
         const now = currentTime;
         return screen.posts.filter(post => {
+            if (post.status === 'archived') return false;
             const hasStartDate = post.startDate && post.startDate.length > 0;
             const hasEndDate = post.endDate && post.endDate.length > 0;
             if (hasStartDate && new Date(post.startDate!) > now) return false;

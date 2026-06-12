@@ -1494,12 +1494,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 </>
             )}
 
-            {(post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') && (
-                <div 
-                    className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" 
-                    style={{ zIndex: 5 }}
-                />
-            )}
+
 
             {post.layout === 'real-estate' && (
                 <div className="absolute inset-0 z-1 w-full h-full overflow-hidden">
