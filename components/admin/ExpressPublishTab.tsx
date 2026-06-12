@@ -219,11 +219,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             if (layout === 'image-fullscreen') {
                 // Placed gracefully on lower third, styled with robust shadows
                 hX = 50;
-                hY = 68; // Lowered to render beautifully at the bottom like preview
+                hY = 70; // Lowered to render beautifully at the bottom like preview
                 hW = 84;
 
                 bX = 50;
-                bY = 80; // Lowered to position elegantly below the title
+                bY = 79; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
                 bW = 84;
 
                 qrX = 92;
@@ -315,8 +315,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 isExpressSold: false,
                 durationSeconds: 15,
                 startDate: new Date().toISOString(), // Automatiskt sätta dagens datum och tid som start så att det visas direkt och ej som utkast!
-                headlineFontScale: isPortraitScreen ? 5.2 : 3.5, // Perfekt följsam rubrikskala som matchar mobil-förhandsvisningen
-                bodyFontScale: isPortraitScreen ? 3.2 : 2.2,     // Perfekt följsam brödtextskala som matchar mobil-förhandsvisningen
+                headlineFontScale: isPortraitScreen ? 5.5 : 3.6, // Perfekt följsam rubrikskala som matchar mobil-förhandsvisningen
+                bodyFontScale: isPortraitScreen ? 3.8 : 2.5,     // Fylligare och mer robust följsam brödtextskala för maximal läsbarhet
                 headlineTextColor: '#ffffff',
                 bodyTextColor: '#cbd5e1',
                 backgroundColor: '#0f172a',
