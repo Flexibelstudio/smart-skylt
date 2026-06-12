@@ -132,7 +132,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     // Active express posts on the selected channel
     const activeExpressPosts = useMemo(() => {
         if (!activeScreen) return [];
-        return (activeScreen.posts || []).filter(post => post.isExpressPost === true);
+        return (activeScreen.posts || []).filter(post => post.isExpressPost === true && post.status !== 'archived');
     }, [activeScreen]);
 
     // Handle Image Upload -> Base64

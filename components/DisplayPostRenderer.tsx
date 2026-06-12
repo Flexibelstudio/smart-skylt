@@ -1292,13 +1292,19 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         />
                         
                         {/* Samlad text-grupp som växer uppåt och aldrig kan överlappa varandra */}
-                        <div className="absolute inset-x-0 bottom-0 p-[5cqw] pb-[16cqw] space-y-[2cqw] z-10 text-center flex flex-col items-center justify-end">
+                        <div 
+                            className="absolute inset-x-0 bottom-0 p-[5cqw] z-10 text-center flex flex-col items-center justify-end"
+                            style={{ 
+                                paddingBottom: isPortrait ? '30cqw' : '20cqw',
+                                gap: isPortrait ? '3cqw' : '2cqw'
+                            }}
+                        >
                             <h3 
                                 className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
                                 style={{ 
-                                    fontSize: isPortrait ? '5.5cqw' : '4cqw',
+                                    fontSize: isPortrait ? '8.5cqw' : '5.5cqw',
                                     color: post.headlineTextColor || '#ffffff',
-                                    textShadow: '0 2px 10px rgba(0,0,0,0.95)'
+                                    textShadow: '0 2px 14px rgba(0,0,0,0.98)'
                                 }}
                             >
                                 {post.headline}
@@ -1307,9 +1313,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                 <p 
                                     className={`text-slate-200 leading-relaxed font-semibold line-clamp-4 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                     style={{ 
-                                        fontSize: isPortrait ? '3.8cqw' : '2.8cqw',
+                                        fontSize: isPortrait ? '4.2cqw' : '3.0cqw',
                                         color: post.bodyTextColor || '#cbd5e1',
-                                        textShadow: '0 1px 5px rgba(0,0,0,0.85)'
+                                        textShadow: '0 1px 6px rgba(0,0,0,0.9)'
                                     }}
                                 >
                                     {post.body}
