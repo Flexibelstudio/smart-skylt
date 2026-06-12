@@ -1252,6 +1252,192 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     }
 
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right', 'collage', 'real-estate', 'ai-ad'].includes(post.layout);
+
+    // DEDIKERAT SNABBINLÄGGS-LAYOUT: Garanterar att snabbinlägg ser 100% identiska ut som i förhandsgranskningen i admin!
+    if (post.isExpressPost && post.layout !== 'real-estate') {
+        const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
+        
+        return (
+            <div className="w-full h-full relative overflow-hidden bg-slate-950" style={{ backgroundColor, containerType: 'size' }}>
+                {/* 1. HELSKÄRM (Bilder & Video) */}
+                {(post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') && (
+                    <>
+                        {post.imageUrl && (
+                            <img 
+                                src={post.imageUrl} 
+                                alt="" 
+                                className="absolute inset-0 w-full h-full object-cover" 
+                                style={mediaStyle}
+                                onLoad={signalReady}
+                            />
+                        )}
+                        {!post.imageUrl && post.videoUrl && (
+                            <video 
+                                ref={videoRef}
+                                src={post.videoUrl}
+                                className="absolute inset-0 w-full h-full object-cover"
+                                style={mediaStyle}
+                                muted 
+                                playsInline 
+                                autoPlay
+                                loop
+                                onLoadedData={signalReady}
+                            />
+                        )}
+                        
+                        {/* Elegant mörkt toning i nederkant så texten poppar perfekt */}
+                        <div 
+                            className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" 
+                            style={{ zIndex: 5 }}
+                        />
+                        
+                        {/* Samlad text-grupp som växer uppåt och aldrig kan överlappa varandra */}
+                        <div className="absolute inset-x-0 bottom-0 p-[5cqw] pb-[16cqw] space-y-[2cqw] z-10 text-center flex flex-col items-center justify-end">
+                            <h3 
+                                className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
+                                style={{ 
+                                    fontSize: isPortrait ? '5.5cqw' : '4cqw',
+                                    color: post.headlineTextColor || '#ffffff',
+                                    textShadow: '0 2px 10px rgba(0,0,0,0.95)'
+                                }}
+                            >
+                                {post.headline}
+                            </h3>
+                            {post.body && (
+                                <p 
+                                    className={`text-slate-200 leading-relaxed font-semibold line-clamp-4 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
+                                    style={{ 
+                                        fontSize: isPortrait ? '3.8cqw' : '2.8cqw',
+                                        color: post.bodyTextColor || '#cbd5e1',
+                                        textShadow: '0 1px 5px rgba(0,0,0,0.85)'
+                                    }}
+                                >
+                                    {post.body}
+                                </p>
+                            )}
+                        </div>
+                    </>
+                )}
+
+                {/* 2. SPLIT BILD VÄNSTER / TOPP */}
+                {post.layout === 'image-left' && (
+                    <div className={`w-full h-full flex ${isPortrait ? 'flex-col' : 'flex-row'}`}>
+                        {/* Bild eller video i ena halvan */}
+                        <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
+                            {post.imageUrl ? (
+                                <img src={post.imageUrl} alt="" className="w-full h-full object-cover" onLoad={signalReady} />
+                            ) : post.videoUrl ? (
+                                <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
+                            ) : (
+                                <div className="w-full h-full bg-slate-800" />
+                            )}
+                        </div>
+                        {/* Elegant centrerat textyta i andra halvan */}
+                        <div className="flex-grow p-[5cqw] flex flex-col justify-center items-center text-center bg-slate-900 border-l border-t border-slate-850">
+                            <div className="space-y-[2cqw] max-w-full">
+                                <h3 
+                                    className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
+                                    style={{ 
+                                        fontSize: isPortrait ? '5.5cqw' : '3.6cqw',
+                                        color: post.headlineTextColor || '#ffffff'
+                                    }}
+                                >
+                                    {post.headline}
+                                </h3>
+                                {post.body && (
+                                    <p 
+                                        className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
+                                        style={{ 
+                                            fontSize: isPortrait ? '3.8cqw' : '2.5cqw',
+                                            color: post.bodyTextColor || '#cbd5e1'
+                                        }}
+                                    >
+                                        {post.body}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. SPLIT BILD HÖGER / BOTTEN */}
+                {post.layout === 'image-right' && (
+                    <div className={`w-full h-full flex ${isPortrait ? 'flex-col-reverse' : 'flex-row-reverse'}`}>
+                        {/* Bild eller video i ena halvan */}
+                        <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
+                            {post.imageUrl ? (
+                                <img src={post.imageUrl} alt="" className="w-full h-full object-cover" onLoad={signalReady} />
+                            ) : post.videoUrl ? (
+                                <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
+                            ) : (
+                                <div className="w-full h-full bg-slate-800" />
+                            )}
+                        </div>
+                        {/* Elegant centrerat textyta i andra halvan */}
+                        <div className="flex-grow p-[5cqw] flex flex-col justify-center items-center text-center bg-slate-900 border-r border-b border-slate-850">
+                            <div className="space-y-[2cqw] max-w-full">
+                                <h3 
+                                    className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
+                                    style={{ 
+                                        fontSize: isPortrait ? '5.5cqw' : '3.6cqw',
+                                        color: post.headlineTextColor || '#ffffff'
+                                    }}
+                                >
+                                    {post.headline}
+                                </h3>
+                                {post.body && (
+                                    <p 
+                                        className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
+                                        style={{ 
+                                            fontSize: isPortrait ? '3.8cqw' : '2.5cqw',
+                                            color: post.bodyTextColor || '#cbd5e1'
+                                        }}
+                                    >
+                                        {post.body}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Taggar */}
+                {showTags && post.tagIds && post.tagIds.length > 0 && (
+                    <div className="absolute top-[4cqw] left-[4cqw] z-20 flex gap-2">
+                        {post.tagIds.map(tagId => {
+                            const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
+                            if (!tag) return null;
+                            return (
+                                <span 
+                                    key={tagId} 
+                                    className="px-[2.5cqw] py-[1cqw] rounded-full text-white font-bold uppercase tracking-wider text-[2.2cqw] shadow-md"
+                                    style={{ backgroundColor: tag.color || '#3b82f6' }}
+                                >
+                                    {tag.name}
+                                </span>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* QR-kod i hörnet */}
+                {post.qrCodeUrl && (
+                    <div 
+                        className="absolute"
+                        style={{
+                            right: isPortrait ? '4cqw' : '4cqw',
+                            bottom: isPortrait ? '4cqw' : '4cqw',
+                            zIndex: 35
+                        }}
+                    >
+                        <div className="p-[1.5cqw] bg-white rounded-[1.5cqw] shadow-2xl inline-block w-[15cqw] h-[15cqw] md:w-[11cqw] md:h-[11cqw] min-w-[50px] min-h-[50px] max-w-[130px] max-h-[130px]">
+                            <QrCodeComponent url={post.qrCodeUrl} className="w-full h-full" />
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
     
     // QR Calc
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
