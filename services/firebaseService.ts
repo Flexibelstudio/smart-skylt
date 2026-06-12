@@ -123,6 +123,94 @@ const deserializeTemplatesArray = (templatesSource: any): PostTemplate[] | undef
     return undefined;
 };
 
+// --- BASE64 STORAGE UPLOADER & PROCESSING ---
+
+export const uploadBase64Image = async (orgId: string, folder: string, base64DataUrl: string): Promise<string> => {
+    if (isOffline) return base64DataUrl; // Return local preview in offline mode
+    if (!storage) throw new Error("Storage not initialized");
+
+    // Check if it's already a full HTTP/HTTPS URL
+    if (!base64DataUrl.startsWith('data:image/')) {
+        return base64DataUrl;
+    }
+
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const ref = storage.ref().child(`organizations/${orgId}/${folder}/${uniqueId}`);
+    
+    // Convert base64 data url directly using putString with data_url format
+    const uploadTask = ref.putString(base64DataUrl, 'data_url');
+    
+    return new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+            null,
+            (error) => reject(error),
+            async () => {
+                const url = await uploadTask.snapshot.ref.getDownloadURL();
+                resolve(url);
+            }
+        );
+    });
+};
+
+export const processPostsForUploads = async (orgId: string, posts: DisplayPost[]): Promise<DisplayPost[]> => {
+    return Promise.all(posts.map(async (post) => {
+        const updatedPost = { ...post };
+
+        // 1. Check main imageUrl
+        if (updatedPost.imageUrl && updatedPost.imageUrl.startsWith('data:image/')) {
+            try {
+                updatedPost.imageUrl = await uploadBase64Image(orgId, 'posts', updatedPost.imageUrl);
+            } catch (e) {
+                console.error("Failed to upload post image:", e);
+            }
+        }
+
+        // 2. Check subImages
+        if (updatedPost.subImages && updatedPost.subImages.length > 0) {
+            updatedPost.subImages = await Promise.all(updatedPost.subImages.map(async (sub) => {
+                if (sub.imageUrl && sub.imageUrl.startsWith('data:image/')) {
+                    try {
+                        const uploadedUrl = await uploadBase64Image(orgId, 'posts/sub', sub.imageUrl);
+                        return { ...sub, imageUrl: uploadedUrl };
+                    } catch (e) {
+                        console.error("Failed to upload subImage:", e);
+                    }
+                }
+                return sub;
+            }));
+        }
+
+        // 3. Check collageItems
+        if (updatedPost.collageItems && updatedPost.collageItems.length > 0) {
+            updatedPost.collageItems = await Promise.all(updatedPost.collageItems.map(async (item) => {
+                if (item.imageUrl && item.imageUrl.startsWith('data:image/')) {
+                    try {
+                        const uploadedUrl = await uploadBase64Image(orgId, 'posts/collage', item.imageUrl);
+                        return { ...item, imageUrl: uploadedUrl };
+                    } catch (e) {
+                        console.error("Failed to upload collage item image:", e);
+                    }
+                }
+                return item;
+            }));
+        }
+
+        return updatedPost;
+    }));
+};
+
+export const processTemplatesForUploads = async (orgId: string, templates: PostTemplate[]): Promise<PostTemplate[]> => {
+    return Promise.all(templates.map(async (tpl) => {
+        if (!tpl.postData) return tpl;
+        const postsArray = [tpl.postData as DisplayPost];
+        const processed = await processPostsForUploads(orgId, postsArray);
+        return {
+            ...tpl,
+            postData: processed[0]
+        };
+    }));
+};
+
 // --- HELPER FOR OFFLINE REACTIVITY ---
 const triggerMockScreenListener = (orgId: string) => {
     if (!isOffline) return;
@@ -246,6 +334,7 @@ export const updateOrganization = async (orgId: string, data: Partial<Organizati
     if (!db) return;
     const dbData: any = { ...data };
     if (dbData.postTemplates) {
+        dbData.postTemplates = await processTemplatesForUploads(orgId, dbData.postTemplates);
         dbData._serialized_postTemplates = serializeTemplatesArray(dbData.postTemplates);
         delete dbData.postTemplates;
     }
@@ -359,6 +448,7 @@ export const addDisplayScreen = async (orgId: string, screen: DisplayScreen) => 
     if (!db) return;
     const dbScreen: any = { ...screen };
     if (dbScreen.posts) {
+        dbScreen.posts = await processPostsForUploads(orgId, dbScreen.posts);
         dbScreen._serialized_posts = serializePostsArray(dbScreen.posts);
         delete dbScreen.posts;
     }
@@ -379,6 +469,7 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
     if (!db) return;
     const dbData: any = { ...data };
     if (dbData.posts) {
+        dbData.posts = await processPostsForUploads(orgId, dbData.posts);
         dbData._serialized_posts = serializePostsArray(dbData.posts);
         delete dbData.posts;
     }
