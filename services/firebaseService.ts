@@ -845,9 +845,13 @@ export const addMediaItemsToLibrary = async (orgId: string, items: MediaItem[]) 
         return offlineWarning('addMediaItemsToLibrary');
     }
     if (!db) return;
+    
+    // Sanitize items using serialize/deserialize to clean out undefined fields which Firestore rejects
+    const sanitizedItems = items.map(item => sanitizeForFirestore(item));
+    
     // Use arrayUnion to append without overwriting existing items that might have been added by backend
     await db.collection('organizations').doc(orgId).update({
-        mediaLibrary: firebase.firestore.FieldValue.arrayUnion(...items)
+        mediaLibrary: firebase.firestore.FieldValue.arrayUnion(...sanitizedItems)
     });
 };
 

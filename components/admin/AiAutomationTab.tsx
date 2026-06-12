@@ -97,7 +97,14 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
             const screen = organization.displayScreens?.find(s => s.id === suggestion.targetScreenId);
             if (!screen) throw new Error("Målkanalen kunde inte hittas.");
             
-            const newPost = { ...suggestion.postData, id: `post-${Date.now()}` };
+            const auto = organization.aiAutomations?.find(a => a.id === suggestion.automationId);
+            const duration = suggestion.postData.durationSeconds || auto?.durationSeconds || 15;
+            
+            const newPost = { 
+                ...suggestion.postData, 
+                id: `post-${Date.now()}`,
+                durationSeconds: duration
+            };
             const updatedPosts = [...(screen.posts || []), newPost];
             
             await updateDisplayScreen(organization.id, screen.id, { posts: updatedPosts });

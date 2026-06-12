@@ -540,6 +540,7 @@ async function runAutomationsOnce(orgIdFilter) {
             textColor: postDetails.textColor,
             imageUrl,
             isAiGeneratedImage: !!imageUrl,
+            durationSeconds: automation.durationSeconds || Number(postDetails.durationSeconds) || 15,
           };
 
           newSuggestions.push({

@@ -53,8 +53,20 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
 
     const screen = useMemo(() => displayScreens.find(s => s.id === initialScreen.id) || initialScreen, [displayScreens, initialScreen]);
 
-    const [editingPost, setEditingPost] = useState<DisplayPost | null>(initialPostToEdit || null);
-    const [originalPost, setOriginalPost] = useState<DisplayPost | null>(initialPostToEdit ? JSON.parse(JSON.stringify(initialPostToEdit)) : null);
+    const [editingPost, setEditingPost] = useState<DisplayPost | null>(() => {
+        if (!initialPostToEdit) return null;
+        return {
+            ...initialPostToEdit,
+            durationSeconds: initialPostToEdit.durationSeconds || 15
+        };
+    });
+    const [originalPost, setOriginalPost] = useState<DisplayPost | null>(() => {
+        if (!initialPostToEdit) return null;
+        return {
+            ...initialPostToEdit,
+            durationSeconds: initialPostToEdit.durationSeconds || 15
+        };
+    });
     const [postToDownloadAssets, setPostToDownloadAssets] = useState<DisplayPost | null>(null);
     const [showStarAnimation, setShowStarAnimation] = useState(false);
     

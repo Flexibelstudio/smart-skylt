@@ -84,6 +84,7 @@ export interface AiAutomation {
   postLifetimeMode?: 'replace' | 'duration'; // NEW: How to handle old posts.
   postLifetimeDays?: number; // NEW: For 'duration' mode.
   remixBasePostId?: string; // NEW: If set, the automation remixes this post instead of creating from scratch.
+  durationSeconds?: number; // NEW: Display duration for generated posts in screen rotation
   
   // DESIGN PREFERENCES
   preferredLayout?: string; // e.g., 'image-fullscreen', 'text-only'

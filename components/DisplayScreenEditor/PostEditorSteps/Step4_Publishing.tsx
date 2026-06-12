@@ -85,7 +85,7 @@ export const Step4_Publishing: React.FC<{
                 <h4 className="font-bold text-slate-800 dark:text-slate-200">Schema & Varaktighet</h4>
                 <div>
                     <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
-                    <StyledInput type="number" min="5" value={String(post.durationSeconds)} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10))} />
+                    <StyledInput type="number" min="5" value={post.durationSeconds !== undefined && post.durationSeconds !== null ? String(post.durationSeconds) : "15"} onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10) || 15)} />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">

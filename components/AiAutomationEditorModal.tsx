@@ -27,7 +27,8 @@ const DEFAULT_AUTOMATION: AiAutomation = {
     postLifetimeMode: 'duration',
     postLifetimeDays: 7,
     preferredLayout: 'auto',
-    imageStyle: 'professional photography'
+    imageStyle: 'professional photography',
+    durationSeconds: 15
 };
 
 export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = ({
@@ -308,24 +309,33 @@ export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = (
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                             <div>
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Visningstid i rotation (sekunder)</label>
+                                <StyledInput 
+                                    type="number" 
+                                    min="5" 
+                                    value={String(current.durationSeconds ?? 15)} 
+                                    onChange={e => setCurrent(s => ({...s, durationSeconds: parseInt(e.target.value) || 15}))} 
+                                />
+                            </div>
+                            <div>
                                 <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Hantera gamla inlägg</label>
                                 <StyledSelect value={current.postLifetimeMode || 'duration'} onChange={e => setCurrent(s => ({...s, postLifetimeMode: e.target.value as any}))}>
                                     <option value="duration">Ta bort efter tid</option>
                                     <option value="replace">Ersätt föregående</option>
                                 </StyledSelect>
                             </div>
-                            {current.postLifetimeMode === 'duration' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Antal dagar att visa</label>
-                                    <StyledInput 
-                                        type="number" 
-                                        min="1" 
-                                        value={String(current.postLifetimeDays || 7)} 
-                                        onChange={e => setCurrent(s => ({...s, postLifetimeDays: parseInt(e.target.value)}))} 
-                                    />
-                                </div>
-                            )}
                         </div>
+                        {current.postLifetimeMode === 'duration' && (
+                            <div className="mt-4">
+                                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Antal dagar inlägget ska visas</label>
+                                <StyledInput 
+                                    type="number" 
+                                    min="1" 
+                                    value={String(current.postLifetimeDays || 7)} 
+                                    onChange={e => setCurrent(s => ({...s, postLifetimeDays: parseInt(e.target.value)}))} 
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 
