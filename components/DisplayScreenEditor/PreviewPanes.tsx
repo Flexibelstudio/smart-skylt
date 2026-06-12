@@ -420,7 +420,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
         if (!screen.isEnabled || !screen.posts) return [];
         const now = currentTime;
         return screen.posts.filter(post => {
-            if (post.status === 'archived') return false;
+            if (post.status === 'archived' || post.status === 'draft') return false;
             const hasStartDate = post.startDate && post.startDate.length > 0;
             const hasEndDate = post.endDate && post.endDate.length > 0;
             if (hasStartDate && new Date(post.startDate!) > now) return false;
@@ -496,7 +496,7 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
                             </SplitScreenLayout>
                         ) : (
                             <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400">
-                               {screen.posts?.length > 0 ? 'Inga aktiva inlägg.' : 'Lägg till inlägg.'}
+                               {screen.posts?.filter(p => p.status !== 'archived').length > 0 ? 'Inga aktiva inlägg.' : 'Lägg till inlägg.'}
                             </div>
                         )}
                         {branding?.isEnabled && organization && (branding.showLogo || branding.showName) && !(screen.zones?.isEnabled && screen.zones?.layoutType !== 'none') && (

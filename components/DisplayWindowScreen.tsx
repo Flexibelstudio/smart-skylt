@@ -12,7 +12,7 @@ interface DisplayWindowScreenProps {
 
 /* ===================== Helpers ===================== */
 const isPostActive = (post: DisplayPost, now: Date) => {
-    if (post.status === 'archived') return false; 
+    if (post.status === 'archived' || post.status === 'draft') return false; 
     const start = parseToDate(post.startDate, false);
     if (!start || start > now) return false;
     const end = parseToDate(post.endDate, true);

@@ -61,7 +61,8 @@ const DisplayScreenPreviewModal: React.FC<{
     const activePosts = useMemo(() => {
         if (!liveScreen.posts || liveScreen.posts.length === 0) return [];
         const now = new Date();
-        const filtered = liveScreen.posts.filter(post => {
+        const nonArchivedOrDraft = liveScreen.posts.filter(post => post.status !== 'archived' && post.status !== 'draft');
+        const filtered = nonArchivedOrDraft.filter(post => {
             const start = parseToDate(post.startDate, false);
             if (start && start > now) return false;
             const end = parseToDate(post.endDate, true);
@@ -69,7 +70,7 @@ const DisplayScreenPreviewModal: React.FC<{
             return true;
         });
         // Om inga inlägg matchar schemat just nu i förhandsvisningen, fall tillbaka till att visa alla tillgängliga inlägg
-        return filtered.length > 0 ? filtered : liveScreen.posts;
+        return filtered.length > 0 ? filtered : nonArchivedOrDraft;
     }, [liveScreen]);
 
     useEffect(() => {
