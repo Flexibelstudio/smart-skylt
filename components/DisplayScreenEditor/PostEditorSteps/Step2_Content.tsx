@@ -493,6 +493,11 @@ export const Step2_Content: React.FC<{
 
     const handleFieldChange = (field: keyof DisplayPost, value: any) => {
         const newPost = { ...post, [field]: value };
+        if (field === 'headline') {
+            newPost.internalTitle = value || 'Nytt inlägg';
+        } else if (field === 'url') {
+            newPost.internalTitle = value ? `Webbplats: ${value}` : 'Webbplats';
+        }
         onPostChange(newPost);
         
         if (field === 'headline' || field === 'body') {
@@ -898,11 +903,7 @@ export const Step2_Content: React.FC<{
                         )}
                     </div>
                 </div>
-                {/* Still allow internal title editing */}
-                 <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Intern titel (endast för dig)</label>
-                    <StyledInput type="text" value={post.internalTitle || ''} onChange={(e) => handleFieldChange('internalTitle', e.target.value)} />
-                </div>
+
             </div>
         )
     }
@@ -980,12 +981,8 @@ export const Step2_Content: React.FC<{
             </div>
 
             <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Intern titel (endast för dig)</label>
-                        <StyledInput type="text" value={post.internalTitle || ''} onChange={(e) => handleFieldChange('internalTitle', e.target.value)} />
-                    </div>
-                    <div className="flex items-center gap-1 self-end mb-1">
+                <div className="flex justify-end items-center">
+                    <div className="flex items-center gap-1 mb-1">
                         <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowUturnLeftIcon className="h-5 w-5"/></button>
                         <button onClick={handleRedo} disabled={historyIndex >= textHistory.length - 1} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowUturnRightIcon className="h-5 w-5"/></button>
                     </div>

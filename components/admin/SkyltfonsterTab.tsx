@@ -25,6 +25,7 @@ import { ExpressPublishTab } from './ExpressPublishTab';
 const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
     const now = new Date();
     const activePosts = (screen.posts || []).filter(post => {
+        if (post.status === 'archived' || post.status === 'draft') return false;
         const startDate = post.startDate ? new Date(post.startDate) : null;
         const endDate = post.endDate ? new Date(post.endDate) : null;
         if (startDate && startDate > now) return false;
@@ -36,6 +37,7 @@ const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
     
     let latestEndDate: Date | null = null;
     (screen.posts || []).forEach(post => {
+        if (post.status === 'archived' || post.status === 'draft') return;
         if (post.endDate) {
             const endDate = new Date(post.endDate);
             if (!latestEndDate || endDate > latestEndDate) {
