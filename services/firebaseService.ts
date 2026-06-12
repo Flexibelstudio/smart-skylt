@@ -14,114 +14,113 @@ const sanitizeForFirestore = <T>(data: T): T => {
     return JSON.parse(JSON.stringify(data));
 };
 
-const serializePostsArray = (posts: DisplayPost[] | undefined): any[] | undefined => {
+const serializePostsArray = (posts: DisplayPost[] | undefined): string | undefined => {
     if (!posts) return undefined;
-    return posts.map(post => {
-        const serialized: any = { ...post };
-        // Clean up any remaining fields that are arrays dynamically
-        Object.keys(serialized).forEach(key => {
-            const val = serialized[key];
-            if (Array.isArray(val)) {
-                serialized[`_serialized_${key}`] = JSON.stringify(val);
-                delete serialized[key];
-            }
-        });
-        return serialized;
-    });
+    return JSON.stringify(posts);
 };
 
-const deserializePostsArray = (posts: any[] | undefined): DisplayPost[] | undefined => {
-    if (!posts) return undefined;
-    return posts.map(post => {
-        const deserialized: any = { ...post };
-        // Find serialized keys and parse them
-        Object.keys(deserialized).forEach(key => {
-            if (key.startsWith('_serialized_')) {
-                const originalKey = key.replace('_serialized_', '');
-                try {
-                    deserialized[originalKey] = JSON.parse(deserialized[key]);
-                } catch (e) {
-                    deserialized[originalKey] = [];
+const deserializePostsArray = (postsSource: any): DisplayPost[] | undefined => {
+    if (!postsSource) return undefined;
+    if (typeof postsSource === 'string') {
+        try {
+            return JSON.parse(postsSource);
+        } catch (e) {
+            console.error("Failed to parse serialized posts:", e);
+            return [];
+        }
+    }
+    // Fallback if it is stored as an array of objects (existing / fallback data)
+    if (Array.isArray(postsSource)) {
+        return postsSource.map(post => {
+            const deserialized: any = { ...post };
+            // Find serialized keys and parse them
+            Object.keys(deserialized).forEach(key => {
+                if (key.startsWith('_serialized_')) {
+                    const originalKey = key.replace('_serialized_', '');
+                    try {
+                        deserialized[originalKey] = JSON.parse(deserialized[key]);
+                    } catch (e) {
+                        deserialized[originalKey] = [];
+                    }
+                    delete deserialized[key];
                 }
-                delete deserialized[key];
-            }
-        });
+            });
 
-        // Ensure these common array fields are initialized as empty arrays if they didn't exist
-        const arrayFields = [
-            'tagIds',
-            'tagPositionOverrides',
-            'tagColorOverrides',
-            'subImages',
-            'collageItems',
-            'additionalTextElements',
-            'aiImageVariants'
-        ];
-        arrayFields.forEach(field => {
-            if (deserialized[field] === undefined) {
-                deserialized[field] = [];
-            }
-        });
-
-        return deserialized as DisplayPost;
-    });
-};
-
-const serializeTemplatesArray = (templates: PostTemplate[] | undefined): any[] | undefined => {
-    if (!templates) return undefined;
-    return templates.map(tpl => {
-        const serializedData = { ...tpl.postData };
-        // Clean up arrays dynamically in the postData object
-        Object.keys(serializedData).forEach(key => {
-            const val = (serializedData as any)[key];
-            if (Array.isArray(val)) {
-                (serializedData as any)[`_serialized_${key}`] = JSON.stringify(val);
-                delete (serializedData as any)[key];
-            }
-        });
-        return {
-            ...tpl,
-            postData: serializedData
-        };
-    });
-};
-
-const deserializeTemplatesArray = (templates: any[] | undefined): PostTemplate[] | undefined => {
-    if (!templates) return undefined;
-    return templates.map(tpl => {
-        const deserializedData = { ...tpl.postData };
-        Object.keys(deserializedData).forEach(key => {
-            if (key.startsWith('_serialized_')) {
-                const originalKey = key.replace('_serialized_', '');
-                try {
-                    (deserializedData as any)[originalKey] = JSON.parse((deserializedData as any)[key]);
-                } catch (e) {
-                    (deserializedData as any)[originalKey] = [];
+            // Ensure these common array fields are initialized as empty arrays if they didn't exist
+            const arrayFields = [
+                'tagIds',
+                'tagPositionOverrides',
+                'tagColorOverrides',
+                'subImages',
+                'collageItems',
+                'additionalTextElements',
+                'aiImageVariants'
+            ];
+            arrayFields.forEach(field => {
+                if (deserialized[field] === undefined) {
+                    deserialized[field] = [];
                 }
-                delete (deserializedData as any)[key];
-            }
-        });
+            });
 
-        const arrayFields = [
-            'tagIds',
-            'tagPositionOverrides',
-            'tagColorOverrides',
-            'subImages',
-            'collageItems',
-            'additionalTextElements',
-            'aiImageVariants'
-        ];
-        arrayFields.forEach(field => {
-            if ((deserializedData as any)[field] === undefined) {
-                (deserializedData as any)[field] = [];
-            }
+            return deserialized as DisplayPost;
         });
+    }
+    return undefined;
+};
 
-        return {
-            ...tpl,
-            postData: deserializedData
-        } as PostTemplate;
-    });
+const serializeTemplatesArray = (templates: PostTemplate[] | undefined): string | undefined => {
+    if (!templates) return undefined;
+    return JSON.stringify(templates);
+};
+
+const deserializeTemplatesArray = (templatesSource: any): PostTemplate[] | undefined => {
+    if (!templatesSource) return undefined;
+    if (typeof templatesSource === 'string') {
+        try {
+            return JSON.parse(templatesSource);
+        } catch (e) {
+            console.error("Failed to parse serialized templates:", e);
+            return [];
+        }
+    }
+    if (Array.isArray(templatesSource)) {
+        // Fallback for reading old templates array structure
+        return templatesSource.map(tpl => {
+            const deserializedData = { ...tpl.postData };
+            Object.keys(deserializedData).forEach(key => {
+                if (key.startsWith('_serialized_')) {
+                    const originalKey = key.replace('_serialized_', '');
+                    try {
+                        (deserializedData as any)[originalKey] = JSON.parse((deserializedData as any)[key]);
+                    } catch (e) {
+                        (deserializedData as any)[originalKey] = [];
+                    }
+                    delete (deserializedData as any)[key];
+                }
+            });
+
+            const arrayFields = [
+                'tagIds',
+                'tagPositionOverrides',
+                'tagColorOverrides',
+                'subImages',
+                'collageItems',
+                'additionalTextElements',
+                'aiImageVariants'
+            ];
+            arrayFields.forEach(field => {
+                if ((deserializedData as any)[field] === undefined) {
+                    (deserializedData as any)[field] = [];
+                }
+            });
+
+            return {
+                ...tpl,
+                postData: deserializedData
+            } as PostTemplate;
+        });
+    }
+    return undefined;
 };
 
 // --- HELPER FOR OFFLINE REACTIVITY ---
@@ -204,8 +203,9 @@ export const getOrganizationById = async (orgId: string): Promise<Organization |
     const doc = await db.collection('organizations').doc(orgId).get();
     if (!doc.exists) return null;
     const data = doc.data() as Organization;
-    if (data && data.postTemplates) {
-        data.postTemplates = deserializeTemplatesArray(data.postTemplates) || [];
+    if (data) {
+        const templatesSource = (data as any)._serialized_postTemplates !== undefined ? (data as any)._serialized_postTemplates : data.postTemplates;
+        data.postTemplates = deserializeTemplatesArray(templatesSource) || [];
     }
     return { ...data, id: doc.id };
 };
@@ -240,13 +240,14 @@ export const updateOrganization = async (orgId: string, data: Partial<Organizati
         const listener = (window as any).mockBackendListener;
         if (listener && listener.id === orgId) {
              listener.callback({ exists: true, data: () => org, id: orgId });
-        }
+         }
         return offlineWarning('updateOrganization');
     }
     if (!db) return;
-    const dbData = { ...data };
+    const dbData: any = { ...data };
     if (dbData.postTemplates) {
-        dbData.postTemplates = serializeTemplatesArray(dbData.postTemplates) as any;
+        dbData._serialized_postTemplates = serializeTemplatesArray(dbData.postTemplates);
+        delete dbData.postTemplates;
     }
     await db.collection('organizations').doc(orgId).update(sanitizeForFirestore(dbData));
 };
@@ -290,8 +291,9 @@ export const listenToOrganizationChanges = (orgId: string, callback: (snapshot: 
             id: snapshot.id,
             data: () => {
                 const data = snapshot.data();
-                if (data && data.postTemplates) {
-                    data.postTemplates = deserializeTemplatesArray(data.postTemplates) || [];
+                if (data) {
+                    const templatesSource = (data as any)._serialized_postTemplates !== undefined ? (data as any)._serialized_postTemplates : data.postTemplates;
+                    data.postTemplates = deserializeTemplatesArray(templatesSource) || [];
                 }
                 return data;
             }
@@ -333,10 +335,11 @@ export const listenToDisplayScreens = (orgId: string, callback: (screens: Displa
     // Listen to subcollection
     return db.collection('organizations').doc(orgId).collection('displayScreens').onSnapshot(snapshot => {
         const screens = snapshot.docs.map(doc => {
-            const s = { id: doc.id, ...doc.data() } as DisplayScreen;
-            if (s.posts) {
-                s.posts = deserializePostsArray(s.posts) || [];
-            }
+            const data = doc.data();
+            const s = { id: doc.id, ...data } as DisplayScreen;
+            // Support both old posts array and new _serialized_posts string if present
+            const postsSource = (data as any)._serialized_posts !== undefined ? (data as any)._serialized_posts : data.posts;
+            s.posts = deserializePostsArray(postsSource) || [];
             return s;
         });
         callback(screens);
@@ -354,9 +357,10 @@ export const addDisplayScreen = async (orgId: string, screen: DisplayScreen) => 
         return offlineWarning('addDisplayScreen');
     }
     if (!db) return;
-    const dbScreen = { ...screen };
+    const dbScreen: any = { ...screen };
     if (dbScreen.posts) {
-        dbScreen.posts = serializePostsArray(dbScreen.posts) as any;
+        dbScreen._serialized_posts = serializePostsArray(dbScreen.posts);
+        delete dbScreen.posts;
     }
     await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(sanitizeForFirestore(dbScreen));
 };
@@ -373,9 +377,10 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
         return offlineWarning('updateDisplayScreen');
     }
     if (!db) return;
-    const dbData = { ...data };
+    const dbData: any = { ...data };
     if (dbData.posts) {
-        dbData.posts = serializePostsArray(dbData.posts) as any;
+        dbData._serialized_posts = serializePostsArray(dbData.posts);
+        delete dbData.posts;
     }
     await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(sanitizeForFirestore(dbData));
 };
