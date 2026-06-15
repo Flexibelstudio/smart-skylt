@@ -503,9 +503,20 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                         onUpdateScreen={handleUpdateScreen}
                         onEditPost={(post) => {
                             const cleanPost = JSON.parse(JSON.stringify(post));
+                            const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+                            
+                            // Dynamisk och generös uppgradering av typsnittsskalor för helskärmslayouter så de inte blir pyttesmå i redigeringsvyn
+                            if (cleanPost.layout === 'image-fullscreen' || cleanPost.layout === 'video-fullscreen') {
+                                if (cleanPost.headlineFontScale === undefined || cleanPost.headlineFontScale === 5.5 || cleanPost.headlineFontScale === 3.6 || cleanPost.headlineFontScale === 5.0) {
+                                    cleanPost.headlineFontScale = isPortrait ? 8.5 : 5.5;
+                                }
+                                if (cleanPost.bodyFontScale === undefined || cleanPost.bodyFontScale === 3.8 || cleanPost.bodyFontScale === 2.5 || cleanPost.bodyFontScale === 2.4) {
+                                    cleanPost.bodyFontScale = isPortrait ? 4.2 : 3.0;
+                                }
+                            }
+                            
                             if (cleanPost.isExpressPost) {
                                 cleanPost.isExpressPost = false;
-                                const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
                                 
                                 // Sätt smarta positioner på stämplar/taggar så de ligger i övre vänstra hörnet och matchar snabbmallen
                                 if (cleanPost.tagIds && cleanPost.tagIds.length > 0) {

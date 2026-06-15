@@ -315,8 +315,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 isExpressSold: false,
                 durationSeconds: 15,
                 startDate: new Date().toISOString(), // Automatiskt sätta dagens datum och tid som start så att det visas direkt och ej som utkast!
-                headlineFontScale: isPortraitScreen ? 5.5 : 3.6, // Perfekt följsam rubrikskala som matchar mobil-förhandsvisningen
-                bodyFontScale: isPortraitScreen ? 3.8 : 2.5,     // Fylligare och mer robust följsam brödtextskala för maximal läsbarhet
+                headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
+                bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
                 headlineTextColor: '#ffffff',
                 bodyTextColor: '#cbd5e1',
                 backgroundColor: '#0f172a',
