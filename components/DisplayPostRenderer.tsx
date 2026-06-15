@@ -881,11 +881,11 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
     if (isStamp) {
         stampClasses += ' tracking-[0.1cqw] leading-[1.1] ';
         if (shape === 'circle') {
-            stampClasses += ' rounded-full aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+            stampClasses += ' rounded-full aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
         } else if (shape === 'square') {
-            stampClasses += ' rounded-[1.5cqw] aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+            stampClasses += ' rounded-[1.5cqw] aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
         } else { // rectangle
-            stampClasses += ' rounded-[1.5cqw] px-[3cqw] py-[1.5cqw] ';
+            stampClasses += ' rounded-[1.5cqw] px-[4cqw] py-[2cqw] ';
         }
 
         if (tag.border === 'solid') {
@@ -895,15 +895,15 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         }
     } else {
         // Standard pil-formad tagg/badge
-        stampClasses += ' rounded-full px-[3.5cqw] py-[1.2cqw] tracking-wider ';
+        stampClasses += ' rounded-full px-[4.5cqw] py-[1.5cqw] tracking-wider ';
         stampStyles.border = '1px solid rgba(255,255,255,0.15)';
         stampStyles.backdropFilter = 'blur(8px)';
     }
 
-    // Beräkna en proportionell font-storlek (fluid font scale) som matchar det vanliga flödet helt perfekt
+    // Beräkna en proportionell font-storlek (fluid font scale) som matchar det vanliga flödet helt perfekt och gör text & tagg mer lätläst på avstånd
     const baseFontSize = isStamp 
-        ? ((shape === 'circle' || shape === 'square') ? '2.1cqw' : '2.3cqw') 
-        : '2.3cqw';
+        ? ((shape === 'circle' || shape === 'square') ? '2.6cqw' : '2.9cqw') 
+        : '2.9cqw';
 
     const getScaleFactor = (size?: string) => {
         switch (size) {
@@ -928,7 +928,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         // We apply transform here for position centering and rotation
         transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg) scale(${override?.scale || 1})`,
         zIndex: 40,
-        width: override?.width ? `${override.width}%` : (isStamp && (shape === 'circle' || shape === 'square')) ? '13cqw' : 'auto', // Dynamic width
+        width: override?.width ? `${override.width}%` : (isStamp && (shape === 'circle' || shape === 'square')) ? '16cqw' : 'auto', // Dynamic width
         maxWidth: '90%', // Safety cap
         
         background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
@@ -1472,8 +1472,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
                             // Beräkna fluid fontstorlek med proportionell skala för statiska taggar
                             const baseFontSize = isStamp 
-                                ? ((shape === 'circle' || shape === 'square') ? '2.1cqw' : '2.3cqw') 
-                                : '2.3cqw';
+                                ? ((shape === 'circle' || shape === 'square') ? '2.6cqw' : '2.9cqw') 
+                                : '2.9cqw';
 
                             const getScaleFactor = (size?: string) => {
                                 switch (size) {
@@ -1495,11 +1495,11 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             if (isStamp) {
                                 expressClasses += ' tracking-[0.1cqw] leading-[1.1] ';
                                 if (shape === 'circle') {
-                                    expressClasses += ' rounded-full aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+                                    expressClasses += ' rounded-full aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
                                 } else if (shape === 'square') {
-                                    expressClasses += ' rounded-[1.5cqw] aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+                                    expressClasses += ' rounded-[1.5cqw] aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
                                 } else { // rectangle
-                                    expressClasses += ' rounded-[1.5cqw] px-[3cqw] py-[1.5cqw] ';
+                                    expressClasses += ' rounded-[1.5cqw] px-[4cqw] py-[2cqw] ';
                                 }
 
                                 if (tag.border === 'solid') {
@@ -1509,7 +1509,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                 }
                             } else {
                                 // Standard pil-formad tagg/badge
-                                expressClasses += ' rounded-full px-[3.5cqw] py-[1.2cqw] tracking-wider ';
+                                expressClasses += ' rounded-full px-[4.5cqw] py-[1.5cqw] tracking-wider ';
                                 expressStyles.border = '1px solid rgba(255,255,255,0.15)';
                                 expressStyles.backdropFilter = 'blur(8px)';
                             }
@@ -1551,20 +1551,22 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     let defaultBodyFontScale = 2.4;     // Standard fallback
 
     if (post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') {
-        defaultHeadlineFontScale = isPortrait ? 8.5 : 5.5;
-        defaultBodyFontScale = isPortrait ? 4.2 : 3.0;
+        defaultHeadlineFontScale = isPortrait ? 10.0 : 6.2;
+        defaultBodyFontScale = isPortrait ? 4.8 : 3.5;
     } else if (post.layout === 'image-left' || post.layout === 'image-right') {
-        defaultHeadlineFontScale = isPortrait ? 5.5 : 3.6;
-        defaultBodyFontScale = isPortrait ? 3.8 : 2.5;
+        defaultHeadlineFontScale = isPortrait ? 6.2 : 4.0;
+        defaultBodyFontScale = isPortrait ? 4.2 : 2.8;
     }
 
     const hFontScale = post.headlineFontScale ?? defaultHeadlineFontScale;
     const bFontScale = post.bodyFontScale ?? defaultBodyFontScale;
 
-    // QR Calc
+    // QR Calc (Auto-upgrade legacy 7.5 scale to premium 15 scale format)
     const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : (isPortrait ? 88 : 92));
     const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : (isPortrait ? 93 : 84));
-    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 14);
+    const qrW = post.qrWidth !== undefined 
+        ? (post.qrWidth === 7.5 ? 15 : post.qrWidth) 
+        : (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
 
     // Headline & Body Defaults
     const hX = post.headlinePositionX ?? post.textPositionX ?? 50;

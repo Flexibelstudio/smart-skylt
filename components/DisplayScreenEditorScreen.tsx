@@ -507,11 +507,11 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             
                             // Dynamisk och generös uppgradering av typsnittsskalor för helskärmslayouter så de inte blir pyttesmå i redigeringsvyn
                             if (cleanPost.layout === 'image-fullscreen' || cleanPost.layout === 'video-fullscreen') {
-                                if (cleanPost.headlineFontScale === undefined || cleanPost.headlineFontScale === 5.5 || cleanPost.headlineFontScale === 3.6 || cleanPost.headlineFontScale === 5.0) {
-                                    cleanPost.headlineFontScale = isPortrait ? 8.5 : 5.5;
+                                if (cleanPost.headlineFontScale === undefined || cleanPost.headlineFontScale === 5.5 || cleanPost.headlineFontScale === 3.6 || cleanPost.headlineFontScale === 5.0 || cleanPost.headlineFontScale === 8.5) {
+                                    cleanPost.headlineFontScale = isPortrait ? 10.0 : 6.2;
                                 }
-                                if (cleanPost.bodyFontScale === undefined || cleanPost.bodyFontScale === 3.8 || cleanPost.bodyFontScale === 2.5 || cleanPost.bodyFontScale === 2.4) {
-                                    cleanPost.bodyFontScale = isPortrait ? 4.2 : 3.0;
+                                if (cleanPost.bodyFontScale === undefined || cleanPost.bodyFontScale === 3.8 || cleanPost.bodyFontScale === 2.5 || cleanPost.bodyFontScale === 2.4 || cleanPost.bodyFontScale === 4.2) {
+                                    cleanPost.bodyFontScale = isPortrait ? 4.8 : 3.5;
                                 }
                             }
                             
@@ -543,7 +543,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                 if (cleanPost.qrCodeUrl) {
                                     if (cleanPost.qrPositionX === undefined) cleanPost.qrPositionX = isPortrait ? 88 : 92;
                                     if (cleanPost.qrPositionY === undefined) cleanPost.qrPositionY = isPortrait ? 93 : 84;
-                                    if (cleanPost.qrWidth === undefined) cleanPost.qrWidth = 14;
+                                    if (cleanPost.qrWidth === undefined || cleanPost.qrWidth === 7.5) cleanPost.qrWidth = 15;
                                 }
 
                                 // Placera ut textrubriker på smarta standardpositioner och fontskalor som matchar snabbmallen
@@ -551,32 +551,32 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                     if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 50;
                                     if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 68 : 65;
                                     if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 80;
-                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 8.5 : 5.5;
+                                    if (cleanPost.headlineFontScale === undefined || cleanPost.headlineFontScale === 8.5) cleanPost.headlineFontScale = isPortrait ? 10.0 : 6.2;
 
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 50;
                                     if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 80 : 80;
                                     if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 80;
-                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 4.2 : 3.0;
+                                    if (cleanPost.bodyFontScale === undefined || cleanPost.bodyFontScale === 4.2) cleanPost.bodyFontScale = isPortrait ? 4.8 : 3.5;
                                 } else if (cleanPost.layout === 'image-left') {
                                     if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = isPortrait ? 50 : 73;
                                     if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 64 : 42;
                                     if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 45;
-                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 5.5 : 3.6;
-
+                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 6.2 : 4.0;
+ 
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = isPortrait ? 50 : 73;
                                     if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 80 : 58;
                                     if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 45;
-                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 3.8 : 2.5;
+                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 4.2 : 2.8;
                                 } else if (cleanPost.layout === 'image-right') {
                                     if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = isPortrait ? 50 : 27;
                                     if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 24 : 42;
                                     if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 45;
-                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 5.5 : 3.6;
-
+                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 6.2 : 4.0;
+ 
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = isPortrait ? 50 : 27;
                                     if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 40 : 58;
                                     if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 45;
-                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 3.8 : 2.5;
+                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 4.2 : 2.8;
                                 }
                             }
                             setOriginalPost(JSON.parse(JSON.stringify(post)));

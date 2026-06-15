@@ -214,7 +214,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
             let qrX = 92;
             let qrY = 92;
-            let qrW = 7.5;
+            let qrW = 15;
 
             if (layout === 'image-fullscreen') {
                 // Placed gracefully on lower third, styled with robust shadows
@@ -228,7 +228,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                 qrX = 92;
                 qrY = 92;
-                qrW = 7.5;
+                qrW = 15;
             } else if (layout === 'image-left') {
                 if (isPortraitScreen) {
                     // Portrait split: Image on Top (hY 0-50), Text Area on Bottom (hY 50-100)
@@ -242,7 +242,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                     qrX = 92;
                     qrY = 92;
-                    qrW = 7.5;
+                    qrW = 15;
                 } else {
                     // Landscape split: Image on Left (wX 0-50), Text Area on Right (wX 50-100)
                     hX = 75; // middle of right text half
@@ -255,7 +255,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                     qrX = 92;
                     qrY = 92;
-                    qrW = 7.5;
+                    qrW = 15;
                 }
             } else if (layout === 'image-right') {
                 if (isPortraitScreen) {
@@ -270,7 +270,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                     qrX = 92;
                     qrY = 92;
-                    qrW = 7.5;
+                    qrW = 15;
                 } else {
                     // Landscape split: Text Area on Left (wX 0-50), Image on Right (wX 50-100)
                     hX = 25; // middle of left text half
@@ -283,7 +283,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                     qrX = 92;
                     qrY = 92;
-                    qrW = 7.5;
+                    qrW = 15;
                 }
             } else if (layout === 'real-estate') {
                 hX = 50;
@@ -296,7 +296,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                 qrX = 50;
                 qrY = 82;
-                qrW = 7.5;
+                qrW = 15;
             }
 
             const newPost: DisplayPost = {
