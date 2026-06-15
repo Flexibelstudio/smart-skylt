@@ -422,7 +422,8 @@ const DraggableTextElement: React.FC<any> = ({
     type, text, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
     bgEnabled, bgColor, mode, organization, isDraggable, 
     shadowType, shadowColor, outlineWidth, outlineColor,
-    onUpdatePosition, onUpdateWidth, onUpdateFontScale, onUpdateText
+    onUpdatePosition, onUpdateWidth, onUpdateFontScale, onUpdateText,
+    isExpressStyle
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -600,9 +601,14 @@ const DraggableTextElement: React.FC<any> = ({
     // We use the new fluid logic for font sizing, supporting precise numerical scale
     const fluidStyle = getFluidFontSizeStyle(type, fontSize, fontScale);
     
+    const isExpressStyleClean = !!isExpressStyle;
+    const defaultShadow = isExpressStyleClean 
+        ? (type === 'headline' ? '0 0.4cqw 2cqw rgba(0,0,0,0.98)' : '0 0.2cqw 1cqw rgba(0,0,0,0.9)')
+        : undefined;
+
     const textEffectStyle: React.CSSProperties = {
         ...fluidStyle, // Applies fontSize (cqw) and lineHeight
-        textShadow: getShadowStyle(shadowType, shadowColor, organization, mode),
+        textShadow: getShadowStyle(shadowType, shadowColor, organization, mode) || defaultShadow,
         WebkitTextStroke: outlineWidth && outlineWidth > 0 
             ? `${outlineWidth * 0.15}cqw ${resolveColor(outlineColor, '#000000', organization)}` // Use cqw for stroke too
             : undefined,
@@ -610,8 +616,8 @@ const DraggableTextElement: React.FC<any> = ({
     
     // Use the robust helper function for font family
     const fontClass = type === 'headline' 
-        ? `font-bold break-words ${getFontFamilyClass(fontFamily || (organization?.headlineFontFamily ?? 'display'))}`
-        : `mt-[1.5cqw] break-words ${getFontFamilyClass(fontFamily || (organization?.bodyFontFamily ?? 'sans'))}`;
+        ? `${isExpressStyleClean ? 'font-extrabold uppercase tracking-tight leading-tight' : 'font-bold'} break-words ${getFontFamilyClass(fontFamily || (organization?.headlineFontFamily ?? 'display'))}`
+        : `${isExpressStyleClean ? 'font-semibold' : 'font-normal'} mt-[1.5cqw] break-words ${getFontFamilyClass(fontFamily || (organization?.bodyFontFamily ?? 'sans'))}`;
 
     const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-[2cqw] rounded-xl';
     
@@ -712,7 +718,7 @@ const getCqwFontSize = (size?: string) => {
     }
 };
 
-const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, tagIds = [] }) => {
+const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, tagIds = [], isPortrait }) => {
      const containerRef = useRef<HTMLDivElement>(null);
      const isDraggable = !!onUpdatePosition;
      const [isDragging, setIsDragging] = useState(false);
@@ -863,8 +869,8 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
 
     // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
     const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
-    const defaultX = 12 + (tagIndex * 15);
-    const defaultY = 10;
+    const defaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
+    const defaultY = isPortrait ? 4 : 6;
 
     // Bygg klasser och stilar för varje tagg/stämpel - ska matcha static/express 100%!
     let stampClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
@@ -1540,10 +1546,25 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         );
     }
     
+    // Smart FontScale fallbacks for Express-like layouts (so they stay perfectly crisp and large even if undefined)
+    let defaultHeadlineFontScale = 5.0; // Standard fallback
+    let defaultBodyFontScale = 2.4;     // Standard fallback
+
+    if (post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') {
+        defaultHeadlineFontScale = isPortrait ? 8.5 : 5.5;
+        defaultBodyFontScale = isPortrait ? 4.2 : 3.0;
+    } else if (post.layout === 'image-left' || post.layout === 'image-right') {
+        defaultHeadlineFontScale = isPortrait ? 5.5 : 3.6;
+        defaultBodyFontScale = isPortrait ? 3.8 : 2.5;
+    }
+
+    const hFontScale = post.headlineFontScale ?? defaultHeadlineFontScale;
+    const bFontScale = post.bodyFontScale ?? defaultBodyFontScale;
+
     // QR Calc
-    const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : 90);
-    const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : 90);
-    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
+    const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : (isPortrait ? 88 : 92));
+    const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : (isPortrait ? 93 : 84));
+    const qrW = post.qrWidth ?? (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 14);
 
     // Headline & Body Defaults
     const hX = post.headlinePositionX ?? post.textPositionX ?? 50;
@@ -1759,7 +1780,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     x={hX} y={hY} width={hW}
                     textAlign={hAlign}
                     fontSize={post.headlineFontSize}
-                    fontScale={post.headlineFontScale} // Pass the numeric scale
+                    fontScale={hFontScale} // Pass the smart fallback/saved scale
                     fontFamily={post.headlineFontFamily}
                     color={post.headlineTextColor || post.textColor}
                     bgEnabled={post.headlineBackgroundEnabled ?? post.textBackgroundEnabled}
@@ -1777,6 +1798,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     onUpdateWidth={onUpdateHeadlineWidth || onUpdateTextWidth}
                     onUpdateFontScale={onUpdateHeadlineFontScale} // Handler for scaling
                     onUpdateText={onUpdateHeadlineText} // Handler for inline editing
+                    isExpressStyle={['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout)}
                 />
             )}
 
@@ -1788,7 +1810,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     x={bX} y={bY} width={bW}
                     textAlign={bAlign}
                     fontSize={post.bodyFontSize}
-                    fontScale={post.bodyFontScale} // Pass the numeric scale
+                    fontScale={bFontScale} // Pass the smart fallback/saved scale
                     fontFamily={post.bodyFontFamily}
                     color={post.bodyTextColor || post.textColor}
                     bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
@@ -1806,6 +1828,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     onUpdateWidth={onUpdateBodyWidth}
                     onUpdateFontScale={onUpdateBodyFontScale} // Handler for scaling
                     onUpdateText={onUpdateBodyText} // Handler for inline editing
+                    isExpressStyle={['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout)}
                 />
             )}
 
@@ -1842,7 +1865,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
                 const override = post.tagPositionOverrides?.find(o => o.tagId === tagId);
-                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} tagIds={post.tagIds} />;
+                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} tagIds={post.tagIds} isPortrait={isPortrait} />;
             })}
 
             {post.qrCodeUrl && post.layout !== 'real-estate' && (
