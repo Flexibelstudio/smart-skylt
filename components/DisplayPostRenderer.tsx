@@ -698,7 +698,21 @@ const DraggableTextElement: React.FC<any> = ({
     );
 };
 
-const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) => {
+const getCqwFontSize = (size?: string) => {
+    switch (size) {
+        case 'sm': return '1.8cqw';
+        case 'md': return '2.2cqw';
+        case 'lg': return '2.6cqw';
+        case 'xl': return '3.2cqw';
+        case '2xl': return '3.8cqw';
+        case '3xl': return '4.5cqw';
+        case '4xl': return '5.5cqw';
+        case '5xl': return '6.5cqw';
+        default: return '2.2cqw';
+    }
+};
+
+const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, tagIds = [] }) => {
      const containerRef = useRef<HTMLDivElement>(null);
      const isDraggable = !!onUpdatePosition;
      const [isDragging, setIsDragging] = useState(false);
@@ -795,7 +809,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
         }
     };
 
-     const handleWidthResizeStart = (e: React.MouseEvent | React.TouchEvent, direction: 'left' | 'right') => {
+    const handleWidthResizeStart = (e: React.MouseEvent | React.TouchEvent, direction: 'left' | 'right') => {
         if (!isDraggable || !onUpdatePosition || !containerRef.current) return;
         e.preventDefault(); e.stopPropagation();
         
@@ -849,55 +863,61 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
     let stampStyles: React.CSSProperties = {};
     const shape = (isStamp && tag.shape) ? tag.shape : 'circle';
 
+    // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
+    const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
+    const defaultX = 12 + (tagIndex * 15);
+    const defaultY = 10;
+
      if (isStamp) {
-        stampClasses += ' justify-center text-center uppercase tracking-[2px] font-bold ';
+        stampClasses += ' justify-center text-center uppercase tracking-[0.1cqw] font-black ';
         stampStyles.boxShadow = 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)';
 
         if (shape === 'circle') {
             stampClasses += ' rounded-full aspect-square ';
         } else if (shape === 'square') {
-            stampClasses += ' rounded-lg aspect-square ';
+            stampClasses += ' rounded-[1.5cqw] aspect-square ';
         } else { // rectangle
-            stampClasses += ' rounded-lg ';
+            stampClasses += ' rounded-[1.5cqw] ';
         }
         
-        if (tag.border === 'solid') {
-            stampClasses += ' border-2 ';
-            stampStyles.borderColor = 'currentColor';
-        } else if (tag.border === 'dashed') {
-            stampClasses += ' border-2 border-dashed ';
+        if (tag.border && tag.border !== 'none') {
+            stampStyles.borderWidth = '0.3cqw';
+            stampStyles.borderStyle = tag.border;
             stampStyles.borderColor = 'currentColor';
         }
     } else {
         stampClasses += ' rounded-full '; // Tags are pill-shaped
     }
     
-    let paddingClass = '';
+    // Använd cqw-baserad padding så att stämplar/taggar skalar vackert och inte blir mikroskopiska på stora tv-skärmar
+    let paddingStyle = '';
     const isShapeVertical = isStamp && (shape === 'circle' || shape === 'square');
     if (tag.url) {
-        paddingClass = isPreviewMode(mode) ? 'p-0.5' : 'p-1';
+        paddingStyle = '0.5cqw';
     } else if (isStamp) {
         if (shape === 'circle' || shape === 'square') {
-            paddingClass = isPreviewMode(mode) ? 'p-2' : 'p-4';
+            paddingStyle = '1.5cqw';
         } else { // rectangle
-            paddingClass = isPreviewMode(mode) ? 'px-2 py-1' : 'px-4 py-2';
+            paddingStyle = '1.2cqw 2.4cqw';
         }
     } else { // it's a tag
-        paddingClass = isPreviewMode(mode) ? 'px-3 py-1.5' : 'px-6 py-3';
+        paddingStyle = '1.2cqw 3.5cqw';
     }
 
      const style: React.CSSProperties = {
         position: 'absolute',
-        left: `${override?.x ?? 50}%`,
-        top: `${override?.y ?? 50}%`,
+        left: `${override?.x ?? defaultX}%`,
+        top: `${override?.y ?? defaultY}%`,
         // We apply transform here for position centering and rotation
         transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg) scale(${override?.scale || 1})`,
         zIndex: 40,
-        width: override?.width ? `${override.width}%` : 'auto', // Dynamic width
+        width: override?.width ? `${override.width}%` : (isStamp && (shape === 'circle' || shape === 'square')) ? '13cqw' : 'auto', // Dynamic width
         maxWidth: '90%', // Safety cap
         
         background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
         color: tag.textColor,
+        fontSize: getCqwFontSize(tag.fontSize), // FLUID FONT SIZE SCALE
+        padding: paddingStyle, // FLUID PADDING SCALE
         ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {}),
         ...stampStyles,
         ...(isStamp ? {} : {
@@ -919,8 +939,8 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition }) 
      };
 
      return (
-         <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
-              className={`flex flex-col items-center justify-center group ${paddingClass} ${getTagFontSizeClass(tag.fontSize, mode)} ${getFontFamilyClass(tag.fontFamily)} ${isStamp ? '' : getTagFontWeightClass(tag.fontWeight)} ${getTagAnimationClass(tag.animation, tag.displayType)} ${stampClasses}`}>
+          <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
+               className={`flex flex-col items-center justify-center group ${getFontFamilyClass(tag.fontFamily)} ${isStamp ? '' : getTagFontWeightClass(tag.fontWeight)} ${getTagAnimationClass(tag.animation, tag.displayType)} ${stampClasses}`}>
              
              {/* Content */}
              <div className={`flex items-center ${isShapeVertical ? 'flex-col gap-1' : 'gap-2'}`}>
@@ -1407,20 +1427,70 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     </div>
                 )}
 
-                {/* Taggar */}
+                {/* Taggar (Stämplar eller taggar) */}
                 {showTags && post.tagIds && post.tagIds.length > 0 && (
-                    <div className="absolute top-[4cqw] left-[4cqw] z-20 flex gap-2">
+                    <div className="absolute top-[4cqw] left-[4cqw] z-20 flex flex-wrap gap-[1.5cqw] pointer-events-none max-w-[80%]">
                         {post.tagIds.map(tagId => {
                             const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                             if (!tag) return null;
+                            
+                            const isStamp = tag.displayType === 'stamp';
+                            const shape = tag.shape || 'circle';
+                            
+                            // Bygg klasser och stilar för varje snabbinläggstagg/stämpel
+                            let expressClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
+                            let expressStyles: React.CSSProperties = {
+                                color: tag.textColor || '#ffffff',
+                                fontFamily: tag.fontFamily ? getFontFamilyClass(tag.fontFamily) : 'inherit',
+                                background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
+                                boxShadow: isStamp ? 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)' : '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+                            };
+
+                            // Animation
+                            if (tag.animation === 'pulse') {
+                                expressClasses += isStamp ? 'animate-pulse-stamp ' : 'animate-pulse-tag ';
+                            } else if (tag.animation === 'glow') {
+                                expressClasses += 'animate-glow-tag ';
+                                expressStyles = {
+                                    ...expressStyles,
+                                    ['--glow-color' as any]: tag.backgroundColor,
+                                };
+                            }
+
+                            if (isStamp) {
+                                expressClasses += ' tracking-[0.1cqw] leading-[1.1] ';
+                                if (shape === 'circle') {
+                                    expressClasses += ' rounded-full aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+                                    expressStyles.fontSize = '2.1cqw';
+                                } else if (shape === 'square') {
+                                    expressClasses += ' rounded-[1.5cqw] aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+                                    expressStyles.fontSize = '2.1cqw';
+                                } else { // rectangle
+                                    expressClasses += ' rounded-[1.5cqw] px-[3cqw] py-[1.5cqw] ';
+                                    expressStyles.fontSize = '2.3cqw';
+                                }
+
+                                if (tag.border === 'solid') {
+                                    expressClasses += ' border-[0.3cqw] border-current ';
+                                } else if (tag.border === 'dashed') {
+                                    expressClasses += ' border-[0.3cqw] border-dashed border-current ';
+                                }
+                            } else {
+                                // Standard pil-formad tagg/badge
+                                expressClasses += ' rounded-full px-[3.5cqw] py-[1.2cqw] tracking-wider ';
+                                expressStyles.fontSize = '2.3cqw';
+                                expressStyles.border = '1px solid rgba(255,255,255,0.15)';
+                                expressStyles.backdropFilter = 'blur(8px)';
+                            }
+
                             return (
-                                <span 
+                                <div 
                                     key={tagId} 
-                                    className="px-[2.5cqw] py-[1cqw] rounded-full text-white font-bold uppercase tracking-wider text-[2.2cqw] shadow-md"
-                                    style={{ backgroundColor: tag.color || '#3b82f6' }}
+                                    className={`${expressClasses}`} 
+                                    style={expressStyles}
                                 >
-                                    {tag.name}
-                                </span>
+                                    <span>{tag.text}</span>
+                                </div>
                             );
                         })}
                     </div>
@@ -1747,7 +1817,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
                 const override = post.tagPositionOverrides?.find(o => o.tagId === tagId);
-                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} />;
+                return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} tagIds={post.tagIds} />;
             })}
 
             {post.qrCodeUrl && post.layout !== 'real-estate' && (
