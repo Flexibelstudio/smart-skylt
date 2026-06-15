@@ -287,6 +287,37 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
   }, [authLoading, isScreenMode, selectedOrgId, allOrganizations, isDisplayApp, currentUser, selectedDisplayScreen]);
 
+  // 2. Auto-archive expired posts dynamically
+  useEffect(() => {
+    if (authLoading || !selectedOrgId || displayScreens.length === 0) return;
+    const now = new Date();
+
+    displayScreens.forEach(async (screen) => {
+      if (!screen.posts || screen.posts.length === 0) return;
+      let hasUpdates = false;
+
+      const updatedPosts = screen.posts.map(post => {
+        if (post.status !== 'archived' && post.endDate) {
+          const endDate = new Date(post.endDate);
+          if (endDate < now) {
+            hasUpdates = true;
+            return { ...post, status: 'archived' as const };
+          }
+        }
+        return post;
+      });
+
+      if (hasUpdates) {
+        console.log(`[Auto-Archive] Archiverar utgångna inlägg för kanal: ${screen.name}`);
+        try {
+          await fbUpdateDisplayScreen(selectedOrgId, screen.id, { posts: updatedPosts });
+        } catch (e) {
+          console.error("Misslyckades att automatiskt arkivera utgångna inlägg:", e);
+        }
+      }
+    });
+  }, [displayScreens, selectedOrgId, authLoading]);
+
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
 

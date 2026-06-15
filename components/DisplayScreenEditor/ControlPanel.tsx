@@ -249,7 +249,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                         <h3 className="font-bold text-lg text-slate-800 dark:text-white">Inlägg</h3>
                         <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold px-2 py-1 rounded-full">
-                            {screen.posts?.filter(p => p.status !== 'archived').length || 0}
+                            {screen.posts?.filter(p => {
+                                if (p.status === 'archived' || p.status === 'draft') return false;
+                                const now = new Date();
+                                const start = p.startDate ? new Date(p.startDate) : null;
+                                const end = p.endDate ? new Date(p.endDate) : null;
+                                if (start && start > now) return false;
+                                if (end && end < now) return false;
+                                return true;
+                            }).length || 0}
                         </span>
                     </div>
 
