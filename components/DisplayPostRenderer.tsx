@@ -859,49 +859,39 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
     };
 
     const isStamp = tag.displayType === 'stamp';
-    let stampClasses = '';
-    let stampStyles: React.CSSProperties = {};
-    const shape = (isStamp && tag.shape) ? tag.shape : 'circle';
+    const shape = tag.shape || 'circle';
 
     // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
     const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
     const defaultX = 12 + (tagIndex * 15);
     const defaultY = 10;
 
-     if (isStamp) {
-        stampClasses += ' justify-center text-center uppercase tracking-[0.1cqw] font-black ';
-        stampStyles.boxShadow = 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)';
+    // Bygg klasser och stilar för varje tagg/stämpel - ska matcha static/express 100%!
+    let stampClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
+    let stampStyles: React.CSSProperties = {
+        boxShadow: isStamp ? 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)' : '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+    };
 
+    if (isStamp) {
+        stampClasses += ' tracking-[0.1cqw] leading-[1.1] ';
         if (shape === 'circle') {
-            stampClasses += ' rounded-full aspect-square ';
+            stampClasses += ' rounded-full aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
         } else if (shape === 'square') {
-            stampClasses += ' rounded-[1.5cqw] aspect-square ';
+            stampClasses += ' rounded-[1.5cqw] aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
         } else { // rectangle
-            stampClasses += ' rounded-[1.5cqw] ';
+            stampClasses += ' rounded-[1.5cqw] px-[3cqw] py-[1.5cqw] ';
         }
-        
-        if (tag.border && tag.border !== 'none') {
-            stampStyles.borderWidth = '0.3cqw';
-            stampStyles.borderStyle = tag.border;
-            stampStyles.borderColor = 'currentColor';
+
+        if (tag.border === 'solid') {
+            stampClasses += ' border-[0.3cqw] border-current ';
+        } else if (tag.border === 'dashed') {
+            stampClasses += ' border-[0.3cqw] border-dashed border-current ';
         }
     } else {
-        stampClasses += ' rounded-full '; // Tags are pill-shaped
-    }
-    
-    // Använd cqw-baserad padding så att stämplar/taggar skalar vackert och inte blir mikroskopiska på stora tv-skärmar
-    let paddingStyle = '';
-    const isShapeVertical = isStamp && (shape === 'circle' || shape === 'square');
-    if (tag.url) {
-        paddingStyle = '0.5cqw';
-    } else if (isStamp) {
-        if (shape === 'circle' || shape === 'square') {
-            paddingStyle = '1.5cqw';
-        } else { // rectangle
-            paddingStyle = '1.2cqw 2.4cqw';
-        }
-    } else { // it's a tag
-        paddingStyle = '1.2cqw 3.5cqw';
+        // Standard pil-formad tagg/badge
+        stampClasses += ' rounded-full px-[3.5cqw] py-[1.2cqw] tracking-wider ';
+        stampStyles.border = '1px solid rgba(255,255,255,0.15)';
+        stampStyles.backdropFilter = 'blur(8px)';
     }
 
     // Beräkna en proportionell font-storlek (fluid font scale) som matchar det vanliga flödet helt perfekt
@@ -938,14 +928,8 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
         color: tag.textColor,
         fontSize: finalFontSize, // FLUID PROPORTIONAL FONT SIZE SCALE
-        padding: paddingStyle, // FLUID PADDING SCALE
         ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {}),
         ...stampStyles,
-        ...(isStamp ? {} : {
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255,255,255,0.2)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            backdropFilter: 'blur(8px)',
-        }),
         
         // Multi-line support
         whiteSpace: 'pre-wrap', 
@@ -959,9 +943,11 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         backfaceVisibility: 'hidden', 
      };
 
+     const isShapeVertical = isStamp && (shape === 'circle' || shape === 'square');
+
      return (
           <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
-               className={`flex flex-col items-center justify-center group ${getFontFamilyClass(tag.fontFamily)} ${isStamp ? '' : getTagFontWeightClass(tag.fontWeight)} ${getTagAnimationClass(tag.animation, tag.displayType)} ${stampClasses}`}>
+               className={`group ${getFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType)} ${stampClasses}`}>
              
              {/* Content */}
              <div className={`flex items-center ${isShapeVertical ? 'flex-col gap-1' : 'gap-2'}`}>
