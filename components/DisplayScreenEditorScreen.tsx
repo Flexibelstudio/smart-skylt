@@ -502,8 +502,36 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                         organization={organization}
                         onUpdateScreen={handleUpdateScreen}
                         onEditPost={(post) => {
+                            const cleanPost = JSON.parse(JSON.stringify(post));
+                            if (cleanPost.isExpressPost) {
+                                cleanPost.isExpressPost = false;
+                                // Placera ut textrubriker på smarta standardpositioner som matchar snabbmallen,
+                                // så att elementen inte hoppar in i mitten (50, 50) automatiskt.
+                                if (cleanPost.layout === 'image-fullscreen' || cleanPost.layout === 'video-fullscreen') {
+                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 50;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = 68;
+                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = 80;
+                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 50;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = 82;
+                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = 80;
+                                } else if (cleanPost.layout === 'image-left') {
+                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 73;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = 42;
+                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = 45;
+                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 73;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = 58;
+                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = 45;
+                                } else if (cleanPost.layout === 'image-right') {
+                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 27;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = 42;
+                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = 45;
+                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 27;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = 58;
+                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = 45;
+                                }
+                            }
                             setOriginalPost(JSON.parse(JSON.stringify(post)));
-                            setEditingPost(post);
+                            setEditingPost(cleanPost);
                         }} 
                         onDeletePost={(id) => setPostIdToDelete(id)}
                         onDownloadPost={setPostToDownloadAssets}

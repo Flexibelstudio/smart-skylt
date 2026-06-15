@@ -1407,20 +1407,70 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     </div>
                 )}
 
-                {/* Taggar */}
+                {/* Taggar (Stämplar eller taggar) */}
                 {showTags && post.tagIds && post.tagIds.length > 0 && (
-                    <div className="absolute top-[4cqw] left-[4cqw] z-20 flex gap-2">
+                    <div className="absolute top-[4cqw] left-[4cqw] z-20 flex flex-wrap gap-[1.5cqw] pointer-events-none max-w-[80%]">
                         {post.tagIds.map(tagId => {
                             const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                             if (!tag) return null;
+                            
+                            const isStamp = tag.displayType === 'stamp';
+                            const shape = tag.shape || 'circle';
+                            
+                            // Bygg klasser och stilar för varje snabbinläggstagg/stämpel
+                            let expressClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
+                            let expressStyles: React.CSSProperties = {
+                                color: tag.textColor || '#ffffff',
+                                fontFamily: tag.fontFamily ? getFontFamilyClass(tag.fontFamily) : 'inherit',
+                                background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
+                                boxShadow: isStamp ? 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)' : '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+                            };
+
+                            // Animation
+                            if (tag.animation === 'pulse') {
+                                expressClasses += isStamp ? 'animate-pulse-stamp ' : 'animate-pulse-tag ';
+                            } else if (tag.animation === 'glow') {
+                                expressClasses += 'animate-glow-tag ';
+                                expressStyles = {
+                                    ...expressStyles,
+                                    ['--glow-color' as any]: tag.backgroundColor,
+                                };
+                            }
+
+                            if (isStamp) {
+                                expressClasses += ' tracking-[0.1cqw] leading-[1.1] ';
+                                if (shape === 'circle') {
+                                    expressClasses += ' rounded-full aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+                                    expressStyles.fontSize = '2.1cqw';
+                                } else if (shape === 'square') {
+                                    expressClasses += ' rounded-[1.5cqw] aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
+                                    expressStyles.fontSize = '2.1cqw';
+                                } else { // rectangle
+                                    expressClasses += ' rounded-[1.5cqw] px-[3cqw] py-[1.5cqw] ';
+                                    expressStyles.fontSize = '2.3cqw';
+                                }
+
+                                if (tag.border === 'solid') {
+                                    expressClasses += ' border-[0.3cqw] border-current ';
+                                } else if (tag.border === 'dashed') {
+                                    expressClasses += ' border-[0.3cqw] border-dashed border-current ';
+                                }
+                            } else {
+                                // Standard pil-formad tagg/badge
+                                expressClasses += ' rounded-full px-[3.5cqw] py-[1.2cqw] tracking-wider ';
+                                expressStyles.fontSize = '2.3cqw';
+                                expressStyles.border = '1px solid rgba(255,255,255,0.15)';
+                                expressStyles.backdropFilter = 'blur(8px)';
+                            }
+
                             return (
-                                <span 
+                                <div 
                                     key={tagId} 
-                                    className="px-[2.5cqw] py-[1cqw] rounded-full text-white font-bold uppercase tracking-wider text-[2.2cqw] shadow-md"
-                                    style={{ backgroundColor: tag.color || '#3b82f6' }}
+                                    className={`${expressClasses}`} 
+                                    style={expressStyles}
                                 >
-                                    {tag.name}
-                                </span>
+                                    <span>{tag.text}</span>
+                                </div>
                             );
                         })}
                     </div>
