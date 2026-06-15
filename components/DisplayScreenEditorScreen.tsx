@@ -505,29 +505,67 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             const cleanPost = JSON.parse(JSON.stringify(post));
                             if (cleanPost.isExpressPost) {
                                 cleanPost.isExpressPost = false;
-                                // Placera ut textrubriker på smarta standardpositioner som matchar snabbmallen,
-                                // så att elementen inte hoppar in i mitten (50, 50) automatiskt.
+                                const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+                                
+                                // Sätt smarta positioner på stämplar/taggar så de ligger i övre vänstra hörnet och matchar snabbmallen
+                                if (cleanPost.tagIds && cleanPost.tagIds.length > 0) {
+                                    if (!cleanPost.tagPositionOverrides) {
+                                        cleanPost.tagPositionOverrides = [];
+                                    }
+                                    cleanPost.tagIds.forEach((tagId: string, idx: number) => {
+                                        const exists = cleanPost.tagPositionOverrides.some((o: any) => o.tagId === tagId);
+                                        if (!exists) {
+                                            const tagX = isPortrait ? (12 + idx * 16) : (10 + idx * 12);
+                                            const tagY = isPortrait ? 4 : 6; // Mycket högre upp än standard 10%
+                                            cleanPost.tagPositionOverrides.push({
+                                                tagId,
+                                                x: tagX,
+                                                y: tagY,
+                                                scale: 1,
+                                                rotation: 0
+                                            });
+                                        }
+                                    });
+                                }
+
+                                // Sätt smarta positioner och storlek på QR-koden
+                                if (cleanPost.qrCodeUrl) {
+                                    if (cleanPost.qrPositionX === undefined) cleanPost.qrPositionX = isPortrait ? 88 : 92;
+                                    if (cleanPost.qrPositionY === undefined) cleanPost.qrPositionY = isPortrait ? 93 : 84;
+                                    if (cleanPost.qrWidth === undefined) cleanPost.qrWidth = 14;
+                                }
+
+                                // Placera ut textrubriker på smarta standardpositioner och fontskalor som matchar snabbmallen
                                 if (cleanPost.layout === 'image-fullscreen' || cleanPost.layout === 'video-fullscreen') {
                                     if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 50;
-                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = 68;
-                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = 80;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 68 : 65;
+                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 80;
+                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 8.5 : 5.5;
+
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 50;
-                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = 82;
-                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = 80;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 80 : 80;
+                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 80;
+                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 4.2 : 3.0;
                                 } else if (cleanPost.layout === 'image-left') {
-                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 73;
-                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = 42;
-                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = 45;
-                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 73;
-                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = 58;
-                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = 45;
+                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = isPortrait ? 50 : 73;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 64 : 42;
+                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 45;
+                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 5.5 : 3.6;
+
+                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = isPortrait ? 50 : 73;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 80 : 58;
+                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 45;
+                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 3.8 : 2.5;
                                 } else if (cleanPost.layout === 'image-right') {
-                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = 27;
-                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = 42;
-                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = 45;
-                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 27;
-                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = 58;
-                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = 45;
+                                    if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = isPortrait ? 50 : 27;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 24 : 42;
+                                    if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 45;
+                                    if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 5.5 : 3.6;
+
+                                    if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = isPortrait ? 50 : 27;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 40 : 58;
+                                    if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 45;
+                                    if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 3.8 : 2.5;
                                 }
                             }
                             setOriginalPost(JSON.parse(JSON.stringify(post)));
