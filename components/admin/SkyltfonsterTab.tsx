@@ -24,19 +24,36 @@ import { ExpressPublishTab } from './ExpressPublishTab';
 
 const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
     const now = new Date();
-    const activePosts = (screen.posts || []).filter(post => {
-        if (post.status === 'archived' || post.status === 'draft') return false;
-        const startDate = post.startDate ? new Date(post.startDate) : null;
-        const endDate = post.endDate ? new Date(post.endDate) : null;
-        if (startDate && startDate > now) return false;
-        if (endDate && endDate < now) return false;
-        return true;
-    });
+    const posts = screen.posts || [];
+    
+    let activePosCount = 0;
+    let scheduledCount = 0;
+    let draftCount = 0;
 
-    const activePostCount = activePosts.length;
+    posts.forEach(p => {
+        if (p.status === 'archived') return;
+        
+        const isDraft = p.status === 'draft' || !p.startDate;
+        if (isDraft) {
+            draftCount++;
+            return;
+        }
+
+        const start = new Date(p.startDate);
+        const end = p.endDate ? new Date(p.endDate) : null;
+
+        if (start > now) {
+            scheduledCount++;
+        } else if (end && end < now) {
+            // Already ended/expired (could also be considered processed, let's group as draft or skip)
+            draftCount++;
+        } else {
+            activePosCount++;
+        }
+    });
     
     let latestEndDate: Date | null = null;
-    (screen.posts || []).forEach(post => {
+    posts.forEach(post => {
         if (post.status === 'archived' || post.status === 'draft') return;
         if (post.endDate) {
             const endDate = new Date(post.endDate);
@@ -64,15 +81,30 @@ const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
     }
 
     return (
-        <div className="flex items-center gap-4 text-sm font-semibold">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-x-4 gap-y-1 text-xs font-semibold">
             {daysRemainingText && (
-                <span className={textColorClass} title={`Sista inlägget går ut om ${daysRemaining} ${daysRemaining === 1 ? 'dag' : 'dagar'}.`}>
-                    {daysRemainingText}
+                <span className={`${textColorClass} flex items-center shrink-0`} title={`Sista inlägget går ut om ${daysRemaining} ${daysRemaining === 1 ? 'dag' : 'dagar'}.`}>
+                    🕒 {daysRemainingText}
                 </span>
             )}
-            <span className="text-slate-600 dark:text-slate-300" title={`${activePostCount} inlägg är aktiva just nu.`}>
-                {activePostCount} {activePostCount === 1 ? 'inlägg' : 'inlägg'}
-            </span>
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
+                <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400" title={`${activePosCount} inlägg visas på skärmen just nu.`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {activePosCount} aktiv{activePosCount === 1 ? 't' : 'a'}
+                </span>
+                {scheduledCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400" title={`${scheduledCount} inlägg är schemalagda för framtiden.`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        {scheduledCount} schemalagda
+                    </span>
+                )}
+                {draftCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400" title={`${draftCount} utkast eller avslutade inlägg.`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        {draftCount} utkast
+                    </span>
+                )}
+            </div>
         </div>
     );
 };

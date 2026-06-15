@@ -61,16 +61,17 @@ const DisplayScreenPreviewModal: React.FC<{
     const activePosts = useMemo(() => {
         if (!liveScreen.posts || liveScreen.posts.length === 0) return [];
         const now = new Date();
-        const nonArchivedOrDraft = liveScreen.posts.filter(post => post.status !== 'archived' && post.status !== 'draft');
-        const filtered = nonArchivedOrDraft.filter(post => {
+        return liveScreen.posts.filter(post => {
+            if (post.status === 'archived' || post.status === 'draft' || !post.startDate) return false;
+            
             const start = parseToDate(post.startDate, false);
-            if (start && start > now) return false;
+            if (!start || start > now) return false;
+            
             const end = parseToDate(post.endDate, true);
             if (end && end < now) return false;
+            
             return true;
         });
-        // Om inga inlägg matchar schemat just nu i förhandsvisningen, fall tillbaka till att visa alla tillgängliga inlägg
-        return filtered.length > 0 ? filtered : nonArchivedOrDraft;
     }, [liveScreen]);
 
     useEffect(() => {
@@ -146,9 +147,12 @@ const DisplayScreenPreviewModal: React.FC<{
                                         mode="live" // IMPORTANT: Live mode for correct scaling (1:1 with editor/screen)
                                     />
                                 ) : (
-                                    <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
-                                        <div className="w-12 h-12 rounded-full border-2 border-slate-700 border-t-slate-500 animate-spin" />
-                                        <span>Väntar på innehåll...</span>
+                                    <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center bg-slate-900/95">
+                                        <div className="w-12 h-12 rounded-full border border-dashed border-slate-700 flex items-center justify-center text-xl mb-2">📭</div>
+                                        <h4 className="font-bold text-slate-200">Inga aktiva inlägg</h4>
+                                        <p className="text-xs text-slate-400 max-w-[280px] mt-1 lead-relaxed">
+                                            Just nu finns det inga aktiva eller tidsbestämda inlägg schemalagda för den här kanalen just nu.
+                                        </p>
                                     </div>
                                 )}
                             </SplitScreenLayout>

@@ -54,6 +54,38 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'alpha'>('manual');
     const [filterStatus, setFilterStatus] = useState<FilterOption>('all');
     const [searchQuery, setSearchQuery] = useState('');
+
+    const counts = useMemo(() => {
+        const posts = screen.posts || [];
+        let active = 0;
+        let scheduled = 0;
+        let draft = 0;
+        let archived = 0;
+
+        posts.forEach(p => {
+            if (p.status === 'archived') {
+                archived++;
+                return;
+            }
+            if (!p.startDate || p.status === 'draft') {
+                draft++;
+                return;
+            }
+            const now = new Date();
+            const start = new Date(p.startDate);
+            const end = p.endDate ? new Date(p.endDate) : null;
+
+            if (start > now) {
+                scheduled++;
+            } else if (end && end < now) {
+                draft++; // Ended is counted as expired / draft
+            } else {
+                active++;
+            }
+        });
+
+        return { active, scheduled, draft, archived };
+    }, [screen.posts]);
     
     const getPostStatus = (post: DisplayPost): PostStatus => {
         if (post.status === 'archived') return 'archived';
@@ -246,19 +278,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 
                 {/* Top Row: Header & Actions */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">Inlägg</h3>
-                        <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold px-2 py-1 rounded-full">
-                            {screen.posts?.filter(p => {
-                                if (p.status === 'archived' || p.status === 'draft') return false;
-                                const now = new Date();
-                                const start = p.startDate ? new Date(p.startDate) : null;
-                                const end = p.endDate ? new Date(p.endDate) : null;
-                                if (start && start > now) return false;
-                                if (end && end < now) return false;
-                                return true;
-                            }).length || 0}
-                        </span>
+                    <div className="flex flex-col gap-1 w-full sm:w-auto">
+                        <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-lg text-slate-800 dark:text-white">Inlägg</h3>
+                            <span className="bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold px-2 py-0.5 rounded-full" title="Aktiva inlägg i flödet">
+                                {counts.active} aktiv{counts.active === 1 ? 't' : 'a'}
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                            {counts.scheduled > 0 && (
+                                <span className="flex items-center gap-1 shrink-0" title={`${counts.scheduled} inlägg kommer startas i framtiden`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                    {counts.scheduled} schemalagda
+                                </span>
+                            )}
+                            {counts.draft > 0 && (
+                                <span className="flex items-center gap-1 shrink-0" title={`${counts.draft} utkast`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                    {counts.draft} utkast
+                                </span>
+                            )}
+                            {counts.archived > 0 && (
+                                <span className="flex items-center gap-1 shrink-0" title={`${counts.archived} arkiverade inlägg`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-450" />
+                                    {counts.archived} arkiv
+                                </span>
+                            )}
+                        </div>
                     </div>
 
                     <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5 justify-end">
