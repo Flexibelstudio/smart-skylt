@@ -904,6 +904,27 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         paddingStyle = '1.2cqw 3.5cqw';
     }
 
+    // Beräkna en proportionell font-storlek (fluid font scale) som matchar det vanliga flödet helt perfekt
+    const baseFontSize = isStamp 
+        ? ((shape === 'circle' || shape === 'square') ? '2.1cqw' : '2.3cqw') 
+        : '2.3cqw';
+
+    const getScaleFactor = (size?: string) => {
+        switch (size) {
+            case 'sm': return 1.8 / 2.2;
+            case 'md': return 1;
+            case 'lg': return 2.6 / 2.2;
+            case 'xl': return 3.2 / 2.2;
+            case '2xl': return 3.8 / 2.2;
+            case '3xl': return 4.5 / 2.2;
+            case '4xl': return 5.5 / 2.2;
+            case '5xl': return 6.5 / 2.2;
+            default: return 1;
+        }
+    };
+
+    const finalFontSize = `calc(${baseFontSize} * ${getScaleFactor(tag.fontSize)})`;
+
      const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x ?? defaultX}%`,
@@ -916,7 +937,7 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         
         background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
         color: tag.textColor,
-        fontSize: getCqwFontSize(tag.fontSize), // FLUID FONT SIZE SCALE
+        fontSize: finalFontSize, // FLUID PROPORTIONAL FONT SIZE SCALE
         padding: paddingStyle, // FLUID PADDING SCALE
         ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {}),
         ...stampStyles,
@@ -1428,7 +1449,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 )}
 
                 {/* Taggar (Stämplar eller taggar) */}
-                {showTags && post.tagIds && post.tagIds.length > 0 && (
+                {showTags && !onUpdateTagPosition && post.tagIds && post.tagIds.length > 0 && (
                     <div className="absolute top-[4cqw] left-[4cqw] z-20 flex flex-wrap gap-[1.5cqw] pointer-events-none max-w-[80%]">
                         {post.tagIds.map(tagId => {
                             const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
@@ -1457,17 +1478,36 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                 };
                             }
 
+                            // Beräkna fluid fontstorlek med proportionell skala för statiska taggar
+                            const baseFontSize = isStamp 
+                                ? ((shape === 'circle' || shape === 'square') ? '2.1cqw' : '2.3cqw') 
+                                : '2.3cqw';
+
+                            const getScaleFactor = (size?: string) => {
+                                switch (size) {
+                                    case 'sm': return 1.8 / 2.2;
+                                    case 'md': return 1;
+                                    case 'lg': return 2.6 / 2.2;
+                                    case 'xl': return 3.2 / 2.2;
+                                    case '2xl': return 3.8 / 2.2;
+                                    case '3xl': return 4.5 / 2.2;
+                                    case '4xl': return 5.5 / 2.2;
+                                    case '5xl': return 6.5 / 2.2;
+                                    default: return 1;
+                                }
+                            };
+
+                            const finalFontSize = `calc(${baseFontSize} * ${getScaleFactor(tag.fontSize)})`;
+                            expressStyles.fontSize = finalFontSize;
+
                             if (isStamp) {
                                 expressClasses += ' tracking-[0.1cqw] leading-[1.1] ';
                                 if (shape === 'circle') {
                                     expressClasses += ' rounded-full aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
-                                    expressStyles.fontSize = '2.1cqw';
                                 } else if (shape === 'square') {
                                     expressClasses += ' rounded-[1.5cqw] aspect-square w-[13cqw] h-[13cqw] p-[1.5cqw] ';
-                                    expressStyles.fontSize = '2.1cqw';
                                 } else { // rectangle
                                     expressClasses += ' rounded-[1.5cqw] px-[3cqw] py-[1.5cqw] ';
-                                    expressStyles.fontSize = '2.3cqw';
                                 }
 
                                 if (tag.border === 'solid') {
@@ -1478,7 +1518,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             } else {
                                 // Standard pil-formad tagg/badge
                                 expressClasses += ' rounded-full px-[3.5cqw] py-[1.2cqw] tracking-wider ';
-                                expressStyles.fontSize = '2.3cqw';
                                 expressStyles.border = '1px solid rgba(255,255,255,0.15)';
                                 expressStyles.backdropFilter = 'blur(8px)';
                             }
