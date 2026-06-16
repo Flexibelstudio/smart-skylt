@@ -869,8 +869,8 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
 
     // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
     const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
-    const defaultX = isPortrait ? (14 + tagIndex * 18) : (12 + tagIndex * 14);
-    const defaultY = isPortrait ? 7 : 8;
+    const defaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
+    const defaultY = isPortrait ? 5.2 : 8;
 
     // Bygg klasser och stilar för varje tagg/stämpel - ska matcha static/express 100%!
     let stampClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
@@ -1163,7 +1163,7 @@ export interface DisplayPostRendererProps {
 }
 
 export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
-    post,
+    post: initialPost,
     allTags: allTagsFromProp,
     onVideoEnded,
     primaryColor: primaryColorFromProp,
@@ -1191,6 +1191,83 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     // Legacy support
     onUpdateTextPosition, onUpdateTextWidth
 }) => {
+    const isPortraitLayout = aspectRatio === '9:16' || aspectRatio === '3:4';
+
+    // Universell normalisering för att uppgradera äldre inlägg och snabbmallar till premiumplaceringar på direkten
+    const post = useMemo(() => {
+        if (!initialPost) return initialPost;
+        const p = JSON.parse(JSON.stringify(initialPost)) as typeof initialPost;
+        
+        // Helskärm layouter (image/video fullscreen) och deras textparningar
+        if (p.layout === 'image-fullscreen' || p.layout === 'video-fullscreen') {
+            if (p.headlinePositionX === undefined || p.headlinePositionX === 50) p.headlinePositionX = 50;
+            // Om den har de gamla standardvärdena eller saknar värde, flytta till premium 70/78 split
+            if (p.headlinePositionY === undefined || p.headlinePositionY === 68 || p.headlinePositionY === 65) {
+                p.headlinePositionY = isPortraitLayout ? 70 : 65; // Snyggt neddragen för att slippa krock med övre element
+            }
+            if (p.headlineWidth === undefined) p.headlineWidth = isPortraitLayout ? 90 : 80;
+            
+            if (p.bodyPositionX === undefined) p.bodyPositionX = 50;
+            if (p.bodyPositionY === undefined || p.bodyPositionY === 80) {
+                p.bodyPositionY = isPortraitLayout ? 78 : 74; // Drar ihop avståndet till sammansvetsade 8%
+            }
+            if (p.bodyWidth === undefined) p.bodyWidth = isPortraitLayout ? 90 : 80;
+            
+            if (p.headlineFontScale === undefined || p.headlineFontScale === 8.5) {
+                p.headlineFontScale = isPortraitLayout ? 10.0 : 6.2;
+            }
+            if (p.bodyFontScale === undefined || p.bodyFontScale === 4.2) {
+                p.bodyFontScale = isPortraitLayout ? 4.8 : 3.5;
+            }
+        } else if (p.layout === 'image-left') {
+            if (p.headlinePositionX === undefined) p.headlinePositionX = isPortraitLayout ? 50 : 73;
+            if (p.headlinePositionY === undefined || p.headlinePositionY === 64) p.headlinePositionY = isPortraitLayout ? 64 : 42;
+            if (p.headlineWidth === undefined) p.headlineWidth = isPortraitLayout ? 90 : 45;
+            if (p.headlineFontScale === undefined) p.headlineFontScale = isPortraitLayout ? 6.2 : 4.0;
+            
+            if (p.bodyPositionX === undefined) p.bodyPositionX = isPortraitLayout ? 50 : 73;
+            if (p.bodyPositionY === undefined || p.bodyPositionY === 75 || p.bodyPositionY === 80) p.bodyPositionY = isPortraitLayout ? 75 : 54;
+            if (p.bodyWidth === undefined) p.bodyWidth = isPortraitLayout ? 90 : 45;
+            if (p.bodyFontScale === undefined) p.bodyFontScale = isPortraitLayout ? 4.2 : 2.8;
+        } else if (p.layout === 'image-right') {
+            if (p.headlinePositionX === undefined) p.headlinePositionX = isPortraitLayout ? 50 : 27;
+            if (p.headlinePositionY === undefined || p.headlinePositionY === 24) p.headlinePositionY = isPortraitLayout ? 20 : 42;
+            if (p.headlineWidth === undefined) p.headlineWidth = isPortraitLayout ? 90 : 45;
+            if (p.headlineFontScale === undefined) p.headlineFontScale = isPortraitLayout ? 6.2 : 4.0;
+            
+            if (p.bodyPositionX === undefined) p.bodyPositionX = isPortraitLayout ? 50 : 27;
+            if (p.bodyPositionY === undefined || p.bodyPositionY === 31 || p.bodyPositionY === 40) p.bodyPositionY = isPortraitLayout ? 31 : 54;
+            if (p.bodyWidth === undefined) p.bodyWidth = isPortraitLayout ? 90 : 45;
+            if (p.bodyFontScale === undefined) p.bodyFontScale = isPortraitLayout ? 4.2 : 2.8;
+        }
+
+        // QR-kod placering (undvik kanterna omedelbart!)
+        if (p.qrCodeUrl) {
+            if (p.qrPositionX === undefined || p.qrPositionX === 88 || p.qrPositionX === 92) p.qrPositionX = isPortraitLayout ? 85 : 89;
+            if (p.qrPositionY === undefined || p.qrPositionY === 93) p.qrPositionY = isPortraitLayout ? 89 : 84;
+            if (p.qrWidth === undefined || p.qrWidth === 14 || p.qrWidth === 7.5) p.qrWidth = 15;
+        }
+
+        // Taggar: drag in från kanterna (t.ex. x: 12, y: 4 -> x: 15, y: 7) för befintliga och nya inlägg
+        if (p.tagPositionOverrides) {
+            p.tagPositionOverrides = p.tagPositionOverrides.map(override => {
+                let rx = override.x;
+                let ry = override.y;
+                if (isPortraitLayout) {
+                    if (rx <= 12) rx = 15;
+                    if (ry <= 4) ry = 7;
+                }
+                return {
+                    ...override,
+                    x: rx,
+                    y: ry
+                };
+            });
+        }
+
+        return p;
+    }, [initialPost, isPortraitLayout]);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
@@ -1582,15 +1659,17 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         defaultBy = isPortrait ? 31 : 52; // Tighter, premium spacing (11% gap instead of 16%)
     }
 
+    const isExpressStyle = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout);
+
     const hX = post.headlinePositionX ?? post.textPositionX ?? 50;
     const hY = post.headlinePositionY ?? post.textPositionY ?? defaultHy;
-    const hW = post.headlineWidth ?? post.textWidth ?? 84;
+    const hW = post.headlineWidth ?? post.textWidth ?? (isExpressStyle ? 90 : 84);
     const hAlign = post.headlineTextAlign ?? post.textAlign ?? 'center';
     
     // Body fallbacks
     const bX = post.bodyPositionX ?? post.textPositionX ?? 50;
     const bY = post.bodyPositionY ?? (post.textPositionY ? post.textPositionY + 11 : defaultBy); // Snugger 11% fallback gap instead of 15%
-    const bW = post.bodyWidth ?? post.textWidth ?? 84;
+    const bW = post.bodyWidth ?? post.textWidth ?? (isExpressStyle ? 90 : 84);
     const bAlign = post.bodyTextAlign ?? post.textAlign ?? 'center';
 
     return (

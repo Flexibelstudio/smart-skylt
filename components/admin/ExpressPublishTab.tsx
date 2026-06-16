@@ -316,11 +316,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 // Placed gracefully on lower third, styled with robust shadows
                 hX = 50;
                 hY = 68; // Lowered to render beautifully at the bottom like preview
-                hW = 84;
+                hW = 90;
 
                 bX = 50;
                 bY = 77; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
-                bW = 84;
+                bW = 90;
 
                 qrX = isPortraitScreen ? 86 : 89;
                 qrY = isPortraitScreen ? 89 : 84;
@@ -330,11 +330,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     // Portrait split: Image on Top (hY 0-50), Text Area on Bottom (hY 50-100)
                     hX = 50;
                     hY = 64; // middle of bottom text half, lowered slightly
-                    hW = 84;
+                    hW = 90;
 
                     bX = 50;
                     bY = 75; // reduced gap to 11%
-                    bW = 84;
+                    bW = 90;
 
                     qrX = 86;
                     qrY = 89;
@@ -358,11 +358,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     // Portrait split: Text Area on Top (hY 0-50), Image on Bottom (hY 50-100)
                     hX = 50;
                     hY = 20; // middle of top text half (pulled down from 16 to avoid clashing borders)
-                    hW = 84;
+                    hW = 90;
 
                     bX = 50;
                     bY = 31; // snug text gap decreased to 11% (originally 30 - gap 14%)
-                    bW = 84;
+                    bW = 90;
 
                     qrX = 86;
                     qrY = 89;

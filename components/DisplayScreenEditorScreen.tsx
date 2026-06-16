@@ -518,6 +518,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             if (cleanPost.isExpressPost) {
                                 cleanPost.isExpressPost = false;
                                 
+                                // Sätt perfekta bredder för rubriker och brödtext så att de inte radbryts olika gentemot snabbinlägget
+                                cleanPost.headlineWidth = 90;
+                                cleanPost.bodyWidth = 90;
+                                
                                 // Sätt smarta positioner på stämplar/taggar så de ligger i övre vänstra hörnet och matchar snabbmallen
                                 if (cleanPost.tagIds && cleanPost.tagIds.length > 0) {
                                     if (!cleanPost.tagPositionOverrides) {
@@ -526,8 +530,8 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                     cleanPost.tagIds.forEach((tagId: string, idx: number) => {
                                         const exists = cleanPost.tagPositionOverrides.some((o: any) => o.tagId === tagId);
                                         if (!exists) {
-                                            const tagX = isPortrait ? (14 + idx * 18) : (12 + idx * 14);
-                                            const tagY = isPortrait ? 7 : 8; // Snyggt neddragna och indragna (var 4 / 6)
+                                            const tagX = isPortrait ? (12 + idx * 16) : (10 + idx * 12);
+                                            const tagY = isPortrait ? 5.2 : 8; // Snyggt synkat med snabbmallsplacering
                                             cleanPost.tagPositionOverrides.push({
                                                 tagId,
                                                 x: tagX,
