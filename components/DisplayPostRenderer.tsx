@@ -619,12 +619,15 @@ const DraggableTextElement: React.FC<any> = ({
         ? `${isExpressStyleClean ? 'font-extrabold uppercase tracking-tight leading-tight' : 'font-bold'} break-words ${getFontFamilyClass(fontFamily || (organization?.headlineFontFamily ?? 'display'))}`
         : `${isExpressStyleClean ? 'font-semibold' : 'font-normal'} mt-[1.5cqw] break-words ${getFontFamilyClass(fontFamily || (organization?.bodyFontFamily ?? 'sans'))}`;
 
-    const paddingClass = isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-[2cqw] rounded-xl';
-    
     // Resolve background color and check alpha
     const resolvedBgColor = bgEnabled ? resolveColor(bgColor, 'rgba(0,0,0,0.5)', organization) : 'transparent';
-    const bgAlpha = getAlpha(resolvedBgColor);
+    const bgAlpha = bgEnabled ? getAlpha(resolvedBgColor) : 0;
     const showBackdrop = bgEnabled && bgAlpha > 0.01;
+
+    // FIX: Om texten INTE har bakgrundsplatta (showBackdrop är falskt), ta bort padding (p-0) så bredden stämmer till 100% med flödet/snabbinlägget
+    const paddingClass = showBackdrop
+        ? (isPreviewMode(mode) ? 'p-1 rounded-md' : 'p-[2cqw] rounded-xl')
+        : 'p-0';
 
     return (
         <div 
@@ -1201,23 +1204,23 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         // Helskärm layouter (image/video fullscreen) och deras textparningar
         if (p.layout === 'image-fullscreen' || p.layout === 'video-fullscreen') {
             if (p.headlinePositionX === undefined || p.headlinePositionX === 50) p.headlinePositionX = 50;
-            // Om den har de gamla standardvärdena eller saknar värde, flytta till premium 70/78 split
+            // Om den har de gamla standardvärdena eller saknar värde, flytta till premium 70/81 split för att ge luftigt och optimalt textavstånd utan krockar
             if (p.headlinePositionY === undefined || p.headlinePositionY === 68 || p.headlinePositionY === 65) {
                 p.headlinePositionY = isPortraitLayout ? 70 : 65; // Snyggt neddragen för att slippa krock med övre element
             }
             if (p.headlineWidth === undefined) p.headlineWidth = isPortraitLayout ? 90 : 80;
             
             if (p.bodyPositionX === undefined) p.bodyPositionX = 50;
-            if (p.bodyPositionY === undefined || p.bodyPositionY === 80) {
-                p.bodyPositionY = isPortraitLayout ? 78 : 74; // Drar ihop avståndet till sammansvetsade 8%
+            if (p.bodyPositionY === undefined || p.bodyPositionY === 80 || p.bodyPositionY === 78) {
+                p.bodyPositionY = isPortraitLayout ? 81 : 76; // Justerad från 78/74 för att matcha snabbinläggets vackra och naturliga avstånd
             }
             if (p.bodyWidth === undefined) p.bodyWidth = isPortraitLayout ? 90 : 80;
             
-            if (p.headlineFontScale === undefined || p.headlineFontScale === 8.5) {
-                p.headlineFontScale = isPortraitLayout ? 10.0 : 6.2;
+            if (p.headlineFontScale === undefined || p.headlineFontScale === 10.0 || p.headlineFontScale === 8.5) {
+                p.headlineFontScale = isPortraitLayout ? 8.5 : 5.5; // Synkat med snabbinläggets exakta rubrikstorlek för perfekt överensstämmelse
             }
-            if (p.bodyFontScale === undefined || p.bodyFontScale === 4.2) {
-                p.bodyFontScale = isPortraitLayout ? 4.8 : 3.5;
+            if (p.bodyFontScale === undefined || p.bodyFontScale === 4.8 || p.bodyFontScale === 4.2) {
+                p.bodyFontScale = isPortraitLayout ? 4.2 : 3.0; // Synkat med snabbinläggets exakta brödtextstorlek för perfekt överensstämmelse
             }
         } else if (p.layout === 'image-left') {
             if (p.headlinePositionX === undefined) p.headlinePositionX = isPortraitLayout ? 50 : 73;
@@ -1650,7 +1653,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     let defaultBy = 54; // Tightened 14% gap by default instead of 20%
     if (post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') {
         defaultHy = isPortrait ? 68 : 65;
-        defaultBy = isPortrait ? 77 : 74; // Snug, unified gap (approx 9-10% vertical gap for beautiful pairing)
+        defaultBy = isPortrait ? 81 : 76; // Matchar snabbinläggets exakta luftiga och fantastiska spatiösa avstånd perfekt
     } else if (post.layout === 'image-left') {
         defaultHy = isPortrait ? 64 : 40;
         defaultBy = isPortrait ? 75 : 52; // Compact, neat gap (11% gap)
@@ -1699,6 +1702,14 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             onEnded={onVideoEnded}
                             onLoadedData={signalReady}
                             onError={() => onLoadError && onLoadError()}
+                        />
+                    )}
+
+                    {/* Elegant mörk toning i nederkant även för vanliga helskärmsinlägg så texten framhävs perfekt */}
+                    {(post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') && (
+                        <div 
+                            className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" 
+                            style={{ zIndex: 10 }}
                         />
                     )}
                 </>
