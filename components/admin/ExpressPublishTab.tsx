@@ -7,6 +7,8 @@ import { PrimaryButton } from '../Buttons';
 import { StyledInput } from '../Forms';
 import { LoadingSpinnerIcon, TrashIcon } from '../icons';
 import QRCode from 'qrcode';
+import { DisplayPostRenderer } from '../DisplayPostRenderer';
+import { ScaledPreviewWrapper } from '../DisplayScreenEditor/PreviewPanes';
 
 interface ExpressPublishTabProps {
     organization: Organization;
@@ -107,6 +109,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     // UI Helpers
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSoldUpdating, setIsSoldUpdating] = useState<string | null>(null);
+    const [showActiveList, setShowActiveList] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Auto-select first screen if no screen selected
@@ -134,6 +137,99 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         if (!activeScreen) return [];
         return (activeScreen.posts || []).filter(post => post.isExpressPost === true && post.status !== 'archived');
     }, [activeScreen]);
+
+    // Live virtual previewPost object mapping inputs in real-time
+    const previewPost = useMemo<DisplayPost>(() => {
+        let cleanUrl = webpageUrl.trim();
+        if (cleanUrl) {
+            if (!/^https?:\/\//i.test(cleanUrl)) {
+                cleanUrl = 'https://' + cleanUrl;
+            }
+        }
+        
+        const defaultBody = description.trim() || 'Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.';
+        
+        // Dynamic coords reflecting express publish formula exactly
+        let hX = 50, hY = 50, hW = 100;
+        let bX = 50, bY = 50, bW = 100;
+        let qrX = 89, qrY = 84, qrW = 15;
+
+        if (layout === 'image-fullscreen') {
+            hX = 50; hY = 68; hW = 84;
+            bX = 50; bY = 77; bW = 84;
+            qrX = isPortraitScreen ? 86 : 89;
+            qrY = isPortraitScreen ? 89 : 84;
+            qrW = 15;
+        } else if (layout === 'image-left') {
+            if (isPortraitScreen) {
+                hX = 50; hY = 64; hW = 84;
+                bX = 50; bY = 75; bW = 84;
+                qrX = 86; qrY = 89; qrW = 15;
+            } else {
+                hX = 75; hY = 40; hW = 42;
+                bX = 75; bY = 52; bW = 42;
+                qrX = 89; qrY = 84; qrW = 15;
+            }
+        } else if (layout === 'image-right') {
+            if (isPortraitScreen) {
+                hX = 50; hY = 20; hW = 84;
+                bX = 50; bY = 31; bW = 84;
+                qrX = 86; qrY = 89; qrW = 15;
+            } else {
+                hX = 25; hY = 40; hW = 42;
+                bX = 25; bY = 52; bW = 42;
+                qrX = 89; qrY = 84; qrW = 15;
+            }
+        } else if (layout === 'real-estate') {
+            hX = 50; hY = 30; hW = 80;
+            bX = 50; bY = 55; bW = 80;
+            qrX = 50; qrY = 82; qrW = 15;
+        }
+
+        return {
+            id: 'express_preview_temp',
+            internalTitle: `⚡ Express Förhandsvisning`,
+            layout: layout,
+            headline: headline.trim() || 'Rubrik skrivs här',
+            body: defaultBody,
+            imageUrl: imageBase64,
+            subImages: galleryImages.slice(1).map((img, i) => ({
+                id: `sub_${Date.now()}_${i}`,
+                imageUrl: img
+            })),
+            isExpressPost: true,
+            isExpressSold: false,
+            durationSeconds: 15,
+            tagIds: selectedTagIds,
+            ...(cleanUrl ? { qrCodeUrl: cleanUrl } : {}),
+
+            // Font rendering matching engine rules
+            headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
+            bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
+            headlineTextColor: '#ffffff',
+            bodyTextColor: '#cbd5e1',
+            backgroundColor: '#0f172a',
+
+            headlinePositionX: hX,
+            headlinePositionY: hY,
+            headlineWidth: hW,
+            bodyPositionX: bX,
+            bodyPositionY: bY,
+            bodyWidth: bW,
+            qrPositionX: qrX,
+            qrPositionY: qrY,
+            qrWidth: qrW,
+
+            imageOverlayEnabled: false,
+            imageOverlayColor: 'transparent',
+            textAlign: 'center',
+
+            headlineShadowType: 'soft',
+            headlineShadowColor: 'rgba(0, 0, 0, 0.95)',
+            bodyShadowType: 'soft',
+            bodyShadowColor: 'rgba(0, 0, 0, 0.95)'
+        };
+    }, [headline, description, webpageUrl, layout, selectedTagIds, imageBase64, galleryImages, isPortraitScreen]);
 
     // Handle Image Upload -> Base64
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -827,234 +923,19 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                         title="Live Förhandsvisning" 
                         subTitle={`Skärmformat: ${isPortraitScreen ? 'Stående (Mobil / TV stående)' : 'Liggande (TV / Datorskärm)'}`}
                     >
-                        <div className="bg-slate-100 dark:bg-slate-950 p-6 rounded-2xl flex items-center justify-center overflow-hidden">
-                            {/* Physical Device Border Mockup */}
-                            <div 
-                                className={`relative overflow-hidden rounded-2xl border-[6px] border-slate-900 bg-slate-900 shadow-2xl transition-all duration-300 w-full ${
-                                    isPortraitScreen 
-                                        ? 'max-w-[240px] aspect-[9/16]' 
-                                        : 'max-w-md aspect-video'
-                                }`}
-                            >
-                                {/* Inner Screen space */}
-                                <div className="absolute inset-0 z-0 bg-slate-900 flex flex-col select-none pointer-events-none">
-                                    
-                                    {/* FULLSCREEN IMAGE LAYOUT */}
-                                    {layout === 'image-fullscreen' && (
-                                        <>
-                                            {imageBase64 ? (
-                                                <img src={imageBase64} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full bg-slate-800 flex flex-col items-center justify-center text-slate-500 text-[10px] p-4 text-center">
-                                                    <svg className="h-6 w-6 text-slate-600 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                    </svg>
-                                                    Ladda upp ett objektfoto
-                                                </div>
-                                            )}
-                                            {/* Elegant bottom gradient leave top 60% entirely bright and crispy */}
-                                            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent" />
-                                            
-                                            {/* Text over the background (centered for premium aesthetic rhythm) */}
-                                            <div className="absolute inset-x-0 bottom-0 p-4 pb-14 space-y-1.5 z-10 text-center">
-                                                <h3 className="text-white font-extrabold tracking-tight leading-tight line-clamp-2 drop-shadow-md" style={{ fontSize: isPortraitScreen ? '13px' : '15px' }}>
-                                                    {headline.trim() || 'Rubrik skrivs här'}
-                                                </h3>
-                                                <p className="text-slate-300 text-[10px] leading-snug line-clamp-3 drop-shadow-sm">
-                                                    {description.trim() || 'Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.'}
-                                                </p>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* SPLIT IMAGE LAYOUT: IMAGE-LEFT (Image Top in Portrait, Left in Landscape) */}
-                                    {layout === 'image-left' && (
-                                        <div className={`w-full h-full flex ${isPortraitScreen ? 'flex-col' : 'flex-row'}`}>
-                                            {/* Image - Fully bright, no overlay */}
-                                            <div className={`${isPortraitScreen ? 'h-[45%] w-full' : 'w-[45%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
-                                                {imageBase64 ? (
-                                                    <img src={imageBase64} alt="" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 text-[9px] p-2 text-center">
-                                                        <svg className="h-5 w-5 text-slate-750 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                        </svg>
-                                                        Fotoval
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {/* Text space */}
-                                            <div className="flex-grow p-3 flex flex-col justify-center text-center bg-slate-900 border-l border-t border-slate-850">
-                                                <div className="space-y-1.5 max-w-full">
-                                                    <h3 className="text-white font-extrabold tracking-tight leading-tight line-clamp-2" style={{ fontSize: isPortraitScreen ? '13px' : '15px' }}>
-                                                        {headline.trim() || 'Rubrik skrivs här'}
-                                                    </h3>
-                                                    <p className="text-slate-400 text-[10px] leading-snug line-clamp-3">
-                                                        {description.trim() || 'Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* SPLIT IMAGE LAYOUT: IMAGE-RIGHT (Image Bottom in Portrait, Right in Landscape) */}
-                                    {layout === 'image-right' && (
-                                        <div className={`w-full h-full flex ${isPortraitScreen ? 'flex-col-reverse' : 'flex-row-reverse'}`}>
-                                            {/* Image - Fully bright, no overlay */}
-                                            <div className={`${isPortraitScreen ? 'h-[45%] w-full' : 'w-[45%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
-                                                {imageBase64 ? (
-                                                    <img src={imageBase64} alt="" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 text-[9px] p-2 text-center">
-                                                        <svg className="h-5 w-5 text-slate-750 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                        </svg>
-                                                        Fotoval
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {/* Text space */}
-                                            <div className="flex-grow p-3 flex flex-col justify-center text-center bg-slate-900 border-r border-b border-slate-850">
-                                                <div className="space-y-1.5 max-w-full">
-                                                    <h3 className="text-white font-extrabold tracking-tight leading-tight line-clamp-2" style={{ fontSize: isPortraitScreen ? '13px' : '15px' }}>
-                                                        {headline.trim() || 'Rubrik skrivs här'}
-                                                    </h3>
-                                                    <p className="text-slate-400 text-[10px] leading-snug line-clamp-3">
-                                                        {description.trim() || 'Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* REAL ESTATE / CENTERED CARD LAYOUT */}
-                                    {layout === 'real-estate' && (
-                                        <>
-                                            {galleryImages.length > 0 ? (
-                                                <div className="absolute inset-0 w-full h-full overflow-hidden">
-                                                    {galleryImages.length === 1 ? (
-                                                        <img src={galleryImages[0]} alt="" className="w-full h-full object-cover" />
-                                                    ) : galleryImages.length === 2 ? (
-                                                        <div className="w-full h-full grid grid-cols-2 gap-0.5 bg-slate-950">
-                                                            {galleryImages.map((img, i) => (
-                                                                <img key={i} src={img} alt="" className="w-full h-full object-cover" />
-                                                            ))}
-                                                        </div>
-                                                    ) : galleryImages.length === 3 ? (
-                                                        <div className="w-full h-full grid grid-cols-2 gap-0.5 bg-slate-950">
-                                                            <img src={galleryImages[0]} alt="" className="w-full h-full object-cover" />
-                                                            <div className="grid grid-rows-2 gap-0.5">
-                                                                <img src={galleryImages[1]} alt="" className="w-full h-full object-cover" />
-                                                                <img src={galleryImages[2]} alt="" className="w-full h-full object-cover" />
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-0.5 bg-slate-950">
-                                                            {galleryImages.slice(0, 4).map((img, i) => (
-                                                                <img key={i} src={img} alt="" className="w-full h-full object-cover" />
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="w-full h-full bg-slate-800 flex flex-col items-center justify-center text-slate-500 text-[10px] p-4 text-center">
-                                                    <svg className="h-6 w-6 text-slate-600 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                    </svg>
-                                                    Ladda upp ett objektfoto
-                                                </div>
-                                            )}
-                                            
-                                            {/* Centered card overlay mock inside preview */}
-                                            <div 
-                                                className="absolute border border-white/25 bg-slate-950/85 backdrop-blur-md rounded-xl text-white p-4 text-center flex flex-col justify-between"
-                                                style={{
-                                                    top: '50%',
-                                                    left: '50%',
-                                                    transform: 'translate(-50%, -50%)',
-                                                    width: isPortraitScreen ? '70%' : '46%',
-                                                    minHeight: isPortraitScreen ? '48%' : '56%',
-                                                     maxHeight: isPortraitScreen ? '82%' : '88%',
-                                                    boxShadow: '0 12px 40px rgba(0, 0, 0, 0.8)',
-                                                    /* fontSize: '11px' */
-                                                }}
-                                            >
-                                                {/* Elegant corners for a premium feel inside preview */}
-                                                 <div className="absolute top-1.5 left-1.5 w-3 h-3 border-t-2 border-l-2 border-teal-400 opacity-90 rounded-tl"></div>
-                                                 <div className="absolute top-1.5 right-1.5 w-3 h-3 border-t-2 border-r-2 border-teal-400 opacity-90 rounded-tr"></div>
-                                                 <div className="absolute bottom-1.5 left-1.5 w-3 h-3 border-b-2 border-l-2 border-teal-400 opacity-90 rounded-bl"></div>
-                                                 <div className="absolute bottom-1.5 right-1.5 w-3 h-3 border-b-2 border-r-2 border-teal-400 opacity-90 rounded-br"></div>
-
-                                                 {/* Header & Title */}
-                                                <div>
-                                                    <span className="text-[10px] text-teal-400 font-extrabold uppercase tracking-widest block pb-0.5">
-                                                        {selectedTagIds.length > 0 && organization.tags 
-                                                            ? (organization.tags.find(t => selectedTagIds.includes(t.id))?.name || 'INFO') 
-                                                            : (organization.name || 'ANNONS')}
-                                                    </span>
-                                                    <h3 className="text-white font-extrabold tracking-normal leading-tight uppercase line-clamp-2 mt-1.5" style={{ fontSize: isPortraitScreen ? '14px' : '16px' }}>
-                                                        {headline.trim() || 'RUBRIK SKRIVS HÄR'}
-                                                    </h3>
-                                                </div>
-
-                                                {/* Divider */}
-                                                <div className="w-16 h-[1.5px] bg-gradient-to-r from-transparent via-white/30 to-transparent mx-auto my-1.5" />
-
-                                                {/* Body */}
-                                                <div className="flex-1 flex items-center justify-center overflow-hidden py-1.5">
-                                                    <p className="text-slate-100 leading-relaxed line-clamp-6 whitespace-pre-wrap font-medium" style={{ fontSize: isPortraitScreen ? '12px' : '13px' }}>
-                                                        {description.trim() || 'Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.'}
-                                                    </p>
-                                                </div>
-
-                                                {/* Divider */}
-                                                <div className="w-16 h-[1.5px] bg-gradient-to-r from-transparent via-white/20 to-transparent mx-auto my-1.5" />
-
-                                                {/* Footer QR mock or Organization text */}
-                                                <div className="flex flex-col items-center justify-center">
-                                                    {webpageUrl ? (
-                                                        <div className="flex flex-col items-center gap-1">
-                                                            <div className="w-10 h-10 bg-white p-1 rounded-md flex items-center justify-center shadow-lg">
-                                                                <div className="w-full h-full bg-slate-900 flex items-center justify-center rounded-sm"><span className="text-[6px] text-teal-400 font-mono font-bold">QR</span></div>
-                                                            </div>
-                                                            <span className="text-[8px] text-teal-400 font-semibold truncate max-w-[120px] mt-0.5 font-mono">
-                                                                {webpageUrl.replace('https://', '').replace('http://', '').replace('www.', '')}
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-[12px] text-teal-300 uppercase tracking-widest block font-serif font-black">
-                                                            {organization.name}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* LIVE DRAFT STATE TAGS OVERLAY inside preview */}
-                                    {layout !== 'real-estate' && organization.tags && organization.tags.length > 0 && selectedTagIds.length > 0 && (
-                                        <div className="absolute top-3 left-3 flex flex-col gap-1.5 z-40 pointer-events-none">
-                                            {organization.tags.filter(t => selectedTagIds.includes(t.id)).map(tag => (
-                                                <SimulatedTag key={tag.id} tag={tag} />
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* LIVE QR-CODE OVERLAY inside preview */}
-                                    {layout !== 'real-estate' && webpageUrl.trim() && (
-                                        <div 
-                                            className="absolute" 
-                                            style={{
-                                                right: isPortraitScreen ? '10px' : '8px',
-                                                bottom: isPortraitScreen ? '10px' : '8px',
-                                                transform: 'scale(1)',
-                                                zIndex: 35
-                                            }}
-                                        >
-                                            <QrCodePreview url={webpageUrl.trim()} />
-                                        </div>
-                                    )}
-                                </div>
+                        <div className="bg-slate-150 dark:bg-slate-950 p-4 md:p-6 rounded-2xl flex items-center justify-center overflow-hidden w-full border border-slate-200 dark:border-slate-800">
+                            {/* Device Frame matching display engine rules exactly */}
+                            <div className="w-full max-w-[280px] md:max-w-[340px] shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-900 bg-slate-950">
+                                <ScaledPreviewWrapper aspectRatio={activeScreen?.aspectRatio || '9:16'}>
+                                    <DisplayPostRenderer 
+                                        post={previewPost}
+                                        allTags={organization.tags}
+                                        primaryColor={organization.primaryColor}
+                                        mode="live"
+                                        aspectRatio={activeScreen?.aspectRatio || '9:16'}
+                                        organization={organization}
+                                    />
+                                </ScaledPreviewWrapper>
                             </div>
                         </div>
                     </Card>
@@ -1062,98 +943,116 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     {/* Active posts quick list */}
                     <Card
                         title={`Aktiva i kanalen (${activeExpressPosts.length})`}
-                        subTitle="Markera objekt som sålda eller ta bort direkt"
+                        subTitle="Hantera inlägg, markera som sålda eller ta bort från skärmen"
                     >
                         <div className="space-y-4">
-                            {activeExpressPosts.map(post => {
-                                const isSold = post.isExpressSold;
-                                return (
-                                    <div 
-                                        key={post.id}
-                                        className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-3.5 flex gap-4 hover:shadow-sm transition-all relative overflow-hidden group/item animate-fade-in"
-                                    >
-                                        <div className={`absolute top-0 bottom-0 left-0 w-1 ${isSold ? 'bg-red-500' : 'bg-teal-500'}`} />
+                            <button
+                                type="button"
+                                onClick={() => setShowActiveList(!showActiveList)}
+                                className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl border border-slate-250 dark:border-slate-800 flex justify-between items-center text-xs font-bold text-slate-700 dark:text-slate-300 transition-all active:scale-[0.99]"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <span className={`inline-block w-2 h-2 rounded-full ${activeExpressPosts.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                    <span>Visa aktiva snabbinlägg på skärmen</span>
+                                </span>
+                                <span className="text-slate-400 font-mono text-[10px]">
+                                    {showActiveList ? '[ Dölj listan ▲ ]' : '[ Visa listan ▼ ]'}
+                                </span>
+                            </button>
 
-                                        {/* Thumbnail image and sold stamp */}
-                                        <div className="relative w-14 h-14 rounded-lg bg-slate-150 dark:bg-slate-800 overflow-hidden flex-shrink-0">
-                                            {post.imageUrl ? (
-                                                <img src={post.imageUrl} alt="Inlägg miniatyr" className="w-full h-full object-cover select-none pointer-events-none" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">Ingen</div>
-                                            )}
+                            {showActiveList && (
+                                <div className="space-y-4 pt-2 animate-fade-in border-t border-slate-200/50 dark:border-slate-800/60 mt-2">
+                                    {activeExpressPosts.map(post => {
+                                        const isSold = post.isExpressSold;
+                                        return (
+                                            <div 
+                                                key={post.id}
+                                                className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-3.5 flex gap-4 hover:shadow-sm transition-all relative overflow-hidden group/item animate-fade-in"
+                                            >
+                                                <div className={`absolute top-0 bottom-0 left-0 w-1 ${isSold ? 'bg-red-500' : 'bg-teal-500'}`} />
 
-                                            {isSold && (
-                                                <div className="absolute inset-0 bg-red-500/20 backdrop-blur-[1px] flex items-center justify-center">
-                                                    <span className="bg-red-650 text-white rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider select-none pointer-events-none shadow border border-white/20">
-                                                        SÅLD!
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Core info text */}
-                                        <div className="flex-grow min-w-0 flex flex-col justify-between">
-                                            <div className="space-y-0.5">
-                                                <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 leading-snug truncate group-hover/item:text-teal-600 dark:group-hover/item:text-teal-400 transition-colors">
-                                                    {post.headline}
-                                                </h4>
-                                                
-                                                {post.qrCodeUrl && (
-                                                    <div className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                                                        <svg className="h-3 w-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                                        </svg>
-                                                        <span className="truncate max-w-[140px] font-mono select-all">{post.qrCodeUrl}</span>
-                                                    </div>
-                                                )}
-
-
-                                            </div>
-
-                                            {/* Specific actions bar inside info card */}
-                                            <div className="flex items-center gap-2 mt-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleToggleSold(post.id)}
-                                                    disabled={isSoldUpdating === post.id}
-                                                    className={`px-2 py-0.5 text-xs font-extrabold rounded-lg border flex items-center gap-1 transition-all select-none active:scale-95 ${
-                                                        isSold 
-                                                            ? 'bg-red-50 dark:bg-red-955/20 text-red-600 dark:text-red-450 border-red-200 dark:border-red-900 hover:bg-white dark:hover:bg-slate-800'
-                                                            : 'bg-emerald-50 dark:bg-emerald-955/20 text-emerald-600 dark:text-emerald-450 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/30'
-                                                    }`}
-                                                >
-                                                    {isSoldUpdating === post.id ? (
-                                                        <LoadingSpinnerIcon className="h-3.5 w-3.5 animate-spin" />
-                                                    ) : isSold ? (
-                                                        <span>Ångra Såld</span>
+                                                {/* Thumbnail image and sold stamp */}
+                                                <div className="relative w-14 h-14 rounded-lg bg-slate-150 dark:bg-slate-800 overflow-hidden flex-shrink-0">
+                                                    {post.imageUrl ? (
+                                                        <img src={post.imageUrl} alt="Inlägg miniatyr" className="w-full h-full object-cover select-none pointer-events-none" />
                                                     ) : (
-                                                        <span>Märk som SÅLD ✅</span>
+                                                        <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">Ingen</div>
                                                     )}
-                                                </button>
 
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteExpressPost(post.id)}
-                                                    className="p-1 px-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-150/10 transition-colors"
-                                                    title="Ta bort direkt"
-                                                >
-                                                    <TrashIcon className="h-4 w-4" />
-                                                </button>
+                                                    {isSold && (
+                                                        <div className="absolute inset-0 bg-red-500/20 backdrop-blur-[1px] flex items-center justify-center">
+                                                            <span className="bg-red-650 text-white rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider select-none pointer-events-none shadow border border-white/20">
+                                                                SÅLD!
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Core info text */}
+                                                <div className="flex-grow min-w-0 flex flex-col justify-between">
+                                                    <div className="space-y-0.5">
+                                                        <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 leading-snug truncate group-hover/item:text-teal-600 dark:group-hover/item:text-teal-400 transition-colors">
+                                                            {post.headline}
+                                                        </h4>
+                                                        
+                                                        {post.qrCodeUrl && (
+                                                            <div className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                                                                <svg className="h-3 w-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                </svg>
+                                                                <span className="truncate max-w-[140px] font-mono select-all">{post.qrCodeUrl}</span>
+                                                            </div>
+                                                        )}
+
+
+                                                    </div>
+
+                                                    {/* Specific actions bar inside info card */}
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleToggleSold(post.id)}
+                                                            disabled={isSoldUpdating === post.id}
+                                                            className={`px-2 py-0.5 text-xs font-extrabold rounded-lg border flex items-center gap-1 transition-all select-none active:scale-95 ${
+                                                                isSold 
+                                                                    ? 'bg-red-50 dark:bg-red-955/20 text-red-600 dark:text-red-450 border-red-200 dark:border-red-900 hover:bg-white dark:hover:bg-slate-800'
+                                                                    : 'bg-emerald-50 dark:bg-emerald-955/20 text-emerald-600 dark:text-emerald-450 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/30'
+                                                            }`}
+                                                        >
+                                                            {isSoldUpdating === post.id ? (
+                                                                <LoadingSpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                                                            ) : isSold ? (
+                                                                <span>Ångra Såld</span>
+                                                            ) : (
+                                                                <span>Märk som SÅLD ✅</span>
+                                                            )}
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteExpressPost(post.id)}
+                                                            className="p-1 px-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-150/10 transition-colors"
+                                                            title="Ta bort direkt"
+                                                        >
+                                                            <TrashIcon className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                        );
+                                    })}
 
-                            {activeExpressPosts.length === 0 && (
-                                <div className="text-center py-8 px-4 bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/80 rounded-2xl flex flex-col items-center justify-center gap-2">
-                                    <div className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
-                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                                        </svg>
-                                    </div>
-                                    <h5 className="font-bold text-xs text-slate-600 dark:text-slate-300">Inga aktiva expressinlägg</h5>
-                                    <p className="text-[11px] text-slate-400 max-w-[180px]">Skapa ett inlägg så dyker det upp här.</p>
+                                    {activeExpressPosts.length === 0 && (
+                                        <div className="text-center py-8 px-4 bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/80 rounded-2xl flex flex-col items-center justify-center gap-2">
+                                            <div className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
+                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                                </svg>
+                                            </div>
+                                            <h5 className="font-bold text-xs text-slate-600 dark:text-slate-300">Inga aktiva expressinlägg</h5>
+                                            <p className="text-[11px] text-slate-400 max-w-[180px]">Skapa ett inlägg så dyker det upp här.</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
