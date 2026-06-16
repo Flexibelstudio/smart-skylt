@@ -869,8 +869,8 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
 
     // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
     const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
-    const defaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
-    const defaultY = isPortrait ? 4 : 6;
+    const defaultX = isPortrait ? (14 + tagIndex * 18) : (12 + tagIndex * 14);
+    const defaultY = isPortrait ? 7 : 8;
 
     // Bygg klasser och stilar för varje tagg/stämpel - ska matcha static/express 100%!
     let stampClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
@@ -1562,22 +1562,35 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const bFontScale = post.bodyFontScale ?? defaultBodyFontScale;
 
     // QR Calc (Auto-upgrade legacy 7.5 scale to premium 15 scale format)
-    const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : (isPortrait ? 88 : 92));
-    const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : (isPortrait ? 93 : 84));
+    const qrX = post.qrPositionX ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).x : (isPortrait ? 86 : 89));
+    const qrY = post.qrPositionY ?? (post.qrCodePosition ? mapLegacyPosition(post.qrCodePosition).y : (isPortrait ? 89 : 84));
     const qrW = post.qrWidth !== undefined 
         ? (post.qrWidth === 7.5 ? 15 : post.qrWidth) 
         : (post.qrCodeSize ? mapLegacySize(post.qrCodeSize) : 15);
 
     // Headline & Body Defaults
+    let defaultHy = 40;
+    let defaultBy = 54; // Tightened 14% gap by default instead of 20%
+    if (post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') {
+        defaultHy = isPortrait ? 68 : 65;
+        defaultBy = isPortrait ? 77 : 74; // Snug, unified gap (approx 9-10% vertical gap for beautiful pairing)
+    } else if (post.layout === 'image-left') {
+        defaultHy = isPortrait ? 64 : 40;
+        defaultBy = isPortrait ? 75 : 52; // Compact, neat gap (11% gap)
+    } else if (post.layout === 'image-right') {
+        defaultHy = isPortrait ? 20 : 40; // Pulled rubrik down to 20 instead of 16 to avoid clashing top edge
+        defaultBy = isPortrait ? 31 : 52; // Tighter, premium spacing (11% gap instead of 16%)
+    }
+
     const hX = post.headlinePositionX ?? post.textPositionX ?? 50;
-    const hY = post.headlinePositionY ?? post.textPositionY ?? 40;
-    const hW = post.headlineWidth ?? post.textWidth ?? 80;
+    const hY = post.headlinePositionY ?? post.textPositionY ?? defaultHy;
+    const hW = post.headlineWidth ?? post.textWidth ?? 84;
     const hAlign = post.headlineTextAlign ?? post.textAlign ?? 'center';
     
     // Body fallbacks
     const bX = post.bodyPositionX ?? post.textPositionX ?? 50;
-    const bY = post.bodyPositionY ?? (post.textPositionY ? post.textPositionY + 15 : 60);
-    const bW = post.bodyWidth ?? post.textWidth ?? 80;
+    const bY = post.bodyPositionY ?? (post.textPositionY ? post.textPositionY + 11 : defaultBy); // Snugger 11% fallback gap instead of 15%
+    const bW = post.bodyWidth ?? post.textWidth ?? 84;
     const bAlign = post.bodyTextAlign ?? post.textAlign ?? 'center';
 
     return (

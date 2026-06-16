@@ -526,8 +526,8 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                     cleanPost.tagIds.forEach((tagId: string, idx: number) => {
                                         const exists = cleanPost.tagPositionOverrides.some((o: any) => o.tagId === tagId);
                                         if (!exists) {
-                                            const tagX = isPortrait ? (12 + idx * 16) : (10 + idx * 12);
-                                            const tagY = isPortrait ? 4 : 6; // Mycket högre upp än standard 10%
+                                            const tagX = isPortrait ? (14 + idx * 18) : (12 + idx * 14);
+                                            const tagY = isPortrait ? 7 : 8; // Snyggt neddragna och indragna (var 4 / 6)
                                             cleanPost.tagPositionOverrides.push({
                                                 tagId,
                                                 x: tagX,
@@ -541,8 +541,8 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
 
                                 // Sätt smarta positioner och storlek på QR-koden
                                 if (cleanPost.qrCodeUrl) {
-                                    if (cleanPost.qrPositionX === undefined) cleanPost.qrPositionX = isPortrait ? 88 : 92;
-                                    if (cleanPost.qrPositionY === undefined) cleanPost.qrPositionY = isPortrait ? 93 : 84;
+                                    if (cleanPost.qrPositionX === undefined) cleanPost.qrPositionX = isPortrait ? 86 : 89;
+                                    if (cleanPost.qrPositionY === undefined) cleanPost.qrPositionY = isPortrait ? 89 : 84;
                                     if (cleanPost.qrWidth === undefined || cleanPost.qrWidth === 7.5) cleanPost.qrWidth = 15;
                                 }
 
@@ -554,7 +554,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                     if (cleanPost.headlineFontScale === undefined || cleanPost.headlineFontScale === 8.5) cleanPost.headlineFontScale = isPortrait ? 10.0 : 6.2;
 
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = 50;
-                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 80 : 80;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 77 : 74; // Tätare, snyggare sammanslutning (avstånd 9-10% istället för 12-15%)
                                     if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 80;
                                     if (cleanPost.bodyFontScale === undefined || cleanPost.bodyFontScale === 4.2) cleanPost.bodyFontScale = isPortrait ? 4.8 : 3.5;
                                 } else if (cleanPost.layout === 'image-left') {
@@ -564,17 +564,17 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                     if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 6.2 : 4.0;
  
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = isPortrait ? 50 : 73;
-                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 80 : 58;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 75 : 54; // Snyggare och tätare integrerad text (gap reduserat till 11-12%)
                                     if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 45;
                                     if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 4.2 : 2.8;
                                 } else if (cleanPost.layout === 'image-right') {
                                     if (cleanPost.headlinePositionX === undefined) cleanPost.headlinePositionX = isPortrait ? 50 : 27;
-                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 24 : 42;
+                                    if (cleanPost.headlinePositionY === undefined) cleanPost.headlinePositionY = isPortrait ? 20 : 42; // Neddragen från 24 till 20% för att slippa krock med övre kant
                                     if (cleanPost.headlineWidth === undefined) cleanPost.headlineWidth = isPortrait ? 90 : 45;
                                     if (cleanPost.headlineFontScale === undefined) cleanPost.headlineFontScale = isPortrait ? 6.2 : 4.0;
  
                                     if (cleanPost.bodyPositionX === undefined) cleanPost.bodyPositionX = isPortrait ? 50 : 27;
-                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 40 : 58;
+                                    if (cleanPost.bodyPositionY === undefined) cleanPost.bodyPositionY = isPortrait ? 31 : 54; // Dragit ihop rubrik och brödtext till 11% avstånd (från 16%)
                                     if (cleanPost.bodyWidth === undefined) cleanPost.bodyWidth = isPortrait ? 90 : 45;
                                     if (cleanPost.bodyFontScale === undefined) cleanPost.bodyFontScale = isPortrait ? 4.2 : 2.8;
                                 }

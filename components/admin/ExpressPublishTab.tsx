@@ -219,70 +219,70 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             if (layout === 'image-fullscreen') {
                 // Placed gracefully on lower third, styled with robust shadows
                 hX = 50;
-                hY = 70; // Lowered to render beautifully at the bottom like preview
+                hY = 68; // Lowered to render beautifully at the bottom like preview
                 hW = 84;
 
                 bX = 50;
-                bY = 79; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
+                bY = 77; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
                 bW = 84;
 
-                qrX = 92;
-                qrY = 92;
+                qrX = isPortraitScreen ? 86 : 89;
+                qrY = isPortraitScreen ? 89 : 84;
                 qrW = 15;
             } else if (layout === 'image-left') {
                 if (isPortraitScreen) {
                     // Portrait split: Image on Top (hY 0-50), Text Area on Bottom (hY 50-100)
                     hX = 50;
-                    hY = 62; // middle of bottom text half
+                    hY = 64; // middle of bottom text half, lowered slightly
                     hW = 84;
 
                     bX = 50;
-                    bY = 76;
+                    bY = 75; // reduced gap to 11%
                     bW = 84;
 
-                    qrX = 92;
-                    qrY = 92;
+                    qrX = 86;
+                    qrY = 89;
                     qrW = 15;
                 } else {
                     // Landscape split: Image on Left (wX 0-50), Text Area on Right (wX 50-100)
                     hX = 75; // middle of right text half
-                    hY = 30;
+                    hY = 40;
                     hW = 42;
 
                     bX = 75;
-                    bY = 52;
+                    bY = 52; // reduced gap
                     bW = 42;
 
-                    qrX = 92;
-                    qrY = 92;
+                    qrX = 89;
+                    qrY = 84;
                     qrW = 15;
                 }
             } else if (layout === 'image-right') {
                 if (isPortraitScreen) {
                     // Portrait split: Text Area on Top (hY 0-50), Image on Bottom (hY 50-100)
                     hX = 50;
-                    hY = 16; // middle of top text half
+                    hY = 20; // middle of top text half (pulled down from 16 to avoid clashing borders)
                     hW = 84;
 
                     bX = 50;
-                    bY = 30;
+                    bY = 31; // snug text gap decreased to 11% (originally 30 - gap 14%)
                     bW = 84;
 
-                    qrX = 92;
-                    qrY = 92;
+                    qrX = 86;
+                    qrY = 89;
                     qrW = 15;
                 } else {
                     // Landscape split: Text Area on Left (wX 0-50), Image on Right (wX 50-100)
                     hX = 25; // middle of left text half
-                    hY = 30;
+                    hY = 40;
                     hW = 42;
 
                     bX = 25;
                     bY = 52;
                     bW = 42;
 
-                    qrX = 92;
-                    qrY = 92;
+                    qrX = 89;
+                    qrY = 84;
                     qrW = 15;
                 }
             } else if (layout === 'real-estate') {
