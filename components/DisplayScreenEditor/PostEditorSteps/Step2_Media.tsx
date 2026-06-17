@@ -11,7 +11,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup, AiImageEditorModal } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
 import { ThinkingDots } from '../../HelpBot';
-import { StyledInput, StyledSelect } from '../../Forms';
+import { StyledInput, StyledSelect } from '@/components/Forms';
 
 const dataUriToBlob = (dataURI: string): Blob => {
     const byteString = atob(dataURI.split(',')[1]);

@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { DisplayPost, Organization } from '../../../types';
-import { StyledInput } from '../../Forms';
+import { StyledInput } from '@/components/Forms';
 import { SparklesIcon, HandThumbUpIcon } from '@/components/icons';
 import { analyzePost } from '../../../services/geminiService';
 import { useToast } from '../../../context/ToastContext';
