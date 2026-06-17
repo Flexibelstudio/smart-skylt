@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DisplayPost, Organization, DisplayScreen } from '../../../types';
 import { generateCompletePost } from '../../../services/geminiService';
 import { uploadPostAsset } from '../../../services/firebaseService';
-import { SparklesIcon, LoadingSpinnerIcon, PaperAirplaneIcon } from '@/components/icons';
+import { SparklesIcon, LoadingSpinnerIcon, PaperAirplaneIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 
 // Helper to convert base64 to Blob

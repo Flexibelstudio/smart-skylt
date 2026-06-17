@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, SkyltIdeSuggestion, AdditionalTextElement } from '../../../types';
-import { StyledInput, FontSelector, StyledSelect } from '@/components/Forms';
-import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon, LinkIcon } from '@/components/icons';
+import { StyledInput, FontSelector, StyledSelect } from '../../Forms';
+import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon, LinkIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { 
     refineDisplayPostContent,

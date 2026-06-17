@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { DisplayPost, DisplayScreen } from '../../../types';
-import { LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon } from '@/components/icons';
+import { LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon } from '../../icons';
 
 // --- Layout Selectors ---
 const LayoutButton: React.FC<{

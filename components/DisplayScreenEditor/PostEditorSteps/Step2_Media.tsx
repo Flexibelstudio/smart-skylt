@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, SubImage } from '../../../types';
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
-import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon, MoveIcon, ToggleSwitch, MagnifyingGlassIcon } from '@/components/icons';
+import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon, MoveIcon, ToggleSwitch, MagnifyingGlassIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, urlToBase64, editDisplayPostImage, fileToBase64 } from '../../../services/geminiService';
@@ -11,7 +11,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup, AiImageEditorModal } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
 import { ThinkingDots } from '../../HelpBot';
-import { StyledInput, StyledSelect } from '@/components/Forms';
+import { StyledInput, StyledSelect } from '../../Forms';
 
 const dataUriToBlob = (dataURI: string): Blob => {
     const byteString = atob(dataURI.split(',')[1]);
