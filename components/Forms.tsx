@@ -4,7 +4,7 @@ import { ChevronDownIcon } from './icons';
 
 export const StyledInput: React.FC<{value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; className?: string; [x:string]: any;}> = 
     ({value, onChange, className, ...props}) => (
-    <input value={value} onChange={onChange} {...props} className={`w-full bg-slate-100 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors ${className || ''}`}/>
+    <input value={value} onChange={onChange} {...props} className={`w-full bg-slate-100 dark:bg-slate-900/50 text-slate-900 dark:text-white p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors ${className || ''}`}/>
 );
 
 export const StyledSelect: React.FC<{value: any; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void; children: React.ReactNode; [x:string]: any;}> = 

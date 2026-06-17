@@ -206,7 +206,7 @@ export const Step4_Publishing: React.FC<{
                                                     nextRanges[index] = { ...range, startTime: e.target.value };
                                                     handleFieldChange('scheduleTimeRanges', nextRanges);
                                                 }}
-                                                className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                                                className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500"
                                             />
                                         </div>
                                         <span className="text-xs font-bold text-slate-400">till</span>
@@ -219,7 +219,7 @@ export const Step4_Publishing: React.FC<{
                                                     nextRanges[index] = { ...range, endTime: e.target.value };
                                                     handleFieldChange('scheduleTimeRanges', nextRanges);
                                                 }}
-                                                className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                                                className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500"
                                             />
                                         </div>
                                     </div>

@@ -934,7 +934,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                                 nextRanges[index] = { ...range, startTime: e.target.value };
                                                                 setScheduleTimeRanges(nextRanges);
                                                             }}
-                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-teal-500"
+                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-teal-500"
                                                         />
                                                     </div>
                                                     <span className="text-xs font-bold text-slate-400">till</span>
@@ -947,7 +947,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                                 nextRanges[index] = { ...range, endTime: e.target.value };
                                                                 setScheduleTimeRanges(nextRanges);
                                                             }}
-                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-teal-500"
+                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-teal-500"
                                                         />
                                                     </div>
                                                 </div>
