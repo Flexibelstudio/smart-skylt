@@ -5,9 +5,9 @@ import React, { useState } from 'react';
 import { DisplayPost, Organization } from '../../../types';
 import { StyledInput } from '../Forms';
 import { SparklesIcon, HandThumbUpIcon } from '../icons';
-import { analyzePost } from '../../../services/geminiService';
-import { useToast } from '../../../context/ToastContext';
-import { PostAnalysisModal } from '../Modals';
+import { analyzePost } from '../../services/geminiService';
+import { useToast } from '../../context/ToastContext';
+import { PostAnalysisModal } from '/Modals';
 
 const toDateTimeLocal = (isoString?: string): string => {
     if (!isoString) return '';
