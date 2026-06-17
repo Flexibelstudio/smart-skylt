@@ -208,6 +208,8 @@ export interface DisplayPost {
   status?: 'active' | 'archived'; 
   isExpressPost?: boolean;
   isExpressSold?: boolean;
+  scheduleDays?: number[]; // List of JS day indexes: 0 = Sunday, 1 = Monday, etc.
+  scheduleTimeRanges?: { startTime: string; endTime: string }[]; // Specific high-precision time blocks
 }
 
 // A PostTemplate for creating reusable post layouts

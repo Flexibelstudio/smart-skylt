@@ -106,6 +106,10 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [layout, setLayout] = useState<'image-left' | 'image-right' | 'image-fullscreen' | 'real-estate'>('image-left');
     const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
     
+    // Schemaläggnings-states för express-inlägg
+    const [scheduleDays, setScheduleDays] = useState<number[]>([]);
+    const [scheduleTimeRanges, setScheduleTimeRanges] = useState<{ startTime: string; endTime: string }[]>([]);
+    
     // UI Helpers
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSoldUpdating, setIsSoldUpdating] = useState<string | null>(null);
@@ -201,6 +205,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             isExpressSold: false,
             durationSeconds: 15,
             tagIds: selectedTagIds,
+            scheduleDays: scheduleDays,
+            scheduleTimeRanges: scheduleTimeRanges,
             ...(cleanUrl ? { qrCodeUrl: cleanUrl } : {}),
 
             // Font rendering matching engine rules
@@ -229,7 +235,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             bodyShadowType: 'soft',
             bodyShadowColor: 'rgba(0, 0, 0, 0.95)'
         };
-    }, [headline, description, webpageUrl, layout, selectedTagIds, imageBase64, galleryImages, isPortraitScreen]);
+    }, [headline, description, webpageUrl, layout, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
 
     // Handle Image Upload -> Base64
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -411,6 +417,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 isExpressSold: false,
                 durationSeconds: 15,
                 startDate: new Date().toISOString(), // Automatiskt sätta dagens datum och tid som start så att det visas direkt och ej som utkast!
+                scheduleDays: scheduleDays,
+                scheduleTimeRanges: scheduleTimeRanges,
                 headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
                 bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
                 headlineTextColor: '#ffffff',
@@ -450,6 +458,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             setDescription('');
             setWebpageUrl('');
             setSelectedTagIds([]);
+            setScheduleDays([]);
+            setScheduleTimeRanges([]);
             clearImage();
         } catch (error) {
             console.error(error);
@@ -834,6 +844,135 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     placeholder="https://bytbil.se/objekt/123 eller Hemnet-länk"
                                     className="font-mono text-sm"
                                 />
+                            </div>
+
+                            {/* Veckodagarsschemaläggning (snabbinlägg) */}
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Begränsa till specifika veckodagar</label>
+                                        <span className="text-[11px] text-slate-400 dark:text-slate-500">Om inga väljs visas inlägget alla dagar</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (scheduleDays.length === 7) {
+                                                setScheduleDays([]);
+                                            } else {
+                                                setScheduleDays([1, 2, 3, 4, 5, 6, 0]);
+                                            }
+                                        }}
+                                        className="text-xs font-bold text-teal-600 hover:text-teal-500 dark:text-teal-400"
+                                    >
+                                        {scheduleDays.length === 7 ? 'Spara ingen' : 'Välj alla'}
+                                    </button>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { label: 'Mån', value: 1 },
+                                        { label: 'Tis', value: 2 },
+                                        { label: 'Ons', value: 3 },
+                                        { label: 'Tor', value: 4 },
+                                        { label: 'Fre', value: 5 },
+                                        { label: 'Lör', value: 6 },
+                                        { label: 'Sön', value: 0 },
+                                    ].map(day => {
+                                        const isSelected = scheduleDays.includes(day.value);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={day.value}
+                                                onClick={() => {
+                                                    const nextDays = isSelected
+                                                        ? scheduleDays.filter(d => d !== day.value)
+                                                        : [...scheduleDays, day.value];
+                                                    setScheduleDays(nextDays);
+                                                }}
+                                                className={`w-11 h-9 rounded-xl text-xs font-extrabold border transition-all active:scale-95 ${
+                                                    isSelected
+                                                        ? 'border-teal-500 bg-teal-500 text-white shadow-sm ring-2 ring-teal-500/20'
+                                                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                }`}
+                                            >
+                                                {day.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Tidsspannsschemaläggning under dygnet (snabbinlägg) */}
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Specifika tidsspann under dygnet</label>
+                                        <span className="text-[11px] text-slate-400 dark:text-slate-500">Om inga tider anges visas inlägget dygnet runt</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setScheduleTimeRanges(prev => [...prev, { startTime: '08:00', endTime: '17:00' }]);
+                                        }}
+                                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-250 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 rounded-lg flex items-center gap-1 transition-all"
+                                    >
+                                        + Lägg till tid
+                                    </button>
+                                </div>
+
+                                {scheduleTimeRanges.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {scheduleTimeRanges.map((range, index) => (
+                                            <div key={index} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                                                <div className="flex items-center gap-2 flex-grow">
+                                                    <div className="w-1/2">
+                                                        <input
+                                                            type="time"
+                                                            value={range.startTime || '08:00'}
+                                                            onChange={e => {
+                                                                const nextRanges = [...scheduleTimeRanges];
+                                                                nextRanges[index] = { ...range, startTime: e.target.value };
+                                                                setScheduleTimeRanges(nextRanges);
+                                                            }}
+                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-teal-500"
+                                                        />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-slate-400">till</span>
+                                                    <div className="w-1/2">
+                                                        <input
+                                                            type="time"
+                                                            value={range.endTime || '17:00'}
+                                                            onChange={e => {
+                                                                const nextRanges = [...scheduleTimeRanges];
+                                                                nextRanges[index] = { ...range, endTime: e.target.value };
+                                                                setScheduleTimeRanges(nextRanges);
+                                                            }}
+                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-teal-500"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nextRanges = scheduleTimeRanges.filter((_, i) => i !== index);
+                                                        setScheduleTimeRanges(nextRanges);
+                                                    }}
+                                                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-slate-400 hover:text-red-550 rounded-lg transition-colors"
+                                                    title="Ta bort tidsspann"
+                                                >
+                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-4 bg-slate-50/40 dark:bg-slate-900/10 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                                        <span className="text-xs text-slate-400 dark:text-slate-500">Standard: inlägget visas dygnet runt</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Tagg/stämpelval för det nya inlägget */}

@@ -17,6 +17,31 @@ const isPostActive = (post: DisplayPost, now: Date) => {
     if (!start || start > now) return false;
     const end = parseToDate(post.endDate, true);
     if (end && end < now) return false;
+
+    // Veckodagarsschemaläggning (0 = Söndag, 1 = Måndag, etc.)
+    if (post.scheduleDays && post.scheduleDays.length > 0) {
+        const currentDay = now.getDay();
+        if (!post.scheduleDays.includes(currentDay)) {
+            return false;
+        }
+    }
+
+    // Tidsspannsschemaläggning under dagen (t.ex. 08:30 - 17:00)
+    if (post.scheduleTimeRanges && post.scheduleTimeRanges.length > 0) {
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const hasMatchingTime = post.scheduleTimeRanges.some(range => {
+            if (!range.startTime || !range.endTime) return false;
+            const [sh, sm] = range.startTime.split(':').map(Number);
+            const [eh, em] = range.endTime.split(':').map(Number);
+            const startMin = (sh || 0) * 60 + (sm || 0);
+            const endMin = (eh || 0) * 60 + (em || 0);
+            return currentMinutes >= startMin && currentMinutes <= endMin;
+        });
+        if (!hasMatchingTime) {
+            return false;
+        }
+    }
+
     return true;
 };
 
@@ -77,7 +102,7 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
   /* --- TIME TICK --- */
   useEffect(() => {
-    const t = setInterval(() => setCurrentTime(new Date()), 60000);
+    const t = setInterval(() => setCurrentTime(new Date()), 10000);
     return () => clearInterval(t);
   }, []);
 
