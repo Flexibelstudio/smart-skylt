@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, DisplayScreen, MediaItem, CollageItem, AiImageVariant, StructuredImagePrompt, SubImage } from '../../../types';
 import { PrimaryButton, SecondaryButton } from '../../Buttons';
-import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon, MoveIcon, ToggleSwitch, MagnifyingGlassIcon } from '../../icons';
+import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon, MoveIcon, ToggleSwitch, MagnifyingGlassIcon } from '@/components/icons';
 import { useToast } from '../../../context/ToastContext';
 import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary } from '../../../services/firebaseService';
 import { generateDisplayPostImage, generateVideoFromPrompt, urlToBase64, editDisplayPostImage, fileToBase64 } from '../../../services/geminiService';

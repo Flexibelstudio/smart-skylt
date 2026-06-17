@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, SkyltIdeSuggestion, AdditionalTextElement } from '../../../types';
 import { StyledInput, FontSelector, StyledSelect } from '../../Forms';
-import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon, LinkIcon } from '../../icons';
+import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon, LinkIcon } from '@/components/icons';
 import { useToast } from '../../../context/ToastContext';
 import { 
     refineDisplayPostContent,

@@ -158,6 +158,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({ screen, posts, organ
         };
 
         return localPosts.filter(p => {
+            if (p.status === 'archived') return false;
             const { start, end } = getDates(p);
             if (!start || !end) return false;
             return start <= timelineRange.end && end >= timelineRange.start;
