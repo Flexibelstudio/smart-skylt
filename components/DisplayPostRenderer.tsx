@@ -1399,10 +1399,12 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         )}
                         
                         {/* Elegant mörkt toning i nederkant så texten poppar perfekt */}
-                        <div 
-                            className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" 
-                            style={{ zIndex: 5 }}
-                        />
+                        {post.bottomOverlayEnabled !== false && (
+                            <div 
+                                className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" 
+                                style={{ zIndex: 5 }}
+                            />
+                        )}
                         
                         {/* Samlad text-grupp som växer uppåt och aldrig kan överlappa varandra */}
                         <div 
@@ -1706,7 +1708,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     )}
 
                     {/* Elegant mörk toning i nederkant även för vanliga helskärmsinlägg så texten framhävs perfekt */}
-                    {(post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') && (
+                    {(post.layout === 'image-fullscreen' || post.layout === 'video-fullscreen') && (post.isExpressPost ? post.bottomOverlayEnabled !== false : post.bottomOverlayEnabled === true) && (
                         <div 
                             className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" 
                             style={{ zIndex: 10 }}

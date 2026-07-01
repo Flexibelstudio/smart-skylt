@@ -921,9 +921,9 @@ const SingleMediaEditor: React.FC<{
                             </div>
 
                             {/* Image Overlay / Opacity Controls */}
-                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                                <h5 className="font-semibold text-sm mb-3 text-slate-700 dark:text-slate-300">Bildtoning (Gör texten mer läsbar)</h5>
-                                <ToggleSwitch label="Aktivera mörk toning" checked={post.imageOverlayEnabled ?? false} onChange={c => onPostChange({ ...post, imageOverlayEnabled: c })} />
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-3">
+                                <h5 className="font-semibold text-sm text-slate-700 dark:text-slate-300">Bildtoning (Gör texten mer läsbar)</h5>
+                                <ToggleSwitch label="Aktivera mörk toning över hela bilden" checked={post.imageOverlayEnabled ?? false} onChange={c => onPostChange({ ...post, imageOverlayEnabled: c })} />
                                 {post.imageOverlayEnabled && (
                                     <ColorOpacityControl
                                         value={post.imageOverlayColor || 'rgba(0, 0, 0, 0.5)'}
@@ -931,6 +931,7 @@ const SingleMediaEditor: React.FC<{
                                         organization={organization}
                                     />
                                 )}
+                                <ToggleSwitch label="Mörk toning i nederkant (skugga längst ner)" checked={post.isExpressPost ? (post.bottomOverlayEnabled !== false) : (post.bottomOverlayEnabled === true)} onChange={c => onPostChange({ ...post, bottomOverlayEnabled: c })} />
                             </div>
                         </div>
                     </div>

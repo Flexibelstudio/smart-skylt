@@ -178,6 +178,7 @@ export interface DisplayPost {
   collageItems?: CollageItem[]; 
   subImageConfig?: SubImageConfig;
   imageOverlayEnabled?: boolean;
+  bottomOverlayEnabled?: boolean;
   imageOverlayColor?: string; 
   backgroundEffect?: 'none' | 'confetti' | 'hearts';
   shareToInspiration?: boolean; 
