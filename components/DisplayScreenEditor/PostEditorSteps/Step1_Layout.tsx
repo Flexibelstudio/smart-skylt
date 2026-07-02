@@ -17,7 +17,7 @@ const LayoutButton: React.FC<{
         className={`relative flex flex-col items-center justify-center gap-2.5 p-3 rounded-2xl border-2 text-center transition-all h-28 cursor-pointer ${
             isActive 
                 ? 'bg-primary/[0.04] border-primary text-primary shadow-sm scale-[1.02]' 
-                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50/50 dark:hover:bg-slate-800/80'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50/50 dark:hover:bg-slate-800/80 text-slate-800 dark:text-slate-200'
         }`}
     >
         {badge && (
