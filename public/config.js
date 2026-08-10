@@ -2,9 +2,14 @@
 (function () {
   const host = location.hostname;
 
-  // Production is any domain ending in 'smartskylt.se' or the original Netlify domain.
-  // Everything else (Netlify branch deploys, localhost) is considered staging.
-  const IS_PROD = host.endsWith('smartskylt.se') || host === 'smartskylt.netlify.app';
+  // Staging detection: staging subdomains on smartskylt.se and Netlify staging sites.
+  // Unknown hostnames (localhost, previews, branch deploys) fall back to staging via !IS_PROD.
+  const IS_STAGING = host.endsWith('staging.smartskylt.se')
+                  || host.endsWith('-staging.netlify.app')
+                  || host === 'smartskylt-staging.netlify.app';
+
+  const IS_PROD = !IS_STAGING
+               && (host.endsWith('smartskylt.se') || host === 'smartskylt.netlify.app');
 
   // ------------------ FYLL I DINA UPPGIFTER HÄR ------------------
 
@@ -23,7 +28,8 @@
     apiKey: "AIzaSyAN3vSHl_VTC1ARuxy9lxLky7RTxCKmsWI",
     authDomain: "smart-skylt-staging.firebaseapp.com",
     projectId: "smart-skylt-staging",
-storageBucket: "smart-skylt-staging.firebasestorage.app",    messagingSenderId: "247050694323",
+    storageBucket: "smart-skylt-staging.firebasestorage.app",
+    messagingSenderId: "247050694323",
     appId: "1:247050694323:web:a176aded9f11354423cac6"
   };
   
