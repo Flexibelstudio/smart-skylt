@@ -23,8 +23,7 @@
     apiKey: "AIzaSyAN3vSHl_VTC1ARuxy9lxLky7RTxCKmsWI",
     authDomain: "smart-skylt-staging.firebaseapp.com",
     projectId: "smart-skylt-staging",
-    storageBucket: "smart-skylt-staging.appspot.com",
-    messagingSenderId: "247050694323",
+storageBucket: "smart-skylt-staging.firebasestorage.app",    messagingSenderId: "247050694323",
     appId: "1:247050694323:web:a176aded9f11354423cac6"
   };
   
