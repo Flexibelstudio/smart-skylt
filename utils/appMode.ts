@@ -13,3 +13,9 @@ export function getAppMode(): AppMode {
   // Detta täcker smartskylt.se, app.smartskylt.se, och localhost.
   return 'admin';
 }
+
+export function getDisplayHost(): string {
+  const h = window.location.hostname;
+  if (h.startsWith('skylt.')) return h;
+  return `skylt.${h.replace(/^(app|www)\./, '')}`;
+}

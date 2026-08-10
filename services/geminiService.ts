@@ -29,6 +29,7 @@ import { storage, functions } from "./firebaseInit";
 
 import * as Prompts from './aiPrompts';
 import * as Schemas from './aiSchemas';
+import { AI_MODELS } from './aiModels';
 
 // -------------------------------------------------------------
 // Init
@@ -36,7 +37,268 @@ import * as Schemas from './aiSchemas';
 
 // Skapa en global instans av AI-klienten med nyckeln från miljövariabeln om tillgänglig på klientsidan
 const clientApiKey = (typeof process !== "undefined" && process.env?.API_KEY) || "";
-const ai = clientApiKey ? new GoogleGenAI({ apiKey: clientApiKey }) : null;
+
+function createMockGoogleGenAI() {
+  return {
+    models: {
+      generateContent: async ({ model, contents, config }: any) => {
+        // Find the prompt text in contents
+        let promptText = "";
+        if (typeof contents === "string") {
+          promptText = contents;
+        } else if (contents && contents.parts) {
+          const part = contents.parts.find((p: any) => p.text);
+          if (part) promptText = part.text;
+        } else if (Array.isArray(contents)) {
+          // It could be chat history, find the last user message or any text
+          for (let i = contents.length - 1; i >= 0; i--) {
+            const part = contents[i].parts?.find((p: any) => p.text);
+            if (part) {
+              promptText = part.text;
+              break;
+            }
+          }
+        }
+
+        const p = promptText.toLowerCase();
+
+        // 1. Image generation models (gemini-2.5-flash-image etc.)
+        if (model?.includes("image") || p.includes("image") || p.includes("generera en bild") || p.includes("edit on the image")) {
+          // Return a mock base64 pixel/image
+          const mockBase64Image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="; // 1x1 transparent PNG
+          return {
+            text: "",
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      inlineData: {
+                        data: mockBase64Image,
+                        mimeType: "image/png"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          };
+        }
+
+        // Helper to return text candidate response
+        const textResponse = (text: string) => ({
+          text,
+          candidates: [{ content: { parts: [{ text }] } }]
+        });
+
+        // 2. JSON responses based on prompt keywords
+        if (p.includes("styleprofilesummary") || p.includes("stilprofil") || p.includes("sammanfattning av stil")) {
+          return textResponse(JSON.stringify({
+            summary: "En modern och stilren profil med fokus på lokala nyheter, personliga möten och hög kvalitet."
+          }));
+        }
+
+        if (p.includes("displaypostcontentschema") || (p.includes("headline") && p.includes("body"))) {
+          return textResponse(JSON.stringify({
+            headline: "Välkommen in på fika!",
+            body: "Njut av våra nybakade bullar och nymalet kaffe i en mysig miljö. Varmt välkomna!"
+          }));
+        }
+
+        if (p.includes("skyltidesuggestion") || p.includes("skyltidéer") || p.includes("förslag på skyltar")) {
+          return textResponse(JSON.stringify([
+            {
+              title: "Sommarfest på torget",
+              description: "Ett inlägg som bjuder in till den årliga sommarfesten med livemusik och aktiviteter.",
+              layout: "image-left",
+              headline: "Sommarfest på torget!",
+              body: "Missa inte årets roligaste dag på torget med roliga aktiviteter för hela familjen.",
+              imagePrompt: "Lively public square festival with colorful decorations and people laughing",
+              durationSeconds: 15
+            },
+            {
+              title: "Dagens Lunch",
+              description: "Presentera dagens lunch på ett aptitretande sätt.",
+              layout: "image-right",
+              headline: "Dagens Luncherbjudande",
+              body: "Idag serverar vi ugnsbakad lax med dillstuvad potatis och citron. Välkomna!",
+              imagePrompt: "Delicious baked salmon dish served on a plate",
+              durationSeconds: 12
+            }
+          ]));
+        }
+
+        if (p.includes("campaignideas") || p.includes("kampanjidéer") || p.includes(" seasonal")) {
+          return textResponse(JSON.stringify({
+            ideas: [
+              {
+                id: "idea_1",
+                title: "Nystart & Energi",
+                description: "Fokusera på nystart efter semestern med bra erbjudanden och inspiration.",
+                suggestedPosts: [
+                  {
+                    headline: "Dags för nystart?",
+                    body: "Vi har allt du behöver för att komma igång med ny energi efter ledigheten.",
+                    layout: "split-horizontal",
+                    imagePrompt: "Fresh green plant growing with soft morning sunlight"
+                  }
+                ]
+              }
+            ],
+            followUpSuggestion: {
+              question: "Vill du att vi skapar en tillhörande bildkampanj också?",
+              eventName: "Nystart"
+            }
+          }));
+        }
+
+        if (p.includes("remix") || p.includes("remixvariants")) {
+          return textResponse(JSON.stringify({
+            variants: [
+              {
+                headline: "Nyfiken på oss?",
+                body: "Kom förbi och prata med våra experter idag.",
+                layout: "text-only"
+              },
+              {
+                headline: "Hitta din favorit!",
+                body: "Utforska vårt breda sortiment och hitta det som passar dig bäst.",
+                layout: "image-fullscreen"
+              }
+            ]
+          }));
+        }
+
+        if (p.includes("completepost") || p.includes("skapa ett komplett utkast")) {
+          return textResponse(JSON.stringify({
+            headline: "Skapad av Skylie AI",
+            body: "Det här inlägget genererades automatiskt baserat på dina önskemål.",
+            layout: "split-vertical",
+            imagePrompt: "Minimalist modern digital signage display mockups"
+          }));
+        }
+
+        if (p.includes("headline") && p.includes("suggestions")) {
+          return textResponse(JSON.stringify({
+            headlines: [
+              "Välkommen på öppet hus!",
+              "Missa inte vårt unika erbjudande",
+              "Nyfiken på framtiden?",
+              "Hitta hem hos oss"
+            ]
+          }));
+        }
+
+        if (p.includes("body") && p.includes("suggestions")) {
+          return textResponse(JSON.stringify({
+            bodies: [
+              "Vi bjuder på fika och visar runt i våra fantastiska lokaler. Välkomna!",
+              "Just nu får du 20% rabatt på hela sortimentet vid uppvisande av denna skärm.",
+              "Träffa våra rådgivare och ställ dina frågor direkt på plats idag."
+            ]
+          }));
+        }
+
+        if (p.includes("event") && p.includes("reminder")) {
+          return textResponse(JSON.stringify({
+            headline: "Snart är det dags!",
+            subtext: "Endast 3 dagar kvar till vårt stora event på torget."
+          }));
+        }
+
+        if (p.includes("rhythm") && p.includes("reminder")) {
+          return textResponse(JSON.stringify({
+            headline: "Håll skärmen levande!",
+            subtext: "Det har gått några dagar sedan ditt senaste inlägg. Lägg till något nytt idag!"
+          }));
+        }
+
+        if (p.includes("seasonal") && p.includes("suggestion")) {
+          return textResponse(JSON.stringify({
+            headline: "Fira sommaren med oss!",
+            subtext: "Skapa sommarkänsla på skärmarna med våra soliga tips.",
+            context: "Sommarsäsongen är här."
+          }));
+        }
+
+        if (p.includes("dna") || p.includes("analys")) {
+          return textResponse(JSON.stringify({
+            brandingOptions: {
+              primaryColor: "#0f172a",
+              secondaryColor: "#10b981",
+              fontFamily: "sans"
+            },
+            tags: ["Professionell", "Modern", "Lokal"],
+            feedback: "Din stil är mycket konsekvent och modern!"
+          }));
+        }
+
+        if (p.includes("diff") || p.includes("ändringar")) {
+          return textResponse(JSON.stringify({
+            ändringar: ["Ändrade rubrik till att vara mer inbjudande", "Gjorde brödtexten kortare"],
+            tolkning: "Användaren föredrar kortare och mer direkta budskap.",
+            förslagFörFramtiden: "Håll rubriker under 20 tecken."
+          }));
+        }
+
+        if (p.includes("critique") || p.includes("score")) {
+          return textResponse(JSON.stringify({
+            score: 85,
+            critique: "Inlägget är mycket tydligt och har en bra balans mellan bild och text.",
+            improvements: ["Gör brödtexten något kortare", "Lägg till en tydligare call to action"],
+            positive: "Riktigt snygg layout och färgval!"
+          }));
+        }
+
+        if (p.includes("extrahera") || p.includes("extract")) {
+          return textResponse(JSON.stringify({
+            headline: "Extraherat inlägg",
+            body: "Sammanfattat innehåll från den angivna länken för din skärm.",
+            imageUrl: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1000"
+          }));
+        }
+
+        if (p.includes("brand identity of this website") || p.includes("primarycolor")) {
+          return textResponse(JSON.stringify({
+            primaryColor: "#1e3a8a",
+            secondaryColor: "#10b981",
+            headlineFontCategory: "sans",
+            bodyFontCategory: "sans",
+            businessDescription: "En modern och nytänkande verksamhet.",
+            textSnippets: ["Kvalitet i fokus", "Kontakta oss idag"],
+            businessType: ["Service"],
+            logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000"
+          }));
+        }
+
+        if (p.includes("tag") || p.includes("stamp") || p.includes("suggestion")) {
+          return textResponse(JSON.stringify({
+            name: "Nyhet",
+            color: "#3b82f6",
+            explanation: "En passande etikett för att lyfta fram färska nyheter."
+          }));
+        }
+
+        // Generic fallback text
+        return textResponse("Det här är ett simulerat svar eftersom AI-tjänsten körs i offline- eller utvecklingsläge utan giltig API-nyckel.");
+      }
+    },
+    chats: {
+      create: ({ model, config, history }: any) => {
+        return {
+          sendMessage: async (message: string) => {
+            return {
+              text: "Hej! Jag är din simulerade AI-coach. Hur kan jag hjälpa dig att skapa engagerande innehåll idag?"
+            };
+          }
+        };
+      }
+    }
+  };
+}
+
+const isDevOrOffline = !!(import.meta.env?.DEV || isOffline);
+const ai = clientApiKey ? new GoogleGenAI({ apiKey: clientApiKey }) : (isDevOrOffline ? (createMockGoogleGenAI() as unknown as GoogleGenAI) : null);
 
 // -------------------------------------------------------------
 // Tools Definitions
@@ -228,6 +490,21 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
     
     const errorString = error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
     
+    if (errorString.includes("krediter")) {
+      throw new Error("Månadens AI-krediter är förbrukade. Text fungerar fortfarande — bild- och videogenerering öppnas igen vid månadsskiftet, eller kontakta oss för utökad kvot.");
+    }
+
+    const isProd = !(import.meta.env?.DEV || isOffline);
+    if (isProd) {
+      if (errorString.includes("429") || errorString.includes("resource_exhausted") || errorString.includes("too many requests")) {
+        throw new Error("Skylie tar en kort paus! Just nu är det många som skapar innehåll samtidigt. Vänta en minut och försök igen.");
+      }
+      if (errorString.includes("safety")) {
+        throw new Error("Blockerades av säkerhetsskäl.");
+      }
+      throw new Error("AI-tjänsten är inte tillgänglig just nu — försök igen om en stund");
+    }
+    
     if (errorString.includes("429") || errorString.includes("resource_exhausted") || errorString.includes("too many requests")) {
       throw new Error("Skylie tar en kort paus! Just nu är det många som skapar innehåll samtidigt. Vänta en minut och försök igen.");
     }
@@ -255,55 +532,71 @@ class ProxyChat {
   }
 
   async *sendMessageStream(arg: { message: string }) {
-    const userMsg = { role: "user", parts: [{ text: arg.message }] };
-    this.history.push(userMsg);
+    try {
+      const userMsg = { role: "user", parts: [{ text: arg.message }] };
+      this.history.push(userMsg);
 
-    const systemInstruction = Prompts.getMarketingCoachSystemInstruction(this.organization);
-    const config = {
-      systemInstruction,
-      tools: [{ functionDeclarations: [createDisplayPostFunctionDeclaration] }]
-    };
+      const systemInstruction = Prompts.getMarketingCoachSystemInstruction(this.organization);
+      const config = {
+        systemInstruction,
+        tools: [{ functionDeclarations: [createDisplayPostFunctionDeclaration] }]
+      };
 
-    let result: { text: string; functionCalls?: any[] };
-    if (functions) {
-        result = await generateContentViaProxy("gemini-3.5-flash", this.history, config);
-    } else {
-        if (!ai) throw new Error("AI:n är inte konfigurerad på varken klient eller server.");
-        const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
-            contents: this.history,
-            config
-        });
-        result = { 
-            text: response.text ?? "", 
-            functionCalls: response.functionCalls || [] 
-        };
+      let result: { text: string; functionCalls?: any[] };
+      if (functions) {
+          result = await generateContentViaProxy(AI_MODELS.TEXT, this.history, config);
+      } else {
+          if (!ai) throw new Error("AI:n är inte konfigurerad på varken klient eller server.");
+          const response = await ai.models.generateContent({
+              model: AI_MODELS.TEXT,
+              contents: this.history,
+              config
+          });
+          result = { 
+              text: response.text ?? "", 
+              functionCalls: response.functionCalls || [] 
+          };
+      }
+
+      const chunk = {
+          text: result.text,
+          candidates: [
+              {
+                  content: {
+                      parts: [
+                          ...(result.text ? [{ text: result.text }] : []),
+                          ...(result.functionCalls?.map(fc => ({ functionCall: fc })) || [])
+                      ]
+                  }
+              }
+          ]
+      };
+
+      yield chunk;
+
+      const modelMsg = {
+          role: "model",
+          parts: [
+              ...(result.text ? [{ text: result.text }] : []),
+              ...(result.functionCalls?.map(fc => ({ functionCall: fc })) || [])
+          ]
+      };
+      this.history.push(modelMsg);
+    } catch (error: any) {
+      console.error("Chat message stream error:", error);
+      const errorString = error instanceof Error ? error.toString().toLowerCase() : String(error).toLowerCase();
+      const isProd = !(import.meta.env?.DEV || isOffline);
+      if (isProd) {
+        if (errorString.includes("429") || errorString.includes("resource_exhausted") || errorString.includes("too many requests")) {
+          throw new Error("Skylie tar en kort paus! Just nu är det många som skapar innehåll samtidigt. Vänta en minut och försök igen.");
+        }
+        if (errorString.includes("safety")) {
+          throw new Error("Blockerades av säkerhetsskäl.");
+        }
+        throw new Error("AI-tjänsten är inte tillgänglig just nu — försök igen om en stund");
+      }
+      throw error;
     }
-
-    const chunk = {
-        text: result.text,
-        candidates: [
-            {
-                content: {
-                    parts: [
-                        ...(result.text ? [{ text: result.text }] : []),
-                        ...(result.functionCalls?.map(fc => ({ functionCall: fc })) || [])
-                    ]
-                }
-            }
-        ]
-    };
-
-    yield chunk;
-
-    const modelMsg = {
-        role: "model",
-        parts: [
-            ...(result.text ? [{ text: result.text }] : []),
-            ...(result.functionCalls?.map(fc => ({ functionCall: fc })) || [])
-        ]
-    };
-    this.history.push(modelMsg);
   }
 }
 
@@ -321,7 +614,7 @@ export async function initializeMarketingCoachChat(organization: Organization): 
 
   const systemInstruction = Prompts.getMarketingCoachSystemInstruction(organization);
   return activeAi.chats.create({
-    model: "gemini-3.5-flash",
+    model: AI_MODELS.TEXT,
     config: { 
       systemInstruction,
       tools: [{ functionDeclarations: [createDisplayPostFunctionDeclaration] }]
@@ -338,7 +631,7 @@ export const formatPageWithAI = (rawContent: string): Promise<string> =>
         return result.data as string;
     }
     const prompt = Prompts.getFormatPagePrompt(rawContent);
-    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: prompt });
     return response.text ?? "";
   });
 
@@ -350,20 +643,20 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
         return result.data as string;
     }
     const prompt = Prompts.getGeneratePageContentPrompt(userPrompt);
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt });
     return response.text ?? "";
   });
 
-export const generateDisplayPostContent = (userPrompt: string, organizationName: string): Promise<{ headline: string; body: string }> =>
+export const generateDisplayPostContent = (userPrompt: string, organizationName: string, organization?: Organization): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
     if (functions) {
         const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
-        const result = await fn({ action: 'generateDisplayPostContent', params: { userPrompt, organizationName } });
+        const result = await fn({ action: 'generateDisplayPostContent', params: { userPrompt, organizationName, dnaContext: organization ? Prompts.getDnaTextContext(organization) : "" } });
         return result.data as { headline: string; body: string };
     }
     const prompt = Prompts.getDisplayPostContentPrompt(userPrompt, organizationName);
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: AI_MODELS.TEXT,
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema }
     });
@@ -374,10 +667,10 @@ export const generateAutomationPrompt = (inputs: { goal: string; tone: string; m
   handleAIError(async () => {
     const prompt = Prompts.getAutomationPromptPrompt(inputs);
     if (functions) {
-        const response = await generateContentViaProxy("gemini-2.5-flash", prompt);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT_LIGHT, prompt);
         return (response.text ?? "").trim();
     }
-    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: prompt });
     return (response.text ?? "").trim();
   });
 
@@ -387,10 +680,10 @@ export const generateSkyltIdeas = (prompt: string, organization: Organization): 
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiSkyltIdeSuggestionArray };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-2.5-flash", fullPrompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT_LIGHT, fullPrompt, config);
         return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
     }
-    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: fullPrompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: fullPrompt, config });
     return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
   });
 
@@ -400,10 +693,10 @@ export const generateCampaignIdeasForEvent = (eventName: string, daysUntil: numb
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiCampaignIdeasResponse };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as any;
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as any;
   });
 
@@ -413,10 +706,10 @@ export const generateSeasonalCampaignIdeas = (organization: Organization, planni
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiCampaignIdeasResponse };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as any;
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as any;
   });
 
@@ -427,10 +720,10 @@ export const generateRemixVariants = (post: DisplayPost, organization: Organizat
 
     let responseText;
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         responseText = response.text;
     } else {
-        const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+        const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
         responseText = response.text;
     }
 
@@ -456,9 +749,9 @@ export const generateCompletePost = (
 
     let textGenResponse;
     if (functions) {
-        textGenResponse = await generateContentViaProxy("gemini-3.5-flash", { parts }, config);
+        textGenResponse = await generateContentViaProxy(AI_MODELS.TEXT, { parts }, config);
     } else {
-        textGenResponse = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: { parts }, config });
+        textGenResponse = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: { parts }, config });
     }
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
@@ -468,12 +761,12 @@ export const generateCompletePost = (
       let mimeType = 'image/jpeg';
       
       if (functions) {
-          const proxyImg = await generateImagesViaProxy("imagen-4.0-generate-001", (postData as any).imagePrompt, { aspectRatio });
+          const proxyImg = await generateImagesViaProxy(AI_MODELS.IMAGE_GENERATION, (postData as any).imagePrompt, { aspectRatio });
           imageBytes = proxyImg.imageBytes;
           mimeType = proxyImg.mimeType || 'image/jpeg';
       } else {
           const imgResponse = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-image',
+              model: AI_MODELS.IMAGE,
               contents: {
                   parts: [{ text: (postData as any).imagePrompt }]
               },
@@ -482,7 +775,7 @@ export const generateCompletePost = (
                       aspectRatio: aspectRatio === '16:9' ? '16:9' : aspectRatio === '9:16' ? '9:16' : '1:1',
                       imageSize: "1K"
                   }
-              }
+              } as any
           });
           
           for (const part of imgResponse.candidates?.[0]?.content?.parts || []) {
@@ -507,9 +800,9 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
 
     let textGenResponse;
     if (functions) {
-        textGenResponse = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        textGenResponse = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
     } else {
-        textGenResponse = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+        textGenResponse = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     }
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
@@ -519,12 +812,12 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
       let mimeType = 'image/jpeg';
       
       if (functions) {
-          const proxyImg = await generateImagesViaProxy("imagen-4.0-generate-001", (postData as any).imagePrompt, { aspectRatio });
+          const proxyImg = await generateImagesViaProxy(AI_MODELS.IMAGE_GENERATION, (postData as any).imagePrompt, { aspectRatio });
           imageBytes = proxyImg.imageBytes;
           mimeType = proxyImg.mimeType || 'image/jpeg';
       } else {
           const imgResponse = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-image',
+              model: AI_MODELS.IMAGE,
               contents: {
                   parts: [{ text: (postData as any).imagePrompt }]
               },
@@ -533,7 +826,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
                       aspectRatio: aspectRatio === '16:9' ? '16:9' : aspectRatio === '9:16' ? '9:16' : '1:1',
                       imageSize: "1K"
                   }
-              }
+              } as any
           });
           
           for (const part of imgResponse.candidates?.[0]?.content?.parts || []) {
@@ -550,16 +843,16 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
     return { postData };
   });
 
-export const generateHeadlineSuggestions = (body: string, existingHeadlines?: string[]): Promise<string[]> =>
+export const generateHeadlineSuggestions = (body: string, existingHeadlines?: string[], organization?: Organization): Promise<string[]> =>
   handleAIError(async () => {
     if (functions) {
         const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
-        const result = await fn({ action: 'generateHeadlineSuggestions', params: { body, existingHeadlines } });
+        const result = await fn({ action: 'generateHeadlineSuggestions', params: { body, existingHeadlines, organizationName: organization?.brandName || organization?.name, dnaContext: organization ? Prompts.getDnaTextContext(organization) : "" } });
         return result.data as string[];
     }
-    const prompt = Prompts.getHeadlineSuggestionsPrompt(body, existingHeadlines);
+    const prompt = Prompts.getHeadlineSuggestionsPrompt(body, existingHeadlines, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: AI_MODELS.TEXT,
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
     });
@@ -567,31 +860,30 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
     return safeParseJSON<{ headlines: string[] }>(response.text ?? "{}", Schemas.HeadlineSuggestionsSchema).headlines;
   });
 
-export const generateBodySuggestions = (headline: string, existingBodies?: string[]): Promise<string[]> =>
+export const generateBodySuggestions = (headline: string, existingBodies?: string[], organization?: Organization): Promise<string[]> =>
   handleAIError(async () => {
-    const prompt = Prompts.getBodySuggestionsPrompt(headline, existingBodies);
-    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiBodySuggestionsSchema };
-
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
-        // Explicit type here too
-        return safeParseJSON<{ bodies: string[] }>(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
+        const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
+        const result = await fn({ action: 'generateBodySuggestions', params: { headline, existingBodies, organizationName: organization?.brandName || organization?.name, dnaContext: organization ? Prompts.getDnaTextContext(organization) : "" } });
+        return result.data as string[];
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const prompt = Prompts.getBodySuggestionsPrompt(headline, existingBodies, organization);
+    const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiBodySuggestionsSchema };
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     // Explicit type here too
     return safeParseJSON<{ bodies: string[] }>(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
   });
 
-export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string): Promise<{ headline: string; body: string }> =>
+export const refineDisplayPostContent = (content: { headline: string; body: string }, command: string, organization?: Organization): Promise<{ headline: string; body: string }> =>
   handleAIError(async () => {
     if (functions) {
         const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_TEXT });
-        const result = await fn({ action: 'refineDisplayPostContent', params: { content, command } });
+        const result = await fn({ action: 'refineDisplayPostContent', params: { content, command, dnaContext: organization ? Prompts.getDnaTextContext(organization) : "" } });
         return result.data as { headline: string; body: string };
     }
     const prompt = Prompts.getRefineContentPrompt(content, command);
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: AI_MODELS.TEXT,
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema },
     });
@@ -604,26 +896,28 @@ export const refineTextWithCustomPrompt = (content: { headline: string; body: st
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
 
-export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" = "16:9"): Promise<{ imageBytes: string; mimeType: string }> =>
+export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" = "16:9", organization?: Organization): Promise<{ imageBytes: string; mimeType: string }> =>
   handleAIError(async () => {
     if (functions) {
         const fn = functions.httpsCallable('gemini', { timeout: TIMEOUT_MEDIA });
-        const result = await fn({ action: 'generateDisplayPostImage', params: { prompt, aspectRatio } });
+        const visualStyle = organization?.styleProfile?.visualStyle;
+        const enhancedPrompt = visualStyle ? `${prompt}. Visual brand style: ${visualStyle}.` : prompt;
+        const result = await fn({ action: 'generateDisplayPostImage', params: { prompt: enhancedPrompt, aspectRatio } });
         const dataUri = result.data as string;
         const [meta, data] = dataUri.split(',');
         const mime = meta.split(':')[1].split(';')[0];
         return { imageBytes: data, mimeType: mime };
     }
-    const apiPrompt = Prompts.getGenerateImagePrompt(prompt);
+    const apiPrompt = Prompts.getGenerateImagePrompt(prompt, organization);
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model: AI_MODELS.IMAGE,
       contents: {
           parts: [{ text: apiPrompt }]
       },
@@ -632,7 +926,7 @@ export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "1
               aspectRatio: aspectRatio === '16:9' ? '16:9' : aspectRatio === '9:16' ? '9:16' : '1:1',
               imageSize: "1K"
           }
-      }
+      } as any
     });
     
     for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -659,7 +953,7 @@ export const editDisplayPostImage = (base64ImageData: string, mimeType: string, 
     if (logo) parts.push({ inlineData: { data: logo.base64Data, mimeType: logo.mimeType } });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model: AI_MODELS.IMAGE,
       contents: { parts },
       config: { responseModalities: [Modality.IMAGE] },
     });
@@ -762,10 +1056,10 @@ export const generateEventReminderText = (event: { name: string; icon: string },
       const prompt = Prompts.getEventReminderPrompt(event, daysUntil, organization, hasExistingCampaign);
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiEventReminderSchema };
       if (functions) {
-          const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+          const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
       }
-      const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+      const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
     })
   );
@@ -778,10 +1072,10 @@ export const updateStyleProfileSummary = (organization: Organization, recentPost
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiStyleProfileSummarySchema };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
   });
 
@@ -792,10 +1086,10 @@ export const generateRhythmReminderText = (organization: Organization, analysis:
       const prompt = Prompts.getRhythmReminderPrompt(organization, analysis.context);
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiRhythmReminderSchema };
       if (functions) {
-          const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+          const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
       }
-      const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+      const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
     })
   );
@@ -813,10 +1107,10 @@ export const getSeasonalSuggestion = (posts: DisplayPost[], organization: Organi
       const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiSeasonalSuggestionSchema };
       
       if (functions) {
-          const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+          const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
       }
-      const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+      const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
     })
   );
@@ -828,11 +1122,11 @@ export const generateDnaAnalysis = (organization: Organization): Promise<Partial
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiDnaAnalysisSchema };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as any;
         return { ...analysisData, lastUpdatedAt: new Date().toISOString(), feedback: null };
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as any;
     return { ...analysisData, lastUpdatedAt: new Date().toISOString(), feedback: null };
   });
@@ -843,10 +1137,10 @@ export const analyzePostDiff = (aiSuggestion: DisplayPost, finalPost: DisplayPos
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiPostDiffAnalysisSchema };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as { ändringar: string[]; tolkning: string; förslagFörFramtiden: string; };
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as { ändringar: string[]; tolkning: string; förslagFörFramtiden: string; };
   });
 
@@ -856,10 +1150,10 @@ export const analyzePost = (post: DisplayPost, organization: Organization): Prom
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiPostAnalysisSchema };
 
     if (functions) {
-        const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.PostAnalysisSchema) as any;
     }
-    const response = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt, config });
+    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.PostAnalysisSchema) as any;
   });
 
@@ -873,10 +1167,10 @@ export async function summarizeLearnLogForOrg(orgId: string) {
   let summary = "";
 
   if (functions) {
-      const response = await generateContentViaProxy("gemini-3.5-flash", prompt);
+      const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt);
       summary = response.text?.trim() || "";
   } else {
-      const result = await ai.models.generateContent({ model: "gemini-3.5-flash", contents: prompt });
+      const result = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt });
       summary = result.text?.trim() || "";
   }
 
@@ -905,40 +1199,20 @@ export const extractContentFromUrl = (url: string): Promise<{
       2. En kompakt, slagkraftig sammanfattning (body text) som ryms på skärmen (maximalt 15-20 ord). Om det är en bostad: inkludera kort info (t.ex. '575 kvm, 10 rum. Unikt läge i Kneippen!').
       3. Huvudbildens URL (leta efter og:image eller den mest representativa bilden på sidan. Måste vara en absolut URL).
       
-      Returnera datan i JSON-format.
+      Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text: { "headline": "...", "body": "...", "imageUrl": "..." }
     `;
 
     const config = {
-        tools: [{googleSearch: {}}],
-        responseMimeType: "application/json",
-        responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                headline: { type: Type.STRING },
-                body: { type: Type.STRING },
-                imageUrl: { type: Type.STRING }
-            },
-            required: ["headline", "body", "imageUrl"]
-        }
+        tools: [{googleSearch: {}}]
     };
 
     let textResponse = "";
     if (functions) {
-        try {
-            const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
-            textResponse = response.text ?? "";
-        } catch (error) {
-            console.warn("Proxy content extraction failed, trying client-side:", error);
-            const response = await ai.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: prompt,
-                config
-            });
-            textResponse = response.text ?? "";
-        }
+        const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
+        textResponse = response.text ?? "";
     } else {
         const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
+            model: AI_MODELS.TEXT,
             contents: prompt,
             config
         });
@@ -946,14 +1220,19 @@ export const extractContentFromUrl = (url: string): Promise<{
     }
 
     try {
-        const data = JSON.parse(textResponse || "{}");
+        const schema = z.object({
+            headline: z.string(),
+            body: z.string(),
+            imageUrl: z.string().nullable().optional().transform(val => val ?? ""),
+        });
+        const data = safeParseJSON(textResponse, schema);
         return {
-            headline: data.headline || "",
-            body: data.body || "",
-            imageUrl: data.imageUrl || ""
+            headline: data.headline,
+            body: data.body,
+            imageUrl: data.imageUrl
         };
     } catch (e) {
-        throw new Error("Kunde inte tolka svaret från AI.");
+        throw new Error("Kunde inte tolka innehållet från sidan — försök igen eller fyll i manuellt.");
     }
   });
 
@@ -977,8 +1256,7 @@ export const analyzeWebsiteContent = (url: string): Promise<{
             const result = await fn({ 
                 action: 'analyzeBrandFromWebsite', 
                 params: { 
-                    url, 
-                    schema: Schemas.GenAiWebsiteBrandAnalysisSchema 
+                    url
                 } 
             });
             
@@ -1007,15 +1285,15 @@ export const analyzeWebsiteContent = (url: string): Promise<{
         8. The URL of the main logo image found on the website. Prefer a direct image link (png/jpg/svg).
 
         Use Google Search to visit the site and analyze its visual style and content.
+        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
+        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
     `;
 
     const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: AI_MODELS.TEXT,
         contents: prompt,
         config: {
-            tools: [{googleSearch: {}}],
-            responseMimeType: "application/json",
-            responseSchema: Schemas.GenAiWebsiteBrandAnalysisSchema
+            tools: [{googleSearch: {}}]
         }
     });
 
@@ -1035,11 +1313,11 @@ export const generateTagOrStampWithAi = (
     };
 
     if (functions) {
-      const response = await generateContentViaProxy("gemini-3.5-flash", prompt, config);
+      const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
       return safeParseJSON(response.text ?? "{}", Schemas.TagStampSuggestionSchema) as any;
     }
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: AI_MODELS.TEXT,
       contents: prompt,
       config,
     });

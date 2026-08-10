@@ -11,6 +11,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup, AiImageEditorModal } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
 import { ThinkingDots } from '../../HelpBot';
+import { DnaStatusBadge } from '../../DnaStatusBadge';
 import { StyledInput, StyledSelect } from '../../Forms';
 
 const dataUriToBlob = (dataURI: string): Blob => {
@@ -501,7 +502,7 @@ const SingleMediaEditor: React.FC<{
 
         setAiLoading('generate-image');
         try {
-            const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, aspectRatio);
+            const { imageBytes, mimeType } = await generateDisplayPostImage(promptToGenerate, aspectRatio, organization);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             
             onPostChange({
@@ -843,7 +844,10 @@ const SingleMediaEditor: React.FC<{
                                 Skylie genererar bild...
                                 <ThinkingDots className="text-white/70" />
                             </p>
-                            <p className="text-xs opacity-80 mt-1">Bilden skapas utifrån din DNA-profil och dina instruktioner.</p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <DnaStatusBadge organization={organization} className="scale-90 origin-left" />
+                                <span className="text-xs opacity-80">och dina instruktioner.</span>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1101,7 +1105,7 @@ const CollageMediaEditor: React.FC<{
         setAiLoading(`generate-collage-${activeSlotIndex}`);
         
         try {
-            const { imageBytes, mimeType } = await generateDisplayPostImage(fullPrompt.trim(), screen.aspectRatio);
+            const { imageBytes, mimeType } = await generateDisplayPostImage(fullPrompt.trim(), screen.aspectRatio, organization);
             const dataUri = `data:${mimeType};base64,${imageBytes}`;
             handleUpdateSlot(activeSlotIndex, {
                 type: 'image',
@@ -1153,6 +1157,7 @@ const CollageMediaEditor: React.FC<{
     };
 
     const handleSaveItemToGallery = async (item: CollageItem) => {
+        if (item.type === 'text') return;
         const mediaUrl = item.imageUrl || item.videoUrl;
         if (!mediaUrl) return;
         setIsSavingToGalleryId(item.id);
@@ -1399,7 +1404,7 @@ const CollageMediaEditor: React.FC<{
                                         <button 
                                             onClick={() => handleAddText(index)}
                                             disabled={!!aiLoading}
-                                            className="w-full py-2 px-3 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-colors"
+                                            className="w-full py-2 px-3 bg-teal-100 hover:bg-teal-200 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 text-teal-700 dark:text-teal-300 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-colors"
                                         >
                                             <PencilIcon className="h-4 w-4" /> Lägg till text
                                         </button>

@@ -4,13 +4,13 @@ import { DisplayPost } from '../types';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
 import { SplitScreenLayout } from './SplitScreenLayout';
 import { parseToDate } from '../utils/dateUtils';
+import { getFirebaseProjectId } from '../services/firebaseInit';
 
-interface DisplayWindowScreenProps {
-  onBack: () => void;
-  isEmbedded?: boolean;
-}
+/* ===================== Config & Helpers ===================== */
+const USE_DOUBLE_BUFFER = true; // false = gamla brygg-logiken (fallback)
 
-/* ===================== Helpers ===================== */
+type BufferLayer = { post: DisplayPost | null; cycle: number };
+
 const isPostActive = (post: DisplayPost, now: Date) => {
     if (post.status === 'archived' || post.status === 'draft') return false; 
     const start = parseToDate(post.startDate, false);
@@ -26,7 +26,7 @@ const isPostActive = (post: DisplayPost, now: Date) => {
         }
     }
 
-    // Tidsspannsschemaläggning under dagen (t.ex. 08:30 - 17:00)
+    // Tidsspannsschemaläggning under dagen (t.ex. 08:30 - 17:00, eller 22:00 - 02:00 över midnatt)
     if (post.scheduleTimeRanges && post.scheduleTimeRanges.length > 0) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const hasMatchingTime = post.scheduleTimeRanges.some(range => {
@@ -35,7 +35,9 @@ const isPostActive = (post: DisplayPost, now: Date) => {
             const [eh, em] = range.endTime.split(':').map(Number);
             const startMin = (sh || 0) * 60 + (sm || 0);
             const endMin = (eh || 0) * 60 + (em || 0);
-            return currentMinutes >= startMin && currentMinutes <= endMin;
+            return startMin <= endMin
+                ? currentMinutes >= startMin && currentMinutes <= endMin
+                : currentMinutes >= startMin || currentMinutes <= endMin; // spann över midnatt
         });
         if (!hasMatchingTime) {
             return false;
@@ -61,6 +63,11 @@ const ProgressBar: React.FC<{ duration: number }> = ({ duration }) => {
   );
 };
 
+interface DisplayWindowScreenProps {
+  onBack: () => void;
+  isEmbedded?: boolean;
+}
+
 export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack, isEmbedded = false }) => {
   const { selectedDisplayScreen, selectedOrganization } = useLocation();
 
@@ -68,17 +75,27 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
   const [currentIdx, setCurrentIdx] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
   
-  // "Bridging" betyder att vi visar en stillbild av förra inlägget medan nästa laddar.
-  // Detta förhindrar svart skärm och krascher.
+  // Gamla brygg-logiken state (fallback när USE_DOUBLE_BUFFER = false)
   const [isBridging, setIsBridging] = useState(false); 
   const [prevPost, setPrevPost] = useState<DisplayPost | null>(null);
+
+  // Dubbelbuffrad state (när USE_DOUBLE_BUFFER = true)
+  const [layers, setLayers] = useState<[BufferLayer, BufferLayer]>([
+    { post: null, cycle: 0 },
+    { post: null, cycle: 0 },
+  ]);
+  const [activeLayerIdx, setActiveLayerIdx] = useState<0 | 1>(0);
+  const pendingLayerRef = useRef<0 | 1 | null>(null);
+  const [isFadingOutVideo, setIsFadingOutVideo] = useState(false);
   
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Refs för timers så vi kan döda dem
   const activeTimerRef = useRef<number | null>(null); // Den vanliga visningstiden
   const panicTimerRef = useRef<number | null>(null);  // Vakthunden som räddar frysningar
-  
+  const bridgeTimerRef = useRef<number | null>(null);
+  const transitionTimerRef = useRef<number | null>(null);
+
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
   const lastClickTime = useRef(0);
 
@@ -106,105 +123,251 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
     return () => clearInterval(t);
   }, []);
 
+  // Städa alla timers när visningsvyn lämnas
+  useEffect(() => {
+    return () => {
+      if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
+      if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
+      if (bridgeTimerRef.current) clearTimeout(bridgeTimerRef.current);
+      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+    };
+  }, []);
+
   /* --- FILTER ACTIVE POSTS --- */
+  // QR-spårningslänkar: mappas ENDAST när skärmdatat ändras (inte varje tidstick)
+  const trackedPosts = useMemo(() => {
+      const posts = selectedDisplayScreen?.posts ?? [];
+      const orgId = selectedOrganization?.id;
+      const screenId = selectedDisplayScreen?.id;
+      const projectId = getFirebaseProjectId();
+      if (!orgId || !screenId || !projectId || posts.length === 0) return posts;
+      const base = `https://us-central1-${projectId}.cloudfunctions.net/qrRedirect`;
+      return posts.map(p => p.qrCodeUrl
+          ? { ...p, qrCodeUrl: `${base}/${orgId}/${screenId}/${p.id}`, qrCodeDisplayUrl: p.qrCodeUrl }
+          : p);
+  }, [selectedDisplayScreen, selectedOrganization]);
+
+  // Tidsfiltret skapar INGA nya objekt — samma referenser mellan tickarna
   const activePosts = useMemo(() => {
-    const posts = selectedDisplayScreen?.posts ?? [];
-    if (!selectedDisplayScreen?.isEnabled || posts.length === 0) return [];
-    return posts.filter(p => isPostActive(p, currentTime));
-  }, [selectedDisplayScreen, currentTime]);
+      if (!selectedDisplayScreen?.isEnabled || trackedPosts.length === 0) return [];
+      return trackedPosts.filter(p => isPostActive(p, currentTime));
+  }, [trackedPosts, selectedDisplayScreen?.isEnabled, currentTime]);
 
-  const currentPost = activePosts[currentIdx] || null;
+  const currentPost = USE_DOUBLE_BUFFER 
+    ? layers[activeLayerIdx].post 
+    : (activePosts[currentIdx] || null);
+
   const nextIdx = (currentIdx + 1) % (activePosts.length || 1);
-  const nextPost = activePosts[nextIdx] || null; // För bryggan
+  const nextPost = activePosts[nextIdx] || null;
 
-  /* --- ADVANCE LOGIC (Hjärnan) --- */
+  // Föravkoda nästa inläggs bilder så bytet inte hackar (decode körs off-thread)
+  useEffect(() => {
+      if (!nextPost) return;
+      const urls = [
+          nextPost.imageUrl,
+          ...(nextPost.subImages || []).map(s => s.imageUrl),
+          ...(nextPost.collageItems || []).map(c => c.imageUrl),
+      ].filter(Boolean) as string[];
+      urls.forEach(url => {
+          const img = new Image();
+          img.src = url;
+          img.decode().catch(() => {}); // best effort — får aldrig kasta
+      });
+  }, [nextPost]);
+
+  /* --- ADVANCE LOGIC --- */
   const advance = useCallback(() => {
     if (activePosts.length === 0) return;
 
     // 1. Rensa alla gamla timers så vi inte får dubbla hopp
     if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
     if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
+    if (bridgeTimerRef.current) clearTimeout(bridgeTimerRef.current);
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
 
-    // 2. Aktivera brygga (Sparar föregående inlägg i state)
-    setPrevPost(currentPost);
-    setIsBridging(true);
+    if (!USE_DOUBLE_BUFFER) {
+      // --- GAMLA BRYGG-LOGIKEN (FALLBACK) ---
+      setPrevPost(currentPost);
+      setIsBridging(true);
 
-    // 3. Kolla om vi går Video -> Video (Sony-krasch risk)
-    // FIX: 'type' finns inte på DisplayPost. Vi kollar layout och videoUrl istället.
-    const isCurrentVideo = !!(currentPost?.videoUrl || currentPost?.layout.includes('video'));
-    const isNextVideo = !!(activePosts[nextIdx]?.videoUrl || activePosts[nextIdx]?.layout.includes('video'));
-    
-    // Om Video->Video, vänta 500ms extra med svart/brygga för att tömma minnet
-    const safetyGap = (isCurrentVideo && isNextVideo) ? 500 : 50;
+      const isCurrentVideo = !!(currentPost?.videoUrl || currentPost?.layout.includes('video'));
+      const isNextVideo = !!(activePosts[nextIdx]?.videoUrl || activePosts[nextIdx]?.layout.includes('video'));
+      
+      const safetyGap = (isCurrentVideo && isNextVideo) ? 500 : 50;
 
-    setTimeout(() => {
-        // 4. Byt till nästa inlägg (bakom kulisserna)
-        setCurrentIdx(nextIdx);
-        setCycleCount(c => c + 1);
-        
-        // 5. Starta PANIK-TIMERN direkt! 
-        // Om det nya inlägget inte säger "Ready" inom 7 sekunder -> Hoppa vidare.
-        // Detta löser "Media saknas"-frysningen.
-        panicTimerRef.current = window.setTimeout(() => {
-            console.warn("⚠️ Vakthund: Inlägget laddade aldrig (Media saknas?). Hoppar vidare.");
-            advance();
-        }, 7000);
-
-    }, safetyGap);
-
-  }, [activePosts, currentIdx, nextIdx, currentPost]);
-
-
-  /* --- READY HANDLER (När DisplayPostRenderer ropar "Jag är klar!") --- */
-  const handlePostReady = useCallback(() => {
-    // 1. Media finns och är laddat! Döda panik-timern.
-    if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
-
-    // 2. Ta bort bryggan (Gör inlägget synligt och startar fade-in)
-    setIsBridging(false);
-
-    // Clear the previous post after the fade-in animation has completed (transition is duration-300)
-    setTimeout(() => {
-      setPrevPost(null);
-    }, 450);
-
-    // 3. Sätt en ny timer för hur länge inlägget ska visas
-    // Om det är video: Videon själv ropar på 'advance' via onVideoEnded.
-    // Men vi sätter ändå en "Max Timer" ifall videon hänger sig.
-    
-    const isVideo = currentPost && (currentPost.videoUrl || currentPost.layout?.includes('video'));
-    const duration = (currentPost?.durationSeconds || 10) * 1000;
-
-    if (!isVideo) {
-        // BILD: Visa i inställd tid, sen gå vidare.
-        activeTimerRef.current = window.setTimeout(advance, duration);
-    } else {
-        // VIDEO: Vi litar på onVideoEnded, men sätter en failsafe på (Längd + 5 sekunder)
-        // Detta förhindrar evig frysning om videon inte triggar 'ended'.
-        activeTimerRef.current = window.setTimeout(() => {
-             console.warn("⚠️ Video Failsafe: Videon tog för lång tid. Tvingar byte.");
-             advance();
-        }, duration + 5000); 
+      bridgeTimerRef.current = window.setTimeout(() => {
+          setCurrentIdx(nextIdx);
+          setCycleCount(c => c + 1);
+          
+          panicTimerRef.current = window.setTimeout(() => {
+              console.warn("⚠️ Vakthund: Inlägget laddade aldrig (Media saknas?). Hoppar vidare.");
+              advance();
+          }, 7000);
+      }, safetyGap);
+      return;
     }
 
-  }, [currentPost, advance]);
+    // --- DUBBELBUFFRAD LOGIK (USE_DOUBLE_BUFFER = true) ---
+    const targetIdx = nextIdx;
+    const incomingPost = activePosts[targetIdx] || null;
+    if (!incomingPost) return;
+
+    const currentLayerPost = layers[activeLayerIdx].post;
+    const isCurrentVideo = !!(currentLayerPost?.videoUrl || currentLayerPost?.layout?.includes('video'));
+    const isNextVideo = !!(incomingPost?.videoUrl || incomingPost?.layout?.includes('video'));
+
+    const inactiveLayerIdx = (1 - activeLayerIdx) as 0 | 1;
+
+    const setupPendingLayer = () => {
+      setCurrentIdx(targetIdx);
+      setLayers(prev => {
+        const next = [...prev] as [BufferLayer, BufferLayer];
+        next[inactiveLayerIdx] = { post: incomingPost, cycle: next[inactiveLayerIdx].cycle + 1 };
+        return next;
+      });
+      pendingLayerRef.current = inactiveLayerIdx;
+
+      // Starta panik-timern (7 s)
+      panicTimerRef.current = window.setTimeout(() => {
+        console.warn("⚠️ Vakthund: Inlägget laddade aldrig (Media saknas?). Hoppar vidare.");
+        advance();
+      }, 7000);
+    };
+
+    // 4. VIDEO→VIDEO-UNDANTAG (Sony-minnesskydd): BÅDE utgående och inkommande inlägg är video.
+    // Korsfada INTE. Kör sekventiellt: fada ut gamla lagret till svart (500 ms),
+    // töm det, vänta 300 ms, växla sedan in nya lagret när dess ready kommit.
+    if (isCurrentVideo && isNextVideo) {
+      setIsFadingOutVideo(true);
+      bridgeTimerRef.current = window.setTimeout(() => {
+        setLayers(prev => {
+          const next = [...prev] as [BufferLayer, BufferLayer];
+          next[activeLayerIdx] = { post: null, cycle: next[activeLayerIdx].cycle };
+          return next;
+        });
+        setIsFadingOutVideo(false);
+
+        bridgeTimerRef.current = window.setTimeout(() => {
+          setupPendingLayer();
+        }, 300);
+      }, 500);
+    } else {
+      setupPendingLayer();
+    }
+
+  }, [activePosts, currentPost, nextIdx, activeLayerIdx, layers]);
+
+
+  /* --- READY HANDLER --- */
+  const handlePostReady = useCallback((layerIdx?: number) => {
+    if (!USE_DOUBLE_BUFFER) {
+      if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
+      setIsBridging(false);
+      setTimeout(() => {
+        setPrevPost(null);
+      }, 450);
+
+      const isVideo = currentPost && (currentPost.videoUrl || currentPost.layout?.includes('video'));
+      const duration = (currentPost?.durationSeconds || 10) * 1000;
+
+      if (!isVideo) {
+          activeTimerRef.current = window.setTimeout(advance, duration);
+      } else {
+          activeTimerRef.current = window.setTimeout(() => {
+               console.warn("⚠️ Video Failsafe: Videon tog för lång tid. Tvingar byte.");
+               advance();
+          }, duration + 5000); 
+      }
+      return;
+    }
+
+    // --- DUBBELBUFFRAD LOGIK ---
+    if (layerIdx !== undefined && pendingLayerRef.current !== layerIdx) {
+      return;
+    }
+
+    if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
+
+    const targetLayer = layerIdx !== undefined ? layerIdx : (pendingLayerRef.current ?? activeLayerIdx);
+    pendingLayerRef.current = null;
+
+    const oldLayerIdx = activeLayerIdx;
+    setActiveLayerIdx(targetLayer as 0 | 1);
+
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+
+    const targetPost = layers[targetLayer].post;
+
+    transitionTimerRef.current = window.setTimeout(() => {
+      if (oldLayerIdx !== targetLayer) {
+        setLayers(prev => {
+          const next = [...prev] as [BufferLayer, BufferLayer];
+          next[oldLayerIdx] = { post: null, cycle: next[oldLayerIdx].cycle };
+          return next;
+        });
+      }
+
+      const activePost = targetPost;
+      const isVideo = activePost && (activePost.videoUrl || activePost.layout?.includes('video'));
+      const duration = (activePost?.durationSeconds || 10) * 1000;
+
+      if (!isVideo) {
+        activeTimerRef.current = window.setTimeout(advance, duration);
+      } else {
+        activeTimerRef.current = window.setTimeout(() => {
+          console.warn("⚠️ Video Failsafe: Videon tog för lång tid. Tvingar byte.");
+          advance();
+        }, duration + 5000);
+      }
+    }, 600);
+
+  }, [USE_DOUBLE_BUFFER, currentPost, advance, activeLayerIdx, layers]);
 
 
   /* --- ERROR HANDLER --- */
-  const handlePostError = useCallback(() => {
+  const handlePostError = useCallback((layerIdx?: number) => {
       console.warn("❌ Media Error mottaget. Visar ändå inlägget utan tidsglapp eller hopp.");
-      // Istället för att helt hoppa över inlägget, visa det med dess text/färg så användaren
-      // hinner läsa, och låt den stå sin inställda tid innan den rullar vidare!
-      handlePostReady();
+      handlePostReady(layerIdx);
   }, [handlePostReady]);
 
 
-  // Init: Om vi inte har en post vald, välj första
+  // Init: Välj första inlägg om lager saknar post
   useEffect(() => {
-      if (activePosts.length > 0 && !currentPost) {
-          setCurrentIdx(0);
+      if (!USE_DOUBLE_BUFFER) {
+        if (activePosts.length > 0 && !currentPost) {
+            setCurrentIdx(0);
+        }
+        return;
       }
-  }, [activePosts, currentPost]);
+
+      if (activePosts.length === 0) {
+        if (layers[0].post !== null || layers[1].post !== null) {
+          setLayers([{ post: null, cycle: 0 }, { post: null, cycle: 0 }]);
+          pendingLayerRef.current = null;
+        }
+        return;
+      }
+
+      const activeLayerPost = layers[activeLayerIdx].post;
+      const isStillActive = activeLayerPost && activePosts.some(p => p.id === activeLayerPost.id);
+
+      if (!activeLayerPost || !isStillActive) {
+        const initialPost = activePosts[0];
+        setCurrentIdx(0);
+        setLayers(prev => {
+          const next = [...prev] as [BufferLayer, BufferLayer];
+          next[activeLayerIdx] = { post: initialPost, cycle: next[activeLayerIdx].cycle + 1 };
+          return next;
+        });
+        pendingLayerRef.current = activeLayerIdx;
+
+        if (panicTimerRef.current) clearTimeout(panicTimerRef.current);
+        panicTimerRef.current = window.setTimeout(() => {
+          console.warn("⚠️ Vakthund: Inlägget laddade aldrig (Media saknas?). Hoppar vidare.");
+          advance();
+        }, 7000);
+      }
+  }, [activePosts, activeLayerIdx, layers, currentPost, advance]);
 
 
   /* --- RENDER --- */
@@ -225,58 +388,101 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
          }}
     >
       
-      {/* 1. SEAMLESS BRYGGA (Stillbild av föregående inlägg medan det nya laddar bakom kulisserna) */}
-      {prevPost && (
-        <div className="absolute inset-0 z-0 select-none pointer-events-none">
-          <SplitScreenLayout screen={selectedDisplayScreen} organization={selectedOrganization}>
-            <DisplayPostRenderer 
-              key={`bridge-${prevPost.id}`}
-              post={prevPost}
-              organization={selectedOrganization}
-              aspectRatio={selectedDisplayScreen.aspectRatio}
-              isBridgeOnly={true} // Safe-mode, no sound, no video play
-              onLoadReady={() => {}} 
-              onLoadError={() => {}}
-              onVideoEnded={() => {}}
-            />
-          </SplitScreenLayout>
-        </div>
-      )}
-      
-      {/* 2. AKTIVT INLÄGG (Fadas in ovanpå bryggan först när det är färdigladdat) */}
-      {currentPost && (
-        <div className={`absolute inset-0 z-10 transition-opacity duration-300 ${isBridging ? 'opacity-0' : 'opacity-100'}`}>
-           <SplitScreenLayout screen={selectedDisplayScreen} organization={selectedOrganization}>
-           <DisplayPostRenderer 
-              key={`${currentPost.id}-${cycleCount}`} // Tvingar omstart vid varje varv
-              post={currentPost}
-              organization={selectedOrganization}
-              aspectRatio={selectedDisplayScreen.aspectRatio}
-              
-              // Callbacks
-              onLoadReady={handlePostReady}  // "Jag har laddat bilden/buffrat videon!"
-              onLoadError={handlePostError}  // "Filen finns inte!"
-              onVideoEnded={advance}         // "Filmen är slut!"
-              
-              // Sony Props
-              isBridgeOnly={false} 
-           />
-          </SplitScreenLayout>
-        </div>
+      {USE_DOUBLE_BUFFER ? (
+        layers.map((layer, idx) => {
+          if (!layer.post) return null;
+          const isActive = idx === activeLayerIdx;
+          const isPending = pendingLayerRef.current === idx;
+
+          return (
+            <div
+              key={`layer-${idx}`}
+              className={`absolute inset-0 z-10 transition-opacity duration-500 ${
+                isActive && !isFadingOutVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`}
+              style={{ willChange: 'opacity' }}
+            >
+              <SplitScreenLayout screen={selectedDisplayScreen} organization={selectedOrganization}>
+                <DisplayPostRenderer
+                  key={`${layer.post.id}-${layer.cycle}`}
+                  post={layer.post}
+                  organization={selectedOrganization}
+                  aspectRatio={selectedDisplayScreen.aspectRatio}
+                  onLoadReady={() => {
+                    if (isPending || pendingLayerRef.current === null) {
+                      handlePostReady(idx);
+                    }
+                  }}
+                  onLoadError={() => {
+                    if (isPending || pendingLayerRef.current === null) {
+                      handlePostError(idx);
+                    }
+                  }}
+                  onVideoEnded={() => {
+                    if (isActive) advance();
+                  }}
+                  isBridgeOnly={false}
+                />
+              </SplitScreenLayout>
+            </div>
+          );
+        })
+      ) : (
+        <>
+          {/* 1. SEAMLESS BRYGGA (Stillbild av föregående inlägg medan det nya laddar bakom kulisserna) */}
+          {prevPost && (
+            <div className="absolute inset-0 z-0 select-none pointer-events-none" style={{ willChange: 'opacity' }}>
+              <SplitScreenLayout screen={selectedDisplayScreen} organization={selectedOrganization}>
+                <DisplayPostRenderer 
+                  key={`bridge-${prevPost.id}`}
+                  post={prevPost}
+                  organization={selectedOrganization}
+                  aspectRatio={selectedDisplayScreen.aspectRatio}
+                  isBridgeOnly={true} // Safe-mode, no sound, no video play
+                  onLoadReady={() => {}} 
+                  onLoadError={() => {}}
+                  onVideoEnded={() => {}}
+                />
+              </SplitScreenLayout>
+            </div>
+          )}
+          
+          {/* 2. AKTIVT INLÄGG (Fadas in ovanpå bryggan först när det är färdigladdat) */}
+          {currentPost && (
+            <div className={`absolute inset-0 z-10 transition-opacity duration-300 ${isBridging ? 'opacity-0' : 'opacity-100'}`} style={{ willChange: 'opacity' }}>
+               <SplitScreenLayout screen={selectedDisplayScreen} organization={selectedOrganization}>
+               <DisplayPostRenderer 
+                  key={`${currentPost.id}-${cycleCount}`} // Tvingar omstart vid varje varv
+                  post={currentPost}
+                  organization={selectedOrganization}
+                  aspectRatio={selectedDisplayScreen.aspectRatio}
+                  
+                  // Callbacks
+                  onLoadReady={() => handlePostReady()}  // "Jag har laddat bilden/buffrat videon!"
+                  onLoadError={() => handlePostError()}  // "Filen finns inte!"
+                  onVideoEnded={advance}         // "Filmen är slut!"
+                  
+                  // Sony Props
+                  isBridgeOnly={false} 
+               />
+              </SplitScreenLayout>
+            </div>
+          )}
+        </>
       )}
       
       {/* 3. PROAKTIV PRELOADER (Laddar tyst nästa inläggs bilder/videor i bakgrunden så de öppnas direkt) */}
       {nextPost && (
         <div className="hidden width-0 height-0 overflow-hidden opacity-0 pointer-events-none absolute" aria-hidden="true">
           {nextPost.imageUrl && (
-            <img src={nextPost.imageUrl} alt="" />
+            <img src={nextPost.imageUrl} alt="" decoding="async" />
           )}
           {nextPost.videoUrl && (
             <video src={nextPost.videoUrl} preload="auto" muted playsInline />
           )}
           {nextPost.layout === 'collage' && (nextPost.collageItems || []).map((item, idx) => (
             <React.Fragment key={item.id || idx}>
-              {item.imageUrl && <img src={item.imageUrl} alt="" />}
+              {item.imageUrl && <img src={item.imageUrl} alt="" decoding="async" />}
               {item.videoUrl && <video src={item.videoUrl} preload="auto" muted playsInline />}
             </React.Fragment>
           ))}
@@ -285,16 +491,22 @@ export const DisplayWindowScreen: React.FC<DisplayWindowScreenProps> = ({ onBack
 
       {/* PROGRESS BAR (Bara för bilder) */}
       {!isBridging && currentPost && !isVideo && (
-         <ProgressBar duration={currentPost.durationSeconds || 10} />
+         <ProgressBar
+            key={USE_DOUBLE_BUFFER
+                ? `${currentPost.id}-${layers[activeLayerIdx].cycle}`
+                : `${currentPost.id}-${cycleCount}`}
+            duration={currentPost.durationSeconds || 10}
+         />
       )}
 
       {/* BRANDING */}
       {branding?.isEnabled && (branding.showLogo || branding.showName) && !isBridging && !isSplitScreenActive && (
         <div className="absolute bottom-6 right-6 z-30 flex items-center gap-2 bg-black/50 backdrop-blur-sm p-1.5 rounded-md">
-            {branding.showLogo && logoUrl && <img src={logoUrl} alt="" className="max-h-8 max-w-[100px] object-contain" />}
+            {branding.showLogo && logoUrl && <img src={logoUrl} alt="" decoding="async" className="max-h-8 max-w-[100px] object-contain" />}
             {branding.showName && <p className="font-semibold text-sm text-white/90">{selectedOrganization.brandName || selectedOrganization.name}</p>}
         </div>
       )}
     </div>
   );
 };
+

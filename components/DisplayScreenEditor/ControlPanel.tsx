@@ -1,18 +1,19 @@
-import React, { useState, useMemo } from 'react';
-import { DisplayScreen, Organization, DisplayPost, BrandingOptions, ScreenZoneConfig } from '../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { DisplayScreen, Organization, DisplayPost } from '../../types';
 import { useToast } from '../../context/ToastContext';
-import { StyledSelect, StyledInput } from '../Forms';
 import { PrimaryButton } from '../Buttons';
 import { 
     PencilIcon, TrashIcon, EllipsisVerticalIcon, SparklesIcon, 
     ShareIcon, DownloadIcon, 
-    VideoCameraIcon, MagnifyingGlassIcon, MoveIcon,
-    ToggleSwitch, ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
-    Cog6ToothIcon, ChevronDownIcon, CheckCircleIcon, MonitorIcon
+    VideoCameraIcon, MagnifyingGlassIcon,
+    ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
+    ChevronDownIcon, CalendarIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ScaledPreviewWrapper } from './PreviewPanes';
+import { listenToQrScanCounts } from '../../services/firebaseService';
+import { parseToDate } from '../../utils/dateUtils';
 
 interface ControlPanelProps {
     screen: DisplayScreen;
@@ -46,9 +47,47 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     setOpenDropdownId,
     dropdownRef
 }) => {
-    const [dragIndex, setDragIndex] = useState<number | null>(null);
     const [remixPost, setRemixPost] = useState<DisplayPost | null>(null);
+    const [scheduleEditorPostId, setScheduleEditorPostId] = useState<string | null>(null);
     const { showToast } = useToast();
+
+    const handleUpdatePostSchedule = async (
+        postId: string,
+        changes: Partial<Pick<DisplayPost, 'startDate' | 'endDate' | 'status'>>
+    ) => {
+        const updatedPosts = (screen.posts || []).map(p =>
+            p.id === postId ? { ...p, ...changes } : p
+        );
+        await onUpdateScreen({ posts: updatedPosts });
+    };
+
+    const [qrScanCounts, setQrScanCounts] = useState<Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }>>({});
+
+    useEffect(() => {
+        if (!organization?.id) return;
+        const unsubscribe = listenToQrScanCounts(organization.id, setQrScanCounts);
+        return () => unsubscribe();
+    }, [organization?.id]);
+
+    // Aggregerad QR-statistik för denna skärm, senaste 7 dagarna (UTC-datum, samma som loggningen)
+    const qrWeekStats = useMemo(() => {
+        const postIds = new Set((screen.posts || []).map(p => p.id));
+        const dayLabels = ['Sön', 'Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör'];
+        const days: { date: string; label: string; total: number }[] = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            days.push({ date: d.toISOString().slice(0, 10), label: dayLabels[d.getDay()], total: 0 });
+        }
+        let allTimeTotal = 0;
+        Object.entries(qrScanCounts).forEach(([postId, data]) => {
+            if (!postIds.has(postId)) return;
+            allTimeTotal += data.count || 0;
+            days.forEach(day => { day.total += data.daily?.[day.date] || 0; });
+        });
+        const weekTotal = days.reduce((sum, d) => sum + d.total, 0);
+        return { days, weekTotal, allTimeTotal };
+    }, [qrScanCounts, screen.posts]);
     
     // View State
     const [sortOption, setSortOption] = useState<'manual' | 'newest' | 'alpha'>('manual');
@@ -72,10 +111,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 return;
             }
             const now = new Date();
-            const start = new Date(p.startDate);
-            const end = p.endDate ? new Date(p.endDate) : null;
+            const start = parseToDate(p.startDate, false);
+            const end = p.endDate ? parseToDate(p.endDate, true) : null;
 
-            if (start > now) {
+            if (start && start > now) {
                 scheduled++;
             } else if (end && end < now) {
                 draft++; // Ended is counted as expired / draft
@@ -89,13 +128,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     
     const getPostStatus = (post: DisplayPost): PostStatus => {
         if (post.status === 'archived') return 'archived';
-        if (!post.startDate) return 'draft'; // New: Missing start date = Draft
+        if (post.status === 'draft' || !post.startDate) return 'draft';
 
         const now = new Date();
-        const start = new Date(post.startDate);
-        const end = post.endDate ? new Date(post.endDate) : null;
+        const start = parseToDate(post.startDate, false);
+        const end = post.endDate ? parseToDate(post.endDate, true) : null;
 
-        if (start > now) return 'scheduled';
+        if (start && start > now) return 'scheduled';
         if (end && end < now) return 'ended';
         return 'active';
     };
@@ -138,41 +177,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         }
     }, [screen.posts, sortOption, searchQuery, filterStatus]);
 
-    const handleDragStart = (e: React.DragEvent, index: number) => {
-        if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all') return;
-        setDragIndex(index);
-        e.dataTransfer.effectAllowed = "move";
-    };
-
-    const handleDragOver = (e: React.DragEvent, index: number) => {
-        if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all' || dragIndex === null || dragIndex === index) return;
-        e.preventDefault();
-    };
-
-    const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
-        if (sortOption !== 'manual' || searchQuery || filterStatus !== 'all' || dragIndex === null) return;
-        e.preventDefault();
-        
-        const draggedPost = filteredPosts[dragIndex];
-        const targetPost = filteredPosts[dropIndex];
-        if (!draggedPost || !targetPost || draggedPost.id === targetPost.id) {
-            setDragIndex(null);
-            return;
-        }
-
+    const handleMovePost = async (post: DisplayPost, direction: 'up' | 'down') => {
+        const visibleIdx = filteredPosts.findIndex(p => p.id === post.id);
+        const neighbor = filteredPosts[visibleIdx + (direction === 'up' ? -1 : 1)];
+        if (!neighbor) return;
         const newPosts = [...(screen.posts || [])];
-        const draggedIdxInFull = newPosts.findIndex(p => p.id === draggedPost.id);
-        const targetIdxInFull = newPosts.findIndex(p => p.id === targetPost.id);
-
-        if (draggedIdxInFull > -1 && targetIdxInFull > -1) {
-            newPosts.splice(draggedIdxInFull, 1);
-            newPosts.splice(targetIdxInFull, 0, draggedPost);
-            
-            setDragIndex(null);
-            await onUpdateScreen({ posts: newPosts });
-        } else {
-            setDragIndex(null);
-        }
+        const fromIdx = newPosts.findIndex(p => p.id === post.id);
+        const toIdx = newPosts.findIndex(p => p.id === neighbor.id);
+        if (fromIdx === -1 || toIdx === -1) return;
+        newPosts.splice(fromIdx, 1);
+        newPosts.splice(toIdx, 0, post);
+        await onUpdateScreen({ posts: newPosts });
     };
 
     const handleArchivePost = async (post: DisplayPost) => {
@@ -206,7 +221,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             showToast({ message: "Skärmen har uppdaterats!", type: 'success' });
         } catch (error) {
             console.error(error);
-            showToast({ message: "Kunde inte spara stämpel/tagg.", type: 'error' });
+            showToast({ message: "Kunde inte spara stämpel.", type: 'error' });
         }
     };
 
@@ -221,7 +236,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
     const formatDate = (isoString?: string) => {
         if (!isoString) return '';
-        return new Date(isoString).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' });
+        const d = parseToDate(isoString, false);
+        return d ? d.toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' }) : '';
     };
 
     const StatusPill: React.FC<{ status: PostStatus, post: DisplayPost }> = ({ status, post }) => {
@@ -372,10 +388,32 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
 
             {/* Warning if sorting/filtering is active */}
-            {(sortOption !== 'manual' || filterStatus !== 'all' || searchQuery) && (
+            {sortOption !== 'manual' && (
                 <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 text-sm px-4 py-2 rounded-lg flex items-center gap-2 border border-blue-200 dark:border-blue-800/50">
                     <FunnelIcon className="w-4 h-4" />
-                    <span>Visar filtrerad/sorterad lista. Byt till <strong>Visa alla</strong> och <strong>Manuell ordning</strong> för att ändra ordning på inläggen.</span>
+                    <span>Listan är sorterad. Byt till <strong>Manuell ordning</strong> för att kunna flytta inlägg.</span>
+                </div>
+            )}
+
+            {qrWeekStats.allTimeTotal > 0 && (
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 flex items-center justify-between gap-4 mb-3">
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400">QR-skanningar senaste 7 dagarna</div>
+                        <div className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{qrWeekStats.weekTotal}</div>
+                        <div className="text-[10px] text-slate-400">Totalt {qrWeekStats.allTimeTotal} sedan start</div>
+                    </div>
+                    <div className="flex items-end gap-1.5">
+                        {qrWeekStats.days.map(day => {
+                            const max = Math.max(...qrWeekStats.days.map(d => d.total), 1);
+                            const barHeight = Math.max(3, Math.round((day.total / max) * 40));
+                            return (
+                                <div key={day.date} className="flex flex-col items-center gap-0.5" title={`${day.date}: ${day.total} skanningar`}>
+                                    <div className="w-4 bg-emerald-400 dark:bg-emerald-500 rounded-sm" style={{ height: `${barHeight}px` }} />
+                                    <span className="text-[8px] text-slate-400">{day.label}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 
@@ -385,7 +423,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     filteredPosts.map((post, index) => {
                         const status = getPostStatus(post);
                         const isMenuOpen = openDropdownId === post.id;
-                        const canDrag = sortOption === 'manual' && !searchQuery && filterStatus === 'all';
                         const isArchivedView = filterStatus === 'archived';
                         
                         const isExpress = post.internalTitle?.startsWith('⚡ Express:');
@@ -400,138 +437,202 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         return (
                             <div 
                                 key={post.id} 
-                                draggable={canDrag}
-                                onDragStart={(e) => handleDragStart(e, index)}
-                                onDragOver={(e) => handleDragOver(e, index)}
-                                onDrop={(e) => handleDrop(e, index)}
-                                className={`group bg-white dark:bg-slate-800 p-3 rounded-lg border flex items-start gap-4 transition-all hover:shadow-md border-slate-200 dark:border-slate-700 ${cardBorders} ${opacityClass} ${dragIndex === index ? 'opacity-50 ring-2 ring-primary border-transparent scale-[0.98]' : ''} ${isMenuOpen ? 'relative z-20' : 'relative z-0'}`}
+                                className={`group bg-white dark:bg-slate-800 p-3 rounded-lg border flex flex-col gap-1 transition-all hover:shadow-md border-slate-200 dark:border-slate-700 ${cardBorders} ${opacityClass} ${isMenuOpen ? 'relative z-20' : 'relative z-0'}`}
                             >
-                                {/* Drag Handle */}
-                                {canDrag && (
-                                    <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 dark:hover:text-slate-400 flex-shrink-0 p-1 mt-1">
-                                        <MoveIcon className="w-5 h-5" />
-                                    </div>
-                                )}
-                                
-                                {/* Thumbnail - Responsive to Aspect Ratio */}
-                                <div className={`${thumbClass} bg-slate-100 dark:bg-slate-900 rounded overflow-hidden flex-shrink-0 relative border border-slate-100 dark:border-slate-700 shadow-sm mt-1`}>
-                                    <ScaledPreviewWrapper aspectRatio={screen.aspectRatio}>
-                                        <DisplayPostRenderer 
-                                            post={post} 
-                                            organization={organization} 
-                                            mode="preview" 
-                                            showTags={false} 
-                                            aspectRatio={screen.aspectRatio}
-                                        />
-                                    </ScaledPreviewWrapper>
-                                    {post.layout.includes('video') && <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none"><VideoCameraIcon className="w-4 h-4 text-white drop-shadow-md"/></div>}
-                                </div>
- 
-                                {/* Info */}
-                                <div className="flex-grow min-w-0 flex flex-col justify-start">
-                                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                        {isExpress && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/45 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-805/40 select-none">
-                                                <span>⚡ Snabb-inlägg</span>
-                                            </span>
-                                        )}
-                                        <h4 className="font-bold text-slate-800 dark:text-slate-200 truncate text-sm sm:text-base" title={post.internalTitle}>{displayTitle}</h4>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <StatusPill status={status} post={post} />
-                                        <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-2">
-                                            <span>|</span>
-                                            <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded font-mono text-slate-600 dark:text-slate-300">{post.durationSeconds}s</span>
-                                            <span className="capitalize hidden sm:inline">{post.layout.replace(/-/g, ' ')}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Action tags/stamps toggle on Express posts */}
-                                    {isExpress && (
-                                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 w-full">
-                                            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
-                                                <span>Stämplar och taggar:</span>
-                                            </div>
-                                            {organization.tags && organization.tags.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {organization.tags.map(tag => {
-                                                        const isActive = (post.tagIds || []).includes(tag.id);
-                                                        return (
-                                                            <button
-                                                                type="button"
-                                                                key={tag.id}
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleToggleTagOnPost(post, tag.id);
-                                                                }}
-                                                                className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 border-slate-200 dark:border-slate-700/80 cursor-pointer select-none active:scale-95 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30`}
-                                                                style={isActive ? { backgroundColor: tag.backgroundColor, color: tag.textColor, borderColor: tag.backgroundColor } : {}}
-                                                                title={`Klicka för att ${isActive ? 'avaktivera' : 'aktivera'} ${tag.text}`}
-                                                            >
-                                                                <span>{tag.displayType === 'stamp' ? '💮' : '🏷️'}</span>
-                                                                <span>{tag.text}</span>
-                                                                {isActive && (
-                                                                    <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
-                                                                )}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            ) : (
-                                                <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-                                                    Mallen har inga stämplar definierade.
-                                                </div>
-                                            )}
+                                <div className="flex items-start gap-4 w-full">
+                                    {sortOption === 'manual' && (
+                                        <div className="flex flex-col gap-0.5 flex-shrink-0 mt-1">
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleMovePost(post, 'up'); }} disabled={index === 0} className="p-0.5 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Flytta upp">
+                                                <ChevronDownIcon className="w-4 h-4 rotate-180" />
+                                            </button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleMovePost(post, 'down'); }} disabled={index === filteredPosts.length - 1} className="p-0.5 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Flytta ned">
+                                                <ChevronDownIcon className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     )}
-                                </div>
- 
-                                {/* Actions */}
-                                <div className="relative mt-1" ref={isMenuOpen ? dropdownRef : null}>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); setOpenDropdownId(isMenuOpen ? null : post.id); }}
-                                        className={`p-2 rounded-full transition-colors ${isMenuOpen ? 'bg-slate-100 dark:bg-slate-700 text-slate-900' : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-                                    >
-                                        <EllipsisVerticalIcon className="w-5 h-5" />
-                                    </button>
                                     
-                                    {isMenuOpen && (
-                                        <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-10 overflow-hidden animate-fade-in origin-top-right ring-1 ring-black/5">
-                                            <div className="py-1">
-                                                {isArchivedView ? (
-                                                    <>
-                                                        <button onClick={() => { handleRestorePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-3">
-                                                            <ArrowUturnLeftIcon className="w-4 h-4" /> Återställ
-                                                        </button>
-                                                        <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
-                                                        <button onClick={() => { onDeletePost(post.id); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3">
-                                                            <TrashIcon className="w-4 h-4" /> Radera permanent
-                                                        </button>
-                                                    </>
+                                    {/* Thumbnail - Responsive to Aspect Ratio */}
+                                    <div className={`${thumbClass} bg-slate-100 dark:bg-slate-900 rounded overflow-hidden flex-shrink-0 relative border border-slate-100 dark:border-slate-700 shadow-sm mt-1`}>
+                                        <ScaledPreviewWrapper aspectRatio={screen.aspectRatio}>
+                                            <DisplayPostRenderer 
+                                                post={post} 
+                                                organization={organization} 
+                                                mode="preview" 
+                                                showTags={false} 
+                                                aspectRatio={screen.aspectRatio}
+                                            />
+                                        </ScaledPreviewWrapper>
+                                        {post.layout.includes('video') && <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none"><VideoCameraIcon className="w-4 h-4 text-white drop-shadow-md"/></div>}
+                                    </div>
+     
+                                    {/* Info */}
+                                    <div className="flex-grow min-w-0 flex flex-col justify-start">
+                                        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                            {isExpress && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/45 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-805/40 select-none">
+                                                    <span>⚡ Snabb-inlägg</span>
+                                                </span>
+                                            )}
+                                            {post.qrCodeUrl && (qrScanCounts[post.id]?.count ?? 0) > 0 && (
+                                                <span
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50 select-none"
+                                                    title="Antal skanningar av inläggets QR-kod från skyltfönstret"
+                                                >
+                                                    📱 {qrScanCounts[post.id].count} skanningar
+                                                </span>
+                                            )}
+                                            <h4 className="font-bold text-slate-800 dark:text-slate-200 truncate text-sm sm:text-base" title={post.internalTitle}>{displayTitle}</h4>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <StatusPill status={status} post={post} />
+                                            <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-2">
+                                                <span>|</span>
+                                                <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded font-mono text-slate-600 dark:text-slate-300">{post.durationSeconds}s</span>
+                                                <span className="capitalize hidden sm:inline">{post.layout.replace(/-/g, ' ')}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Action tags/stamps toggle on Express posts */}
+                                        {isExpress && (
+                                            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 w-full">
+                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
+                                                    <span>Stämplar:</span>
+                                                </div>
+                                                {organization.tags && organization.tags.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {organization.tags.map(tag => {
+                                                            const isActive = (post.tagIds || []).includes(tag.id);
+                                                            return (
+                                                                <button
+                                                                    type="button"
+                                                                    key={tag.id}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleToggleTagOnPost(post, tag.id);
+                                                                    }}
+                                                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 border-slate-200 dark:border-slate-700/80 cursor-pointer select-none active:scale-95 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30`}
+                                                                    style={isActive ? { backgroundColor: tag.backgroundColor, color: tag.textColor, borderColor: tag.backgroundColor } : {}}
+                                                                    title={`Klicka för att ${isActive ? 'avaktivera' : 'aktivera'} ${tag.text}`}
+                                                                >
+                                                                    <span>{tag.displayType === 'stamp' ? '💮' : '🏷️'}</span>
+                                                                    <span>{tag.text}</span>
+                                                                    {isActive && (
+                                                                        <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 ) : (
-                                                    <>
-                                                        <button onClick={() => { onEditPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                            <PencilIcon className="w-4 h-4 text-slate-400" /> Redigera
-                                                        </button>
-                                                        <button onClick={() => { setRemixPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3">
-                                                            <SparklesIcon className="w-4 h-4 text-purple-500" /> Remixa med AI
-                                                        </button>
-                                                        <button onClick={() => { onSharePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                            <ShareIcon className="w-4 h-4 text-slate-400" /> Dela till kanal
-                                                        </button>
-                                                        <button onClick={() => { onDownloadPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                            <DownloadIcon className="w-4 h-4 text-slate-400" /> Ladda ner
-                                                        </button>
-                                                        <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
-                                                        <button onClick={() => { handleArchivePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700 flex items-center gap-3">
-                                                            <TrashIcon className="w-4 h-4 text-slate-400" /> Arkivera
-                                                        </button>
-                                                    </>
+                                                    <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                                                        Mallen har inga stämplar definierade.
+                                                    </div>
                                                 )}
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
+     
+                                    {/* Actions */}
+                                    <div className="relative mt-1 flex items-center gap-1" ref={isMenuOpen ? dropdownRef : null}>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setScheduleEditorPostId(scheduleEditorPostId === post.id ? null : post.id); }}
+                                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Schemalägg & publicera"
+                                        >
+                                            <CalendarIcon className="w-4 h-4" />
+                                            {['active', 'scheduled'].includes(getPostStatus(post)) ? 'Ändra datum' : 'Publicera'}
+                                        </button>
+
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); setOpenDropdownId(isMenuOpen ? null : post.id); }}
+                                            className={`p-2 rounded-full transition-colors ${isMenuOpen ? 'bg-slate-100 dark:bg-slate-700 text-slate-900' : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                                        >
+                                            <EllipsisVerticalIcon className="w-5 h-5" />
+                                        </button>
+                                        
+                                        {isMenuOpen && (
+                                            <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-10 overflow-hidden animate-fade-in origin-top-right ring-1 ring-black/5">
+                                                <div className="py-1">
+                                                    {isArchivedView ? (
+                                                        <>
+                                                            <button onClick={() => { handleRestorePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-3">
+                                                                <ArrowUturnLeftIcon className="w-4 h-4" /> Återställ
+                                                            </button>
+                                                            <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
+                                                            <button onClick={() => { onDeletePost(post.id); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3">
+                                                                <TrashIcon className="w-4 h-4" /> Radera permanent
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <button onClick={() => { onEditPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                                <PencilIcon className="w-4 h-4 text-slate-400" /> Redigera
+                                                            </button>
+                                                            <button onClick={() => { setRemixPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3">
+                                                                <SparklesIcon className="w-4 h-4 text-purple-500" /> Remixa med AI
+                                                            </button>
+                                                            <button onClick={() => { onSharePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                                <ShareIcon className="w-4 h-4 text-slate-400" /> Dela till kanal
+                                                            </button>
+                                                            <button onClick={() => { onDownloadPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                                <DownloadIcon className="w-4 h-4 text-slate-400" /> Ladda ner
+                                                            </button>
+                                                            <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
+                                                            <button onClick={() => { handleArchivePost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700 flex items-center gap-3">
+                                                                <TrashIcon className="w-4 h-4 text-slate-400" /> Arkivera
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
+
+                                {scheduleEditorPostId === post.id && (
+                                    <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg flex flex-wrap items-end gap-3 text-sm">
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Startdatum</label>
+                                            <input type="date"
+                                                value={(post.startDate || '').slice(0, 10)}
+                                                onChange={e => handleUpdatePostSchedule(post.id, { startDate: e.target.value || undefined })}
+                                                className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Slutdatum (tomt = tills vidare)</label>
+                                            <input type="date"
+                                                value={(post.endDate || '').slice(0, 10)}
+                                                onChange={e => handleUpdatePostSchedule(post.id, { endDate: e.target.value || undefined })}
+                                                className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white" />
+                                        </div>
+                                        <div className="flex items-center gap-2 ml-auto">
+                                            {post.status !== 'archived' && (
+                                                getPostStatus(post) === 'active' ? (
+                                                    <button type="button"
+                                                        onClick={() => handleUpdatePostSchedule(post.id, { status: 'draft' })}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
+                                                        Avpublicera
+                                                    </button>
+                                                ) : (
+                                                    <button type="button"
+                                                        onClick={() => {
+                                                            const d = new Date();
+                                                            const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                                            handleUpdatePostSchedule(post.id, { status: 'active', startDate: post.startDate || today });
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
+                                                        Publicera
+                                                    </button>
+                                                )
+                                            )}
+                                            <button type="button" onClick={() => setScheduleEditorPostId(null)}
+                                                className="px-2 py-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                                                Stäng
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })

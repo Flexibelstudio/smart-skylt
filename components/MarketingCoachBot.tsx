@@ -692,9 +692,10 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const isVoiceActive = connectionState === 'connected' || connectionState === 'connecting';
   
   const conversationStarters = [
-    { label: "Annonsera ett erbjudande", prompt: "Jag want to advertise an offer." },
-    { label: "Skapa ett 'nyhet'-inlägg", prompt: "Jag want to create a post about a news." },
-    { label: "Ge mig en kreativ idé", prompt: "Give me a creative idea for a post that fits my business." },
+    { label: "Annonsera ett erbjudande", prompt: "Jag vill annonsera ett erbjudande." },
+    { label: "Skapa ett 'nyhet'-inlägg", prompt: "Jag vill skapa ett inlägg om en nyhet." },
+    { label: "Ge mig en kreativ idé", prompt: "Ge mig en kreativ idé på ett inlägg som passar min verksamhet." },
+    { label: "Hur fungerar systemet?", prompt: "Förklara kort hur jag kommer igång: hur lägger jag upp ett inlägg och hur ser jag att det visas på skärmen?" },
   ];
 
   /* ------------------------------ render --------------------------- */

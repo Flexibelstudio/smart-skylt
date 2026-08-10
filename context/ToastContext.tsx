@@ -9,7 +9,7 @@ interface ToastAction {
 interface Toast {
     id: number;
     message: string;
-    type: 'success' | 'error' | 'info';
+    type: 'success' | 'error' | 'info' | 'warning';
     duration?: number;
     action?: ToastAction;
 }
@@ -111,12 +111,14 @@ const ToastMessage: React.FC<{ toast: Toast; onDismiss: (id: number) => void }> 
         success: 'bg-green-500 border-green-600',
         error: 'bg-red-500 border-red-600',
         info: 'bg-blue-500 border-blue-600',
+        warning: 'bg-amber-500 border-amber-600',
     };
     
     const icon = {
         success: '✔️',
         error: '❌',
         info: 'ℹ️',
+        warning: '⚠️',
     }
 
     const animationClass = isExiting

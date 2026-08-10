@@ -1,6 +1,6 @@
 {
-  "name": "SmartSkylt",
-  "description": "",
+  "name": "Remix: SmartSkylt",
+  "description": "20 juli 2026",
   "requestFramePermissions": [
     "microphone"
   ],

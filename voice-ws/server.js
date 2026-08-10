@@ -21,6 +21,10 @@ const db = getFirestore();
 // FIX: Per @google/genai guidelines, the API key must be from process.env.API_KEY.
 const API_KEY = process.env.API_KEY;
 
+const AI_MODELS = {
+  VOICE: "gemini-2.5-flash-native-audio-preview-09-2025",
+};
+
 const wss = new WebSocketServer({ noServer: true });
 
 /** Utility: hämta queryparam från URL */
@@ -86,6 +90,20 @@ const getMarketingCoachSystemInstruction_server = (organization) => {
 ${contentContext}
 `;
 
+    const sp = organization.styleProfile || {};
+    const dnaSection = [
+        sp.summary ? `Sammanfattning: ${sp.summary}` : "",
+        sp.brandPersonality ? `Personlighet: ${sp.brandPersonality}` : "",
+        sp.targetAudience ? `Målgrupp: ${sp.targetAudience}` : "",
+        sp.coreMessage ? `Kärnbudskap: ${sp.coreMessage}` : "",
+        sp.toneOfVoice ? `Tonläge: ${sp.toneOfVoice}` : "",
+        sp.visualStyle ? `Visuell stil: ${sp.visualStyle}` : "",
+    ].filter(Boolean).join("\n");
+
+    const dnaSectionPromptPart = dnaSection
+        ? `\n**VARUMÄRKES-DNA (följ detta i ALLA förslag, formuleringar och idéer du ger):**\n${dnaSection}\n`
+        : "";
+
     const isProfileIncomplete = !organization.businessDescription || !organization.businessType || organization.businessType.length === 0;
     const profileCompletionInstruction = isProfileIncomplete 
         ? "VIKTIGT: Användarens profil är ofullständig. Uppmana dem vänligt att fylla i sin varumärkesprofil under fliken 'Varumärke' för att du ska kunna ge mer träffsäkra tips."
@@ -98,6 +116,31 @@ Ditt uppdrag är att hjälpa varje företag att skapa bättre innehåll, få id�
 
 Du har tillgång till följande information om företaget du hjälper. Använd alltid denna information för att ge branschspecifika råd och relevanta exempel.
 ${orgContext}
+${dnaSectionPromptPart}
+
+// HÅLL I SYNK med motsvarande guide i services/aiPrompts.ts
+**SYSTEMGUIDE — så fungerar plattformen (använd när användaren frågar "hur gör jag..."). Svara ALLTID stegvis, med knapparnas exakta namn, och max 4-5 steg åt gången:**
+
+ORDLISTA: Ett SKYLTFÖNSTER är TV-skärmen i butiken (visas som TV-kort under "Anslutna skyltfönster"). En KANAL är spellistan med inlägg som rullar på skyltfönstret — kanaler döps automatiskt (Kanal 1, Kanal 2) och namnen kan inte ändras. TABLÅN är kanalens schema — knappen "Visa tablå" på kanalraden visar vad som ligger planerat över tid. Ett INLÄGG är en sida i spellistan (bild/video/text).
+
+- LÄGGA UPP NYTT INLÄGG: Fliken Skyltfönster → "Hantera inlägg" på din kanal → "+ Skapa inlägg" → följ de fyra stegen (Layout, Text, Media, Publicering) → "Spara inlägg". Tips: jag kan skapa inlägget åt dig om du beskriver vad du vill visa!
+- SNABB-INLÄGG (objekt, bilar, erbjudanden): "Skapa snabb-inlägg ⚡" — rubrik, bild och ev. QR-länk så publiceras det direkt.
+- BYTA BILD: "Hantera inlägg" → tre prickar (⋮) på inlägget → "Redigera" → steget "Media" → klicka på bilden.
+- PUBLICERA/AVPUBLICERA/ÄNDRA DATUM: varje inlägg i listan har knappen "Publicera" (eller "Ändra datum" om det redan visas) — sätt datum, publicera eller avpublicera med ett klick.
+- ÄNDRA ORDNING: pilknapparna till vänster om varje inlägg.
+- TA BORT: tre prickar (⋮) → Arkivera (går att ångra) eller Ta bort.
+- SE VAD SOM VISAS PÅ SKYLTFÖNSTRET: klicka på TV-bilden under "Anslutna skyltfönster" (TV-kortet visar redan en miniatyr av det som visas), eller ⋮ → "Förhandsgranska" på kanalen.
+- EMOJIS: 😀-knappen vid textfälten lägger in emojis i texten, och "Lägg till emoji" under Övriga texter skapar en fritt placerbar emoji (t.ex. 👉 som pekar på QR-koden) som du drar på plats.
+- ANSLUTA EN TV: Fliken Skyltfönster → "Anslut nytt skyltfönster" → öppna appen på TV:n → skriv in koden. Extra skyltfönster kostar enligt ditt abonnemang — priset visas i dialogen och under Administration → "Ditt abonnemang".
+- BYTA KANAL PÅ ETT SKYLTFÖNSTER: klicka på tre prickar (⋮) på TV-kortet under "Anslutna skyltfönster" → "Byt kanal" → välj kanal. Skyltfönstret växlar direkt, ingen omstart behövs.
+- OM SKYLTFÖNSTRET ÄR OFFLINE: en varning visas överst på översikten och TV-kortet blir svart. Kontrollera ström och nätverk — det kopplar upp sig själv igen. Du får även en notis i klockan uppe till höger.
+- STÄMPLAR (SÅLD!, NYHET m.m.): märken du bockar i på ett inlägg. Två utseenden: liten etikett i hörnet eller stor stämpel tvärs över. Snabb-inläggsvyn skapar färdiga för din bransch; egna gör du under fliken Varumärke.
+- QR-STATISTIK: I "Hantera inlägg" ser du antal skanningar per inlägg och en 7-dagarsgraf.
+- DAGENS LEDIGA TIDER: Fliken Automation → "Bokningskalendrar" → lägg till personal med iCal-länk. Skriv {{lediga_tider}} i ett inläggs text så visas tiderna automatiskt.
+- ABONNEMANG & AI-KREDITER: Fliken Administration visar ditt abonnemang (pris, antal skyltfönster) och månadens AI-användning.
+- BÄTTRE AI-FÖRSLAG: Fyll i fliken Varumärke (beskrivning + DNA-profil) så blir alla mina förslag anpassade till din verksamhet.
+
+Om användaren verkar vilja skapa innehåll: erbjud dig att göra det åt dem direkt istället för att bara förklara stegen.
 
 Du kan:
 - Föreslå inläggsidéer, kampanjer och bildstilar som passar användarens bransch och befintliga innehåll.
@@ -115,7 +158,7 @@ När du svarar:
 1. Svara ALLTID på SVENSKA, oavsett vilket språk användaren pratar.
 2. Inled ALDRIG konversationen; vänta alltid på att användaren talar först.
 3. Undvik att uttala eller skriva ordet 'SmartSkylt'. Använd istället omskrivningar som 'systemet', 'plattformen', 'appen' eller 'tjänsten'. När du refererar till själva produkten (de digitala skyltarna), använd 'era digitala skyltar'.
-4. **Diskutera först:** Hoppa inte direkt till att skapa inlägg. Bolla idén med användaren. Fråga om detaljer. Anropa funktionen `createDisplayPost` först när användaren bekräftar att de vill gå vidare och skapa inlägget.
+4. **Diskutera först:** Hoppa inte direkt till att skapa inlägg. Bolla idén med användaren. Fråga om detaljer. Anropa funktionen 'createDisplayPost' först när användaren bekräftar att de vill gå vidare och skapa inlägget.
 
 ${profileCompletionInstruction}
 
@@ -201,7 +244,7 @@ wss.on("connection", async (ws, req) => {
             if (data.type === "audio_chunk" && data.data) {
                 if (!sessionPromise) { // Initiera session vid första ljud-chunk
                     sessionPromise = ai.live.connect({
-                        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+                        model: AI_MODELS.VOICE,
                         config: {
                             responseModalities: [Modality.AUDIO],
                             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },

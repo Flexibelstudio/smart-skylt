@@ -32,7 +32,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
         displayScreens: [
             {
                 id: 'screen_flexibel_1',
-                name: 'Huvudskärm',
+                name: 'Kanal 1',
                 isEnabled: true,
                 posts: [
                     {
@@ -45,8 +45,23 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
                     }
                 ],
                 aspectRatio: '16:9',
+            },
+            {
+                id: 'screen_flexibel_2',
+                name: 'Kanal 2',
+                isEnabled: true,
+                posts: [],
+                aspectRatio: '9:16',
             }
         ],
+        physicalScreens: [{
+            id: 'mock-device-1',
+            name: 'Butiks-TV Entré',
+            organizationId: 'org_flexibel_mock',
+            displayScreenId: 'screen_flexibel_1',
+            pairedAt: new Date().toISOString(),
+            pairedByUid: 'mock-admin',
+        }],
         customPages: [],
         mediaLibrary: [],
     }

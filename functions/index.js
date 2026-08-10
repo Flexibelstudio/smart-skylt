@@ -1,9 +1,9 @@
 // functions/index.js
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, HttpsError, onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentDeleted, onDocumentUpdated } from "firebase-functions/v2/firestore";
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { randomUUID } from "crypto";
+import ical from "node-ical";
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
@@ -15,11 +15,20 @@ const db = getFirestore(app);
 db.settings({ ignoreUndefinedProperties: true });
 
 const storage = getStorage(app);
-const auth = getAuth(app);
 
 /* ------------------------------------------------------------------ */
 /*                            Hjälpfunktioner                          */
 /* ------------------------------------------------------------------ */
+
+/* Klienten lagrar skärmens inlägg som JSON-sträng i _serialized_posts
+   (se services/firebaseService.ts). Läs ALLTID inlägg via denna helper. */
+const parseScreenPosts = (screenData) => {
+  if (!screenData) return [];
+  if (typeof screenData._serialized_posts === "string") {
+    try { return JSON.parse(screenData._serialized_posts) || []; } catch (e) { return []; }
+  }
+  return Array.isArray(screenData.posts) ? screenData.posts : [];
+};
 
 function toDateSafe(value) {
   if (!value) return null;
@@ -85,9 +94,78 @@ function normalizeTimeZone(tz) {
   }
 }
 
-function dbg(aid, msg, extra) {
-  // console.log(`[Automation:${aid}] ${msg}`, extra ? JSON.stringify(extra) : "");
-}
+// Central förteckning över AI-modeller. Byt modell HÄR — aldrig i anropen.
+const AI_MODELS = {
+  TEXT: "gemini-3.5-flash",
+  TEXT_LIGHT: "gemini-2.5-flash",
+  IMAGE: "gemini-2.5-flash-image",
+  IMAGE_GENERATION: "imagen-4.0-generate-001",
+  VIDEO: "veo-3.1-fast-generate-preview",
+};
+
+// Kreditvikter per åtgärd (text ≈ ören, bild/video är de dyra)
+const AI_CREDIT_COSTS = {
+  generateContent: 1,
+  formatPageWithAI: 1,
+  generatePageContentFromPrompt: 1,
+  generateDisplayPostContent: 1,
+  refineDisplayPostContent: 1,
+  generateHeadlineSuggestions: 1,
+  generateBodySuggestions: 1,
+  analyzeBrandFromWebsite: 5,
+  generateImages: 10,
+  generateDisplayPostImage: 10,
+  editDisplayPostImage: 10,
+  initiateVideoGeneration: 100,
+  automationSuggestionText: 1,
+  automationSuggestionImage: 10,
+};
+
+// Best-effort-mätning: får aldrig kasta, aldrig blockera
+const trackAiUsage = (orgId, action, credits) => {
+  if (!orgId || !credits) return;
+  const month = new Date().toISOString().slice(0, 7); // YYYY-MM
+  db.collection("aiUsage").doc(`${orgId}_${month}`).set({
+    orgId,
+    month,
+    totalCredits: FieldValue.increment(credits),
+    counts: { [action]: FieldValue.increment(1) },
+    updatedAt: new Date().toISOString(),
+  }, { merge: true }).catch((e) => console.warn("aiUsage-mätning misslyckades:", e.message));
+};
+
+// Kontrollera månadens kreditförbrukning mot organisationens tak.
+// Fel i kontrollen får ALDRIG blockera användaren (fail-open).
+const checkAiCreditLimit = async (orgId) => {
+  if (!orgId || String(orgId).startsWith("uid:")) return; // okänd org → mät men spärra inte
+  try {
+    const month = new Date().toISOString().slice(0, 7);
+    const [usageSnap, orgSnap] = await Promise.all([
+      db.collection("aiUsage").doc(`${orgId}_${month}`).get(),
+      db.collection("organizations").doc(orgId).get(),
+    ]);
+    const used = usageSnap.data()?.totalCredits || 0;
+    const limit = orgSnap.data()?.aiMonthlyCreditLimit || 4000;
+    if (used >= limit) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Månadens AI-krediter är förbrukade. Text fungerar fortfarande — bild- och videogenerering öppnas igen vid månadsskiftet, eller kontakta oss för utökad kvot."
+      );
+    }
+  } catch (err) {
+    if (err instanceof HttpsError) throw err; // riktig spärr släpps igenom
+    console.warn("Kreditkontroll misslyckades (fail-open):", err.message);
+  }
+};
+
+// Slå upp organisation från inloggad användare (för proxy-anrop utan orgId)
+const resolveOrgIdFromAuth = async (uid) => {
+  if (!uid) return null;
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    return userDoc.data()?.organizationId || null;
+  } catch (e) { return null; }
+};
 
 /* ------------------------------------------------------------------ */
 /*                             Testfunktion                            */
@@ -167,6 +245,62 @@ export const inviteUser = onCall({ cors: true }, async (request) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*                  QR Scan Tracking & Redirect                        */
+/* ------------------------------------------------------------------ */
+
+export const qrRedirect = onRequest({ region: "us-central1" }, async (req, res) => {
+  try {
+    // URL-format: .../qrRedirect/{orgId}/{screenId}/{postId}
+    const [orgId, screenId, postId] = req.path.split("/").filter(Boolean);
+    const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+    if (!ID_RE.test(orgId || "") || !ID_RE.test(screenId || "") || !ID_RE.test(postId || "")) {
+      res.status(400).send("Ogiltig länk.");
+      return;
+    }
+
+    const screenDoc = await db
+      .collection("organizations").doc(orgId)
+      .collection("displayScreens").doc(screenId).get();
+    let screenData = screenDoc.exists ? screenDoc.data() : null;
+
+    // Fallback: äldre organisationer har skärmarna som array på org-dokumentet
+    if (!screenData) {
+      const orgSnap = await db.collection("organizations").doc(orgId).get();
+      const legacyScreens = orgSnap.data()?.displayScreens;
+      if (Array.isArray(legacyScreens)) {
+        screenData = legacyScreens.find((s) => s.id === screenId) || null;
+      }
+    }
+
+    const post = parseScreenPosts(screenData).find((p) => p.id === postId);
+    const target = post?.qrCodeUrl;
+
+    // Endast redirect till URL:er som faktiskt ligger på inlägget (ingen open redirect)
+    if (!target || !/^https?:\/\//i.test(target)) {
+      res.status(404).send("Länken är inte längre aktiv.");
+      return;
+    }
+
+    // Logga skanningen (fel här får inte stoppa redirecten)
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await db.collection("qrScanCounts").doc(postId).set({
+        orgId,
+        screenId,
+        count: FieldValue.increment(1),
+        daily: { [today]: FieldValue.increment(1) },
+        lastScanAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch (e) { /* ignorera loggfel */ }
+
+    res.set("Cache-Control", "no-store");
+    res.redirect(302, target);
+  } catch (e) {
+    res.status(500).send("Något gick fel.");
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*                  Video Generation                                   */
 /* ------------------------------------------------------------------ */
 
@@ -179,14 +313,16 @@ export const initiateVideoGeneration = onCall(
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "You must be logged in.");
 
-    const { prompt, image } = request.data;
+    const { prompt, image, orgId, screenId, postId } = request.data;
+    if (orgId) await checkAiCreditLimit(orgId);
+    trackAiUsage(orgId || null, "initiateVideoGeneration", AI_CREDIT_COSTS.initiateVideoGeneration);
     const API_KEY = process.env.API_KEY;
 
     if (!API_KEY) throw new HttpsError("internal", "Service configuration error.");
 
     try {
       const ai = new GoogleGenAI({ apiKey: API_KEY });
-      const model = "veo-3.1-fast-generate-preview";
+      const model = AI_MODELS.VIDEO;
       
       let imagePart = undefined;
       if (image && image.imageBytes && image.mimeType) {
@@ -205,6 +341,23 @@ export const initiateVideoGeneration = onCall(
 
       const operationName = operation.name || (operation).operation?.name;
       if (!operationName) throw new Error("No operation name returned from Google AI.");
+
+      if (orgId && postId) {
+        try {
+          await db.collection("organizations").doc(orgId).collection("videoOperations").add({
+            orgId,
+            postId,
+            screenId: screenId || null,
+            prompt: prompt || "",
+            operationName,
+            model,
+            status: "processing",
+            createdAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.warn("Kunde inte skriva videoOperations-dokument:", e);
+        }
+      }
 
       return { success: true, operationName };
 
@@ -271,7 +424,7 @@ export const saveGeneratedVideo = onCall(
             if (!doc.exists) throw new Error("Screen not found");
             
             const postData = doc.data();
-            const posts = postData.posts || [];
+            const posts = parseScreenPosts(postData);
             const idx = posts.findIndex(p => p.id === postId);
             
             if (idx > -1) {
@@ -279,7 +432,7 @@ export const saveGeneratedVideo = onCall(
                 posts[idx].isAiGeneratedVideo = true;
                 delete posts[idx].imageUrl;
                 delete posts[idx].isAiGeneratedImage;
-                t.update(postRef, { posts });
+                t.update(postRef, { _serialized_posts: JSON.stringify(posts), posts: FieldValue.delete() });
             }
 
             const newMediaItem = {
@@ -322,18 +475,18 @@ export const deleteOrganization = onCall({ cors: true }, async (request) => {
     }
     
     const orgRef = db.collection("organizations").doc(organizationId);
-    const batch = db.batch();
+    const refsToDelete = [];
 
     const subcollections = ["displayScreens", "suggestedPosts", "instagramStories", "videoOperations"];
     for (const sub of subcollections) {
         const subcollectionRef = orgRef.collection(sub);
         const snapshot = await subcollectionRef.get();
         if (!snapshot.empty) {
-            snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+            snapshot.docs.forEach((doc) => refsToDelete.push(doc.ref));
         }
     }
     
-    batch.delete(orgRef);
+    refsToDelete.push(orgRef);
 
     const usersQuery = db.collection("users").where("organizationId", "==", organizationId);
     const usersSnapshot = await usersQuery.get();
@@ -341,17 +494,21 @@ export const deleteOrganization = onCall({ cors: true }, async (request) => {
     if (!usersSnapshot.empty) {
         usersSnapshot.forEach((doc) => {
             userIdsToDelete.push(doc.id);
-            batch.delete(doc.ref);
+            refsToDelete.push(doc.ref);
         });
     }
 
     const pairingCodesQuery = db.collection("screenPairingCodes").where("organizationId", "==", organizationId);
     const pairingCodesSnapshot = await pairingCodesQuery.get();
     if (!pairingCodesSnapshot.empty) {
-        pairingCodesSnapshot.forEach((doc) => batch.delete(doc.ref));
+        pairingCodesSnapshot.forEach((doc) => refsToDelete.push(doc.ref));
     }
 
-    await batch.commit();
+    for (let i = 0; i < refsToDelete.length; i += 400) {
+      const batch = db.batch();
+      refsToDelete.slice(i, i + 400).forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
 
     if (userIdsToDelete.length > 0) {
         try {
@@ -388,186 +545,240 @@ async function runAutomationsOnce(orgIdFilter) {
   if (!orgsSnap.length) return;
 
   const perOrg = orgsSnap.map(async (orgDoc) => {
-    const org = orgDoc.data() || {};
     const orgId = orgDoc.id;
-    const orgName = org.brandName || org.name || orgId;
-    const automations = Array.isArray(org.aiAutomations) ? org.aiAutomations : [];
-    if (automations.length === 0) return;
-
-    let displayScreens = [];
     try {
-      const screensSnap = await db.collection("organizations").doc(orgId).collection("displayScreens").get();
-      displayScreens = screensSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    } catch (e) { /* ignore */ }
+      const org = orgDoc.data() || {};
+      const orgName = org.brandName || org.name || orgId;
+      const automations = Array.isArray(org.aiAutomations) ? org.aiAutomations : [];
+      if (automations.length === 0) return;
 
-    // Fallback to array if subcollection empty (old format)
-    if (displayScreens.length === 0 && Array.isArray(org.displayScreens)) {
-       displayScreens = org.displayScreens;
-    }
-
-    let hasChanges = false;
-    const newSuggestions = [];
-    const updatedAutomations = JSON.parse(JSON.stringify(automations));
-
-    for (const automation of updatedAutomations) {
-      if (!automation || automation.isEnabled === false) continue;
-
-      const tz = normalizeTimeZone(automation.timezone);
-      const parsed = parseTimeHM(automation.timeOfDay);
-      if (!parsed) continue;
-
-      const nowParts = getPartsInTz(now, tz);
-      const lastCheckParts = getPartsInTz(lastCheck, tz);
-      if (!nowParts || !lastCheckParts) continue;
-
-      const nowMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
-      const lastCheckMinutes = Number(lastCheckParts.hour) * 60 + Number(lastCheckParts.minute);
-      const scheduledMinutes = parsed.hour * 60 + parsed.minute;
-
-      const dayRolledOver = nowParts.day !== lastCheckParts.day;
-      let timeMatched = false;
-      if (dayRolledOver) {
-        timeMatched = scheduledMinutes >= lastCheckMinutes || scheduledMinutes <= nowMinutes;
-      } else {
-        timeMatched = scheduledMinutes >= lastCheckMinutes && scheduledMinutes <= nowMinutes;
-      }
-      if (!timeMatched) continue;
-
-      // Frequency Checks
-      const weekday = getWeekdayInTzNumber(now, tz);
-      const dayOfMonth = Number(nowParts.day);
-      let frequencyMatched = false;
-      switch (automation.frequency) {
-        case "daily": frequencyMatched = true; break;
-        case "weekly": frequencyMatched = weekday === Number(automation.dayOfWeek); break;
-        case "monthly": frequencyMatched = dayOfMonth === Number(automation.dayOfMonth); break;
-      }
-      if (!frequencyMatched) continue;
-
-      // Already ran today?
-      const lastRun = toDateSafe(automation.lastRunAt);
-      if (lastRun) {
-        const lastRunParts = getPartsInTz(lastRun, tz);
-        const alreadyToday = String(lastRunParts.day) === String(nowParts.day);
-        if (alreadyToday) continue;
-      }
-
+      let displayScreens = [];
       try {
-        // --- Enhanced Prompt Construction based on Preferences ---
-        const preferredLayout = automation.preferredLayout || 'auto';
-        const imageStyle = automation.imageStyle || 'professional photography';
-        
-        let layoutConstraint = "";
-        if (preferredLayout === 'text-only') layoutConstraint = "Force layout to 'text-only'. Do not request an image.";
-        else if (preferredLayout !== 'auto') layoutConstraint = `Force layout to '${preferredLayout}'.`;
-        
-        const styleInstruction = imageStyle ? `Image Style: ${imageStyle}.` : "";
-        let prompt = "";
+        const screensSnap = await db.collection("organizations").doc(orgId).collection("displayScreens").get();
+        displayScreens = screensSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      } catch (e) { /* ignore */ }
 
-        // CHECK IF REMIXING
-        if (automation.remixBasePostId) {
-            let basePost = null;
-            // Search all screens for the post
-            for (const screen of displayScreens) {
-                if (screen.posts) {
-                    basePost = screen.posts.find(p => p.id === automation.remixBasePostId);
-                    if (basePost) break;
-                }
-            }
+      // Fallback to array if subcollection empty (old format)
+      if (displayScreens.length === 0 && Array.isArray(org.displayScreens)) {
+         displayScreens = org.displayScreens;
+      }
 
-            if (basePost) {
-                prompt = `You are an expert creative director for "${orgName}". Branding Color: ${org.primaryColor}.
-                REMIX TASK: Take the following existing post and create a fresh variation of it.
-                Original Headline: "${basePost.headline || ''}"
-                Original Body: "${basePost.body || ''}"
-                Variation Instruction: "${automation.topic || 'Make it fresh and engaging'}"
-                
-                Keep the core message but change the wording and visual angle.
-                ${layoutConstraint}
-                ${styleInstruction}
-                Generate the new post data. Respond ONLY with a JSON object:
-                { "headline": "SWEDISH", "body": "SWEDISH", "imagePrompt": "ENGLISH (NO TEXT, describe the image subject)", "layout": "text-only|image-fullscreen|image-left|image-right", "backgroundColor": "...", "textColor": "..." }`;
-            } else {
-                console.warn(`Automation ${automation.id} failed: Base post ${automation.remixBasePostId} not found.`);
-                continue; // Skip if post missing
-            }
+      let hasChanges = false;
+      const newSuggestions = [];
+      const ranAutomationIds = [];
+      const updatedAutomations = JSON.parse(JSON.stringify(automations));
+
+      for (const automation of updatedAutomations) {
+        if (!automation || automation.isEnabled === false) continue;
+
+        const tz = normalizeTimeZone(automation.timezone);
+        const parsed = parseTimeHM(automation.timeOfDay);
+        if (!parsed) continue;
+
+        const nowParts = getPartsInTz(now, tz);
+        const lastCheckParts = getPartsInTz(lastCheck, tz);
+        if (!nowParts || !lastCheckParts) continue;
+
+        const nowMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
+        const lastCheckMinutes = Number(lastCheckParts.hour) * 60 + Number(lastCheckParts.minute);
+        const scheduledMinutes = parsed.hour * 60 + parsed.minute;
+
+        const dayRolledOver = nowParts.day !== lastCheckParts.day;
+        let timeMatched = false;
+        if (dayRolledOver) {
+          timeMatched = scheduledMinutes >= lastCheckMinutes || scheduledMinutes <= nowMinutes;
         } else {
-            // STANDARD CREATION
-            prompt = `You are an expert creative director for "${orgName}". Automation Topic: "${automation.topic}". Branding Color: ${org.primaryColor}.
-            ${layoutConstraint}
-            ${styleInstruction}
-            Generate a complete post. Respond ONLY with a JSON object:
-            { "headline": "SWEDISH", "body": "SWEDISH", "imagePrompt": "ENGLISH (NO TEXT, describe the image subject)", "layout": "text-only|image-fullscreen|image-left|image-right", "backgroundColor": "...", "textColor": "..." }`;
+          timeMatched = scheduledMinutes >= lastCheckMinutes && scheduledMinutes <= nowMinutes;
+        }
+        if (!timeMatched) continue;
+
+        // Frequency Checks
+        const weekday = getWeekdayInTzNumber(now, tz);
+        const dayOfMonth = Number(nowParts.day);
+        let frequencyMatched = false;
+        switch (automation.frequency) {
+          case "daily": frequencyMatched = true; break;
+          case "weekly": frequencyMatched = weekday === Number(automation.dayOfWeek); break;
+          case "monthly": frequencyMatched = dayOfMonth === Number(automation.dayOfMonth); break;
+        }
+        if (!frequencyMatched) continue;
+
+        // Already ran today?
+        const lastRun = toDateSafe(automation.lastRunAt);
+        if (lastRun) {
+          const lastRunParts = getPartsInTz(lastRun, tz);
+          const alreadyToday = !!lastRunParts &&
+            String(lastRunParts.year) === String(nowParts.year) &&
+            String(lastRunParts.month) === String(nowParts.month) &&
+            String(lastRunParts.day) === String(nowParts.day);
+          if (alreadyToday) continue;
         }
 
-        const textGen = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-        });
+        try {
+          // --- Enhanced Prompt Construction based on Preferences ---
+          const preferredLayout = automation.preferredLayout || 'auto';
+          const imageStyle = automation.imageStyle || 'professional photography';
+          
+          let layoutConstraint = "";
+          if (preferredLayout === 'text-only') layoutConstraint = "Force layout to 'text-only'. Do not request an image.";
+          else if (preferredLayout !== 'auto') layoutConstraint = `Force layout to '${preferredLayout}'.`;
+          
+          const styleInstruction = imageStyle ? `Image Style: ${imageStyle}.` : "";
 
-        let jsonString = String((textGen && textGen.text) || "").trim().replace(/^```json/, "").replace(/```$/, "");
-        const postDetails = JSON.parse(jsonString);
+          const brandContext = [
+              org.businessDescription ? `About the business: ${org.businessDescription}` : "",
+              Array.isArray(org.businessType) && org.businessType.length ? `Industry: ${org.businessType.join(", ")}` : "",
+          ].filter(Boolean).join("\n");
 
-        let targetScreenIds = automation.targetScreenIds || [];
-        if (!targetScreenIds.length) targetScreenIds = displayScreens.map(s => s.id);
+          const sp = org.styleProfile || {};
+          const dnaContext = [
+              sp.summary ? `Brand DNA summary: ${sp.summary}` : "",
+              sp.brandPersonality ? `Brand personality: ${sp.brandPersonality}` : "",
+              sp.targetAudience ? `Target audience: ${sp.targetAudience}` : "",
+              sp.coreMessage ? `Core message: ${sp.coreMessage}` : "",
+              sp.toneOfVoice ? `Tone of voice (all copy MUST follow this): ${sp.toneOfVoice}` : "",
+          ].filter(Boolean).join("\n");
 
-        for (const screenId of targetScreenIds) {
-          const screen = displayScreens.find((s) => s.id === screenId);
-          if (!screen) continue;
+          const fullContext = [brandContext, dnaContext].filter(Boolean).join("\n");
+          const brandContextPromptPart = fullContext 
+              ? `\nUse this brand context and brand DNA to make the content specific, credible and on-brand:\n${fullContext}\n`
+              : "";
 
-          let imageUrl;
-          // Generate image if layout is not text-only AND prompt returned imagePrompt
-          if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
-            try {
-              // Append the style to the image prompt for consistency
-              const fullImagePrompt = `${postDetails.imagePrompt}. Style: ${imageStyle}.`;
-              
-              const img = await ai.models.generateImages({
-                model: "imagen-4.0-generate-001",
-                prompt: fullImagePrompt,
-                config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: screen.aspectRatio },
-              });
-              if (img.generatedImages) imageUrl = `data:image/jpeg;base64,${img.generatedImages[0].image.imageBytes}`;
-            } catch (imgErr) { /* ignore */ }
+          let prompt = "";
+
+          // CHECK IF REMIXING
+          if (automation.remixBasePostId) {
+              let basePost = null;
+              // Search all screens for the post
+              for (const screen of displayScreens) {
+                  basePost = parseScreenPosts(screen).find(p => p.id === automation.remixBasePostId);
+                  if (basePost) break;
+              }
+
+              if (basePost) {
+                  prompt = `You are an expert creative director for "${orgName}". Branding Color: ${org.primaryColor}.${brandContextPromptPart}
+                  REMIX TASK: Take the following existing post and create a fresh variation of it.
+                  Original Headline: "${basePost.headline || ''}"
+                  Original Body: "${basePost.body || ''}"
+                  Variation Instruction: "${automation.topic || 'Make it fresh and engaging'}"
+                  
+                  Keep the core message but change the wording and visual angle.
+                  ${layoutConstraint}
+                  ${styleInstruction}
+                  Generate the new post data. Respond ONLY with a JSON object:
+                  { "headline": "SWEDISH", "body": "SWEDISH", "imagePrompt": "ENGLISH (NO TEXT, describe the image subject)", "layout": "text-only|image-fullscreen|image-left|image-right", "backgroundColor": "...", "textColor": "..." }`;
+              } else {
+                  console.warn(`Automation ${automation.id} failed: Base post ${automation.remixBasePostId} not found.`);
+                  continue; // Skip if post missing
+              }
+          } else {
+              // STANDARD CREATION
+              prompt = `You are an expert creative director for "${orgName}". Automation Topic: "${automation.topic}". Branding Color: ${org.primaryColor}.${brandContextPromptPart}
+              ${layoutConstraint}
+              ${styleInstruction}
+              Generate a complete post. Respond ONLY with a JSON object:
+              { "headline": "SWEDISH", "body": "SWEDISH", "imagePrompt": "ENGLISH (NO TEXT, describe the image subject)", "layout": "text-only|image-fullscreen|image-left|image-right", "backgroundColor": "...", "textColor": "..." }`;
           }
 
-          const newPostData = {
-            internalTitle: `AI: ${postDetails.headline || "Förslag"}`,
-            headline: postDetails.headline,
-            body: postDetails.body,
-            layout: postDetails.layout,
-            backgroundColor: postDetails.backgroundColor,
-            textColor: postDetails.textColor,
-            imageUrl,
-            isAiGeneratedImage: !!imageUrl,
-            durationSeconds: automation.durationSeconds || Number(postDetails.durationSeconds) || 15,
-          };
-
-          newSuggestions.push({
-            id: `sugg-${Date.now()}-${Math.random()}`,
-            automationId: automation.id,
-            targetScreenId: screenId,
-            status: "pending",
-            postData: newPostData,
+          const textGen = await ai.models.generateContent({
+            model: AI_MODELS.TEXT,
+            contents: prompt,
           });
+
+          let jsonString = String((textGen && textGen.text) || "").trim().replace(/^```json/, "").replace(/```$/, "");
+          const postDetails = JSON.parse(jsonString);
+          trackAiUsage(orgId, "automationSuggestionText", AI_CREDIT_COSTS.automationSuggestionText);
+
+          let targetScreenIds = automation.targetScreenIds || [];
+          if (!targetScreenIds.length) targetScreenIds = displayScreens.map(s => s.id);
+
+          for (const screenId of targetScreenIds) {
+            const screen = displayScreens.find((s) => s.id === screenId);
+            if (!screen) continue;
+
+            let imageUrl;
+            // Generate image if layout is not text-only AND prompt returned imagePrompt
+            if (postDetails.layout !== "text-only" && postDetails.imagePrompt) {
+              try {
+                // Append the style to the image prompt for consistency
+                const fullImagePrompt = `${postDetails.imagePrompt}. Style: ${imageStyle}.${sp.visualStyle ? ` Visual brand style: ${sp.visualStyle}.` : ""}`;
+                
+                const img = await ai.models.generateImages({
+                  model: AI_MODELS.IMAGE_GENERATION,
+                  prompt: fullImagePrompt,
+                  config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: screen.aspectRatio },
+                });
+                if (img.generatedImages) {
+                  const imageBytes = img.generatedImages[0].image.imageBytes;
+                  const bucket = storage.bucket();
+                  const fileName = `organizations/${orgId}/ai-automation-assets/${Date.now()}-${Math.round(Math.random() * 1e6)}.jpg`;
+                  const file = bucket.file(fileName);
+                  const token = randomUUID();
+                  await file.save(Buffer.from(imageBytes, "base64"), {
+                      metadata: {
+                          contentType: "image/jpeg",
+                          metadata: { firebaseStorageDownloadTokens: token }
+                      }
+                  });
+                  imageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
+                  trackAiUsage(orgId, "automationSuggestionImage", AI_CREDIT_COSTS.automationSuggestionImage);
+                }
+              } catch (imgErr) { /* ignore */ }
+            }
+
+            const newPostData = {
+              internalTitle: `AI: ${postDetails.headline || "Förslag"}`,
+              headline: postDetails.headline,
+              body: postDetails.body,
+              layout: postDetails.layout,
+              backgroundColor: postDetails.backgroundColor,
+              textColor: postDetails.textColor,
+              imageUrl,
+              isAiGeneratedImage: !!imageUrl,
+              durationSeconds: automation.durationSeconds || Number(postDetails.durationSeconds) || 15,
+            };
+
+            newSuggestions.push({
+              id: `sugg-${Date.now()}-${Math.random()}`,
+              automationId: automation.id,
+              targetScreenId: screenId,
+              status: "pending",
+              postData: newPostData,
+            });
+          }
+
+          automation.lastRunAt = now.toISOString();
+          ranAutomationIds.push(automation.id);
+          hasChanges = true;
+        } catch (err) {
+          console.error(`Automation error for ${orgId}:`, err);
         }
-
-        automation.lastRunAt = now.toISOString();
-        hasChanges = true;
-      } catch (err) {
-        console.error(`Automation error for ${orgId}:`, err);
       }
-    }
 
-    if (hasChanges) {
-      const orgRef = db.collection("organizations").doc(orgId);
-      const batch = db.batch();
-      for (const sugg of newSuggestions) {
-        const suggRef = orgRef.collection("suggestedPosts").doc(sugg.id);
-        batch.set(suggRef, { ...sugg, createdAt: FieldValue.serverTimestamp() });
+      if (hasChanges) {
+        const orgRef = db.collection("organizations").doc(orgId);
+
+        // lastRunAt sätts FÖRST: om förslagsskrivningen sedan felar förloras
+        // körningen (hellre än att dubbletter skapas var 15:e minut).
+        // lastRunAt: transaktion mot färsk data så att användarens samtidiga ändringar inte skrivs över
+        const ranIds = new Set(ranAutomationIds);
+        await db.runTransaction(async (t) => {
+          const snap = await t.get(orgRef);
+          const fresh = Array.isArray(snap.data()?.aiAutomations) ? snap.data().aiAutomations : [];
+          const merged = fresh.map((a) => ranIds.has(a.id) ? { ...a, lastRunAt: now.toISOString() } : a);
+          t.update(orgRef, { aiAutomations: merged });
+        });
+
+        // Nya förslagsdokument: vanlig batch (nya dokument, ingen konfliktrisk)
+        const batch = db.batch();
+        for (const sugg of newSuggestions) {
+          const suggRef = orgRef.collection("suggestedPosts").doc(sugg.id);
+          batch.set(suggRef, { ...sugg, createdAt: new Date().toISOString() });
+        }
+        await batch.commit();
       }
-      batch.update(orgRef, { aiAutomations: updatedAutomations });
-      await batch.commit();
+    } catch (err) {
+      console.error(`Automation för org ${orgId} misslyckades:`, err);
     }
   });
 
@@ -584,6 +795,230 @@ export const runAiAutomations = onSchedule(
   },
   async () => {
     try { await runAutomationsOnce(); } catch (e) { console.error(e); }
+  }
+);
+
+/* ------------------------------------------------------------------ */
+/*                  Screen Monitoring: Offline Alerts                  */
+/* ------------------------------------------------------------------ */
+
+export const checkScreenHeartbeats = onSchedule(
+  { schedule: "every 15 minutes", region: "us-central1", timeoutSeconds: 120 },
+  async () => {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000); // 10 min utan puls = offline
+
+    // Endast sessioner som fortfarande tros vara online — så larmet skickas EN gång per avbrott
+    const snap = await db.collection("screenSessions")
+      .where("status", "==", "online")
+      .where("lastHeartbeat", "<", cutoff)
+      .get();
+
+    if (snap.empty) return;
+
+    for (const doc of snap.docs) {
+      const session = doc.data();
+      const deviceId = doc.id;
+      const orgId = session.organizationId;
+      if (!orgId) continue;
+
+      try {
+        // 1. Slå upp skärmens namn
+        const orgSnap = await db.collection("organizations").doc(orgId).get();
+        const org = orgSnap.data() || {};
+        const physicalScreen = (org.physicalScreens || []).find((s) => s.id === deviceId);
+        const screenName = physicalScreen?.name || "Ett skyltfönster";
+
+        // 2. Notifiera organisationens ADMINS via befintliga notissystemet
+        const adminsSnap = await db.collection("users").where("organizationId", "==", orgId).get();
+        const adminDocs = adminsSnap.docs.filter((d) => String(d.data().role || "").toLowerCase().includes("admin"));
+
+        const lastSeen = session.lastHeartbeat?.toDate
+          ? session.lastHeartbeat.toDate().toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Stockholm" })
+          : "okänd tid";
+
+        // Chunka i grupper om 400 (Firestores batchtak är 500 operationer)
+        for (let i = 0; i < adminDocs.length; i += 400) {
+          const batch = db.batch();
+          adminDocs.slice(i, i + 400).forEach((adminDoc) => {
+            const notifRef = db.collection("users").doc(adminDoc.id).collection("notifications").doc();
+            batch.set(notifRef, {
+              type: "warning",
+              title: "Skyltfönster offline",
+              message: `${screenName} har slutat rapportera (senast sedd ${lastSeen}). Kontrollera att TV:n har ström och nätverk.`,
+              createdAt: new Date().toISOString(),
+              isRead: false,
+              relatedScreenId: deviceId,
+            });
+          });
+          await batch.commit();
+        }
+
+        // 3. Flippa status SIST — nu är larmet levererat. (Om notiserna felar ovan
+        // förblir status "online" och larmet försöks igen nästa körning.)
+        await doc.ref.update({ status: "offline", offlineDetectedAt: FieldValue.serverTimestamp() });
+      } catch (err) {
+        console.error(`Offline-larm misslyckades för ${deviceId}:`, err);
+      }
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ */
+/*        Booking Calendar: dagens lediga tider från iCal              */
+/* ------------------------------------------------------------------ */
+
+const BOOKING_TZ = "Europe/Stockholm";
+
+// Nyckelordningsoberoende jämförelse (Firestore sorterar map-nycklar)
+const stableStringify = (v) => {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  if (v && typeof v === "object") {
+    return `{${Object.keys(v).sort().map((k) => `${k}:${stableStringify(v[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
+};
+
+const toLocalParts = (d) => {
+  const date = d.toLocaleDateString("sv-SE", { timeZone: BOOKING_TZ });
+  const [h, m] = d.toLocaleTimeString("sv-SE", { timeZone: BOOKING_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).split(":").map(Number);
+  return { date, minutes: h * 60 + m };
+};
+
+const minutesToHHMM = (t) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+
+export const syncBookingCalendars = onSchedule(
+  { schedule: "every 15 minutes", region: "us-central1", timeoutSeconds: 300, memory: "512MiB" },
+  async () => {
+    const orgsSnap = await db.collection("organizations").get();
+    const now = new Date();
+    const { date: todayStr, minutes: nowMinutes } = toLocalParts(now);
+    const weekday = new Date(now.toLocaleString("en-US", { timeZone: BOOKING_TZ })).getDay(); // 0 = söndag
+
+    for (const orgDoc of orgsSnap.docs) {
+      const orgData = orgDoc.data() || {};
+      const bookingCalendars = (orgData.bookingCalendars || []).filter((e) => e && e.enabled && e.icsUrl);
+      if (bookingCalendars.length === 0) {
+        // Städa bort inaktuell data om kalendrarna tagits bort/inaktiverats
+        if (orgData.todaysAvailableSlots) {
+          await orgDoc.ref.update({ todaysAvailableSlots: FieldValue.delete() })
+            .catch((err) => console.error(`Kunde inte städa slots för org ${orgDoc.id}:`, err));
+        }
+        continue;
+      }
+
+      const byCalendar = {};
+
+      for (const entry of bookingCalendars) {
+        if (!entry.enabled || !entry.icsUrl) continue;
+
+        try {
+          const events = await ical.async.fromURL(entry.icsUrl, { timeout: 15000 });
+
+          // INTEGRITET: vi läser ENDAST tidsblock. Titlar, beskrivningar och deltagare
+          // (kan innehålla kundnamn) får aldrig läsas, loggas eller sparas.
+          const busy = [];
+          // Brett fönster ±36h för rrule-expansion; exakt dagfiltrering görs sedan
+          // per förekomst i svensk tid (toLocalParts), vilket löser tidszonsproblemet.
+          const windowStart = new Date(now.getTime() - 36 * 3600000);
+          const windowEnd = new Date(now.getTime() + 36 * 3600000);
+
+          for (const key of Object.keys(events)) {
+            const ev = events[key];
+            if (ev.type !== "VEVENT" || !ev.start) continue;
+
+            const occurrences = [];
+            if (ev.rrule) {
+              const durationMs = (ev.end?.getTime() || ev.start.getTime()) - ev.start.getTime();
+              ev.rrule.between(windowStart, windowEnd, true).forEach((occStart) => {
+                // EXDATE: hoppa över inställda förekomster
+                if (ev.exdate && Object.values(ev.exdate).some((d) => d?.getTime && Math.abs(d.getTime() - occStart.getTime()) < 60000)) return;
+                // Förekomster med override (RECURRENCE-ID) ersätts av sina nya tider nedan
+                if (ev.recurrences && Object.values(ev.recurrences).some((r) => r?.recurrenceid?.getTime && Math.abs(r.recurrenceid.getTime() - occStart.getTime()) < 60000)) return;
+                occurrences.push({ start: occStart, end: new Date(occStart.getTime() + durationMs) });
+              });
+              // Lägg till flyttade förekomster med sina NYA tider
+              if (ev.recurrences) {
+                for (const rec of Object.values(ev.recurrences)) {
+                  if (rec && rec.start) occurrences.push({ start: rec.start, end: rec.end || rec.start });
+                }
+              }
+            } else {
+              occurrences.push({ start: ev.start, end: ev.end || ev.start });
+            }
+
+            for (const occ of occurrences) {
+              const s = toLocalParts(occ.start);
+              const e = toLocalParts(occ.end);
+
+              if (ev.datetype === "date") {
+                // Heldagshändelser: DTEND är EXKLUSIVT (RFC 5545) — blockera [startdag, slutdag)
+                const coversToday = s.date <= todayStr && (e.date > s.date ? todayStr < e.date : todayStr === s.date);
+                if (coversToday) busy.push({ start: 0, end: 1440 });
+                continue;
+              }
+
+              if (s.date > todayStr || e.date < todayStr) continue;
+              // Tidsatt händelse som slutar exakt 00:00 idag tillhör gårdagen
+              if (e.date === todayStr && e.minutes === 0 && s.date < todayStr) continue;
+
+              busy.push({
+                start: s.date === todayStr ? s.minutes : 0,
+                end: e.date === todayStr ? e.minutes : 1440,
+              });
+            }
+          }
+
+          // Räkna luckor mot arbetstiderna
+          const day = entry.workingHours?.[weekday];
+          const slotMin = Number(entry.slotMinutes) || 60;
+          const isClosed = !(day?.enabled && day.start && day.end);
+          const slots = [];
+          if (day?.enabled && day.start && day.end) {
+            const [wsH, wsM] = day.start.split(":").map(Number);
+            const [weH, weM] = day.end.split(":").map(Number);
+            const workStart = wsH * 60 + wsM;
+            const workEnd = weH * 60 + weM;
+            for (let t = workStart; t + slotMin <= workEnd; t += slotMin) {
+              if (t < nowMinutes) continue; // visa aldrig passerade tider
+              const isFree = !busy.some((b) => t < b.end && t + slotMin > b.start);
+              if (isFree) slots.push(minutesToHHMM(t));
+            }
+          }
+
+          byCalendar[entry.id] = {
+            staffName: entry.staffName,
+            slots,
+            ...(isClosed ? { closed: true } : {}),
+          };
+        } catch (err) {
+          console.error(`Kalendersynk misslyckades för personal ${entry.staffName} i org ${orgDoc.id}:`, err.message);
+          byCalendar[entry.id] = {
+            staffName: entry.staffName,
+            slots: [],
+            error: "Kunde inte hämta kalendern. Kontrollera att länken är korrekt.",
+          };
+        }
+      }
+
+      const prev = orgData.todaysAvailableSlots;
+      const unchanged = prev &&
+        prev.date === todayStr &&
+        stableStringify(prev.byCalendar || {}) === stableStringify(byCalendar);
+
+      if (!unchanged) {
+        try {
+          await orgDoc.ref.update({
+            todaysAvailableSlots: {
+              date: todayStr,
+              byCalendar,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        } catch (err) {
+          console.error(`Misslyckades att uppdatera bokningsslots för org ${orgDoc.id}:`, err);
+        }
+      }
+    }
   }
 );
 
@@ -610,6 +1045,14 @@ export const gemini = onCall(
         if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
         
         const { action, params } = request.data || {};
+
+        const usageCredits = AI_CREDIT_COSTS[action] || 1;
+        const usageOrgId = (await resolveOrgIdFromAuth(request.auth.uid)) || `uid:${request.auth.uid}`;
+        if (usageCredits >= 10) {
+          await checkAiCreditLimit(usageOrgId);
+        }
+        trackAiUsage(usageOrgId, action, usageCredits);
+
         const apiKey = process.env.API_KEY;
         if (!apiKey) throw new HttpsError("failed-precondition", "API Key missing.");
 
@@ -649,7 +1092,7 @@ export const gemini = onCall(
                 if (!params.url) throw new HttpsError("invalid-argument", "URL required.");
                 
                 const response = await ai.models.generateContent({
-                    model: "gemini-3.5-flash",
+                    model: AI_MODELS.TEXT,
                     contents: `
                         Analyze the brand identity of this website: ${params.url}.
                         Extract the following information:
@@ -663,11 +1106,11 @@ export const gemini = onCall(
                         8. The URL of the main logo image found on the website. Prefer a direct image link (png/jpg/svg).
 
                         Use Google Search to visit the site and analyze its visual style and content.
+                        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
+                        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
                     `,
                     config: {
-                        tools: [{googleSearch: {}}],
-                        responseMimeType: "application/json",
-                        responseSchema: params.schema
+                        tools: [{googleSearch: {}}]
                     }
                 });
                 
@@ -678,7 +1121,7 @@ export const gemini = onCall(
 
             case "formatPageWithAI": {
               const response = await ai.models.generateContent({ 
-                  model: "gemini-2.5-flash", 
+                  model: AI_MODELS.TEXT_LIGHT, 
                   contents: `Format to Markdown: ${params.rawContent}` 
               });
               return (response && response.text) || "";
@@ -686,7 +1129,7 @@ export const gemini = onCall(
 
             case "generatePageContentFromPrompt": {
               const response = await ai.models.generateContent({ 
-                  model: "gemini-3.5-flash", 
+                  model: AI_MODELS.TEXT, 
                   contents: `Write info page in Swedish Markdown based on: ${params.userPrompt}` 
               });
               return (response && response.text) || "";
@@ -694,8 +1137,8 @@ export const gemini = onCall(
 
             case "generateDisplayPostContent": {
               const response = await ai.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: `Copywriter for "${params.organizationName}". Idea: ${params.userPrompt}. JSON: {headline, body}`,
+                model: AI_MODELS.TEXT,
+                contents: `Copywriter for "${params.organizationName}". Idea: ${params.userPrompt}.\n${params.dnaContext || ""}\nJSON: {headline, body}`,
                 config: { responseMimeType: "application/json" },
               });
               return JSON.parse(response.text || "{}");
@@ -703,17 +1146,26 @@ export const gemini = onCall(
 
             case "generateHeadlineSuggestions": {
               const response = await ai.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: `5 headline suggestions for: "${params.body}". Avoid: ${JSON.stringify(params.existingHeadlines)}. JSON: {headlines:[]}`,
+                model: AI_MODELS.TEXT,
+                contents: `5 headline suggestions for: "${params.body}". Avoid: ${JSON.stringify(params.existingHeadlines)}.\n${params.dnaContext || ""}\nJSON: {headlines:[]}`,
                 config: { responseMimeType: "application/json" },
               });
               return JSON.parse(response.text || "{}").headlines || [];
             }
 
+            case "generateBodySuggestions": {
+              const response = await ai.models.generateContent({
+                model: AI_MODELS.TEXT,
+                contents: `3 body copy suggestions for headline: "${params.headline}". Avoid: ${JSON.stringify(params.existingBodies)}.\n${params.dnaContext || ""}\nJSON: {bodies:[]}`,
+                config: { responseMimeType: "application/json" },
+              });
+              return JSON.parse(response.text || "{}").bodies || [];
+            }
+
             case "refineDisplayPostContent": {
               const response = await ai.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: `Refine text. Headline: ${params.content.headline}, Body: ${params.content.body}. Command: ${params.command}. JSON: {headline, body}`,
+                model: AI_MODELS.TEXT,
+                contents: `Refine text. Headline: ${params.content.headline}, Body: ${params.content.body}. Command: ${params.command}.\n${params.dnaContext || ""}\nJSON: {headline, body}`,
                 config: { responseMimeType: "application/json" },
               });
               return JSON.parse(response.text || "{}");
@@ -721,7 +1173,7 @@ export const gemini = onCall(
 
             case "generateDisplayPostImage": {
               const resp = await ai.models.generateImages({
-                model: "imagen-4.0-generate-001",
+                model: AI_MODELS.IMAGE_GENERATION,
                 prompt: params.prompt + " NO TEXT.",
                 config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: params.aspectRatio },
               });
@@ -735,8 +1187,11 @@ export const gemini = onCall(
                     { inlineData: { data: params.base64ImageData, mimeType: params.mimeType } },
                     { text: `Perform the following edit on the image: ${params.prompt}` }
                 ];
+                if (params.logo) {
+                    parts.push({ inlineData: { data: params.logo.base64Data, mimeType: params.logo.mimeType } });
+                }
                 const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash-image",
+                    model: AI_MODELS.IMAGE,
                     contents: { parts },
                     config: { responseModalities: [Modality.IMAGE] },
                 });

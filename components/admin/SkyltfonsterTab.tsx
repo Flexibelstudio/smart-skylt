@@ -11,16 +11,32 @@ import { ConfirmDialog } from '../ConfirmDialog';
 import { InputDialog } from '../DisplayScreenEditor/Modals';
 import { ProactiveRhythmBanner, ProactiveSeasonalBanner } from '../ProactiveRhythmBanner';
 import { CampaignIdeaGenerator } from './CampaignIdeaGenerator';
-import { unpairPhysicalScreen, isOffline } from '../../services/firebaseService';
+import { unpairPhysicalScreen, changeScreenChannel, isOffline, listenToScreenSessions } from '../../services/firebaseService';
 import { getSwedishHolidays } from '../../data/holidays';
 import { generateEventReminderText } from '../../services/geminiService';
-import { SparklesIcon, ChevronDownIcon, PencilIcon, TrashIcon, EyeIcon, EllipsisVerticalIcon, Cog6ToothIcon } from '../icons';
+import { SparklesIcon, ChevronDownIcon, PencilIcon, TrashIcon, EyeIcon, EllipsisVerticalIcon, Cog6ToothIcon, MonitorIcon } from '../icons';
+import { OnboardingChecklist } from '../OnboardingChecklist';
 import { PlanningView } from '../DisplayScreenEditor/PlanningView';
 import { parseToDate } from '../../utils/dateUtils';
 import { ChannelSettingsModal } from './ChannelSettingsModal';
-import { ExpressPublishTab } from './ExpressPublishTab';
+import { DisplayPostRenderer } from '../DisplayPostRenderer';
+import { ScaledPreviewWrapper } from '../DisplayScreenEditor/PreviewPanes';
 
 // --- Local Subcomponents ---
+
+const FormatGlyph: React.FC<{ aspectRatio?: string; className?: string }> = ({ aspectRatio, className }) => {
+    const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
+    return (
+        <span
+            className={`inline-block flex-shrink-0 rounded-[3px] border-2 ${
+                isPortrait
+                    ? 'w-3 h-[18px] border-purple-400 bg-purple-100 dark:border-purple-600 dark:bg-purple-950'
+                    : 'w-[18px] h-3 border-teal-400 bg-teal-100 dark:border-teal-600 dark:bg-teal-950'
+            } ${className || ''}`}
+            title={isPortrait ? 'Stående format' : 'Liggande format'}
+        />
+    );
+};
 
 const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
     const now = new Date();
@@ -39,10 +55,10 @@ const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
             return;
         }
 
-        const start = new Date(p.startDate);
-        const end = p.endDate ? new Date(p.endDate) : null;
+        const start = parseToDate(p.startDate, false);
+        const end = p.endDate ? parseToDate(p.endDate, true) : null;
 
-        if (start > now) {
+        if (start && start > now) {
             scheduledCount++;
         } else if (end && end < now) {
             // Already ended/expired (could also be considered processed, let's group as draft or skip)
@@ -56,8 +72,8 @@ const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
     posts.forEach(post => {
         if (post.status === 'archived' || post.status === 'draft') return;
         if (post.endDate) {
-            const endDate = new Date(post.endDate);
-            if (!latestEndDate || endDate > latestEndDate) {
+            const endDate = parseToDate(post.endDate, true);
+            if (endDate && (!latestEndDate || endDate > latestEndDate)) {
                 latestEndDate = endDate;
             }
         }
@@ -195,15 +211,189 @@ const ProactiveUpcomingEventBannerLocal: React.FC<{
     );
 };
 
+const MyScreenSummaryPanel: React.FC<{
+    physicalScreens: PhysicalScreen[];
+    displayScreens: DisplayScreen[];
+    screenSessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>;
+    statusNow: number;
+}> = ({ physicalScreens, displayScreens, screenSessions, statusNow }) => {
+    if (!physicalScreens || physicalScreens.length === 0) {
+        return null; // FALL 1 — inga fysiska skärmar anslutna
+    }
+
+    const getScreenStatus = (physicalScreenId: string): { state: 'online' | 'offline' | 'unknown'; since?: Date } => {
+        const session = screenSessions[physicalScreenId];
+        if (!session?.lastHeartbeat) return { state: 'unknown' };
+        const ageMs = statusNow - session.lastHeartbeat.getTime();
+        return ageMs < 150000
+            ? { state: 'online' }
+            : { state: 'offline', since: session.lastHeartbeat };
+    };
+
+    const countActivePosts = (screen?: DisplayScreen): number => {
+        if (!screen || !screen.posts) return 0;
+        const now = new Date();
+        let count = 0;
+        screen.posts.forEach(p => {
+            if (p.status === 'archived' || p.status === 'draft' || !p.startDate) return;
+            const start = parseToDate(p.startDate, false);
+            const end = p.endDate ? parseToDate(p.endDate, true) : null;
+            if ((!start || start <= now) && (!end || end >= now)) {
+                count++;
+            }
+        });
+        return count;
+    };
+
+    const screenStatuses = physicalScreens.map(s => ({
+        screen: s,
+        status: getScreenStatus(s.id),
+        channel: displayScreens.find(ds => ds.id === s.displayScreenId)
+    }));
+
+    const offlineItem = screenStatuses.find(item => item.status.state === 'offline');
+    const unknownItem = screenStatuses.find(item => item.status.state === 'unknown');
+    const allOnline = screenStatuses.every(item => item.status.state === 'online');
+
+    if (allOnline) {
+        return null;
+    }
+
+    let mode: 'amber' | 'gray' = 'amber';
+    let headline = '';
+    let description = '';
+
+    if (offlineItem) {
+        mode = 'amber';
+        headline = `⚠️ ${offlineItem.screen.name} verkar vara avstängd`;
+        const timeStr = offlineItem.status.since
+            ? offlineItem.status.since.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+            : '';
+        description = `Senast sedd ${timeStr}. Kontrollera att TV:n har ström och nätverk — den startar oftast igen av sig själv.`;
+    } else if (unknownItem) {
+        mode = 'gray';
+        headline = `Vi har inte hört från ${unknownItem.screen.name} ännu`;
+        description = `Vi har inte hört från ${unknownItem.screen.name} ännu — starta om TV:n så kopplar den upp sig.`;
+    } else {
+        return null;
+    }
+
+    const cardStyles = {
+        amber: 'bg-amber-50/80 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/50 border-l-4 border-l-amber-500',
+        gray: 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 border-l-4 border-l-slate-400'
+    };
+
+    return (
+        <div className={`p-6 rounded-2xl border shadow-sm transition-all relative overflow-hidden ${cardStyles[mode]}`}>
+            <div className="space-y-2">
+                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white leading-tight">
+                    {headline}
+                </h2>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 max-w-2xl leading-relaxed">
+                    {description}
+                </p>
+            </div>
+
+            {physicalScreens.length > 1 && (
+                <div className="mt-5 pt-4 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        Alla skyltfönster
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                        {screenStatuses.map(({ screen, status, channel }) => {
+                            const isOnline = status.state === 'online';
+                            const isOfflineState = status.state === 'offline';
+                            const activeCount = countActivePosts(channel);
+
+                            return (
+                                <div
+                                    key={screen.id}
+                                    className="flex items-center justify-between p-2.5 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70 text-xs font-semibold"
+                                >
+                                    <span className="text-slate-900 dark:text-white truncate font-bold">
+                                        {screen.name}
+                                    </span>
+                                    <span className="flex items-center gap-1.5 shrink-0">
+                                        <span className={`w-2 h-2 rounded-full ${
+                                            isOnline ? 'bg-emerald-500 animate-pulse' :
+                                            isOfflineState ? 'bg-red-500' : 'bg-slate-400'
+                                        }`} />
+                                        <span className={
+                                            isOnline ? 'text-emerald-700 dark:text-emerald-400' :
+                                            isOfflineState ? 'text-red-700 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'
+                                        }>
+                                            {isOnline ? `${activeCount} inlägg` : isOfflineState ? 'Avstängd' : 'Ej kontaktad'}
+                                        </span>
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const getFormatColor = (aspectRatio?: string) =>
+    aspectRatio === '16:9' || aspectRatio === '4:3' ? 'bg-teal-500' : 'bg-purple-500';
+
+const getFirstActivePost = (screen?: DisplayScreen): DisplayPost | undefined => {
+    if (!screen || !screen.posts) return undefined;
+    const now = new Date();
+    for (const p of screen.posts) {
+        if (p.status === 'archived' || p.status === 'draft' || !p.startDate) continue;
+        const start = parseToDate(p.startDate, false);
+        const end = p.endDate ? parseToDate(p.endDate, true) : null;
+        if ((!start || start <= now) && (!end || end >= now)) {
+            return p;
+        }
+    }
+    return undefined;
+};
+
 const PhysicalScreenManager: React.FC<{ 
     organization: Organization;
     allDisplayScreens: DisplayScreen[];
     onUpdateOrganization: (orgId: string, data: Partial<Organization>) => Promise<void>;
-}> = ({ organization, allDisplayScreens, onUpdateOrganization }) => {
+    screenSessions?: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>;
+    statusNow?: number;
+    onPreviewScreen?: (screen: DisplayScreen) => void;
+}> = ({ organization, allDisplayScreens, onUpdateOrganization, screenSessions: propSessions, statusNow: propNow, onPreviewScreen }) => {
     const { showToast } = useToast();
     const [screenToRename, setScreenToRename] = useState<PhysicalScreen | null>(null);
     const [screenToDisconnect, setScreenToDisconnect] = useState<PhysicalScreen | null>(null);
+    const [screenToChangeChannel, setScreenToChangeChannel] = useState<PhysicalScreen | null>(null);
+    const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
     const physicalScreens = organization.physicalScreens || [];
+
+    const [internalSessions, setInternalSessions] = useState<Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>>({});
+    const [internalNow, setInternalNow] = useState(Date.now());
+
+    useEffect(() => {
+        if (propSessions) return;
+        if (!organization?.id) return;
+        const unsubscribe = listenToScreenSessions(organization.id, setInternalSessions);
+        return () => unsubscribe();
+    }, [organization?.id, propSessions]);
+
+    useEffect(() => {
+        if (propNow !== undefined) return;
+        const t = setInterval(() => setInternalNow(Date.now()), 30000);
+        return () => clearInterval(t);
+    }, [propNow]);
+
+    const screenSessions = propSessions ?? internalSessions;
+    const statusNow = propNow ?? internalNow;
+
+    const getScreenStatus = (physicalScreenId: string): { state: 'online' | 'offline' | 'unknown'; since?: Date } => {
+        const session = screenSessions[physicalScreenId];
+        if (!session?.lastHeartbeat) return { state: 'unknown' };
+        const ageMs = statusNow - session.lastHeartbeat.getTime();
+        return ageMs < 150000
+            ? { state: 'online' }
+            : { state: 'offline', since: session.lastHeartbeat };
+    };
     
     const getChannelName = (displayScreenId: string) => {
         return allDisplayScreens.find(s => s.id === displayScreenId)?.name || 'Okänd kanal';
@@ -244,65 +434,172 @@ const PhysicalScreenManager: React.FC<{
         <>
             <div className="space-y-4">
                 {physicalScreens.length > 0 ? (
-                    physicalScreens.map(screen => {
-                        const channel = allDisplayScreens.find(s => s.id === screen.displayScreenId);
-                        const isPortrait = channel?.aspectRatio === '9:16' || channel?.aspectRatio === '3:4';
-                        return (
-                            <div key={screen.id} className="bg-white dark:bg-slate-800/80 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-200 dark:border-slate-700/80 shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden">
-                                {/* Left connection stripe status */}
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
-                                
-                                <div className="flex-grow flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
-                                    {/* Physical status icon */}
-                                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-100 dark:border-emerald-900/30 flex-shrink-0 relative">
-                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                        </svg>
-                                        {/* Pulsing indicator */}
-                                        <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                                        </span>
-                                    </div>
-                                    
-                                    <div className="space-y-1">
-                                        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                                            <p className="font-bold text-lg text-slate-900 dark:text-white leading-tight">{screen.name}</p>
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/30">
-                                                Aktiv
-                                            </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {physicalScreens.map(screen => {
+                            const channel = allDisplayScreens.find(s => s.id === screen.displayScreenId);
+                            const screenStatus = getScreenStatus(screen.id);
+                            const state = screenStatus.state;
+                            const firstActivePost = getFirstActivePost(channel);
+
+                            const aspectClass = channel?.aspectRatio === '9:16' ? 'aspect-[9/16] w-[130px]'
+                                              : channel?.aspectRatio === '3:4' ? 'aspect-[3/4] w-[140px]'
+                                              : channel?.aspectRatio === '4:3' ? 'aspect-[4/3] w-[210px]'
+                                              : 'aspect-[16/9] w-[220px]';
+
+                            return (
+                                <div 
+                                    key={screen.id} 
+                                    className="bg-white dark:bg-slate-800/80 rounded-2xl p-5 border border-slate-200 dark:border-slate-700/80 shadow-sm hover:shadow-md transition-all flex flex-col items-center justify-between text-center relative"
+                                >
+                                    {/* TV Frame Container */}
+                                    <div className="flex flex-col items-center my-2">
+                                        <div 
+                                            onClick={() => {
+                                                if (state === 'online' && channel && onPreviewScreen) {
+                                                    onPreviewScreen(channel);
+                                                }
+                                            }}
+                                            title={state === 'online' && channel ? "Förhandsgranska" : undefined}
+                                            className={`${aspectClass} bg-slate-950 rounded-xl ring-4 ring-slate-900 shadow-lg relative overflow-hidden flex items-center justify-center ${
+                                                state === 'online' && channel ? 'cursor-pointer hover:ring-slate-700 transition-all' : ''
+                                            }`}
+                                        >
+                                            {state === 'online' ? (
+                                                firstActivePost ? (
+                                                    <ScaledPreviewWrapper aspectRatio={channel?.aspectRatio || '16:9'}>
+                                                        <DisplayPostRenderer
+                                                            post={firstActivePost}
+                                                            organization={organization}
+                                                            mode="preview"
+                                                            showTags={false}
+                                                        />
+                                                    </ScaledPreviewWrapper>
+                                                ) : (
+                                                    <div className="p-3 text-slate-500 text-xs font-medium text-center">
+                                                        Inga inlägg visas
+                                                    </div>
+                                                )
+                                            ) : state === 'offline' ? (
+                                                <div className="bg-black w-full h-full p-3 flex flex-col items-center justify-center text-center text-xs font-semibold text-red-500">
+                                                    ⚠️ Offline sedan {screenStatus.since ? screenStatus.since.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                                </div>
+                                            ) : (
+                                                <div className="bg-slate-900 w-full h-full p-3 flex items-center justify-center text-center text-xs font-medium text-slate-400">
+                                                    Väntar på kontakt — starta om TV:n
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="flex-grow flex items-center justify-center sm:justify-start gap-2 text-sm text-slate-500 dark:text-slate-400 mt-1">
-                                            <span>Visar kanal:</span>
-                                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold ${
-                                                isPortrait
-                                                    ? 'bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-900/20'
-                                                    : 'bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/20'
-                                            }`}>
-                                                <span className={`w-1.5 h-1.5 rounded-full ${isPortrait ? 'bg-purple-500' : 'bg-teal-500'}`} />
-                                                "{getChannelName(screen.displayScreenId)}"
+                                        {/* TV Stand foot */}
+                                        <div className="w-10 h-2 bg-slate-700 dark:bg-slate-800 rounded-b-sm shadow-sm" />
+                                    </div>
+
+                                    {/* Info under TV */}
+                                    <div className="w-full mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex flex-col items-center gap-2">
+                                        <div className="w-full flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 truncate">
+                                                <p className="font-bold text-base text-slate-900 dark:text-white truncate">{screen.name}</p>
+                                                {state === 'online' && (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/50 px-2 py-0.5 rounded-full shrink-0">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
+                                                    </span>
+                                                )}
+                                                {state === 'offline' && (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-800/50 px-2 py-0.5 rounded-full shrink-0">
+                                                        Offline
+                                                    </span>
+                                                )}
+                                                {state === 'unknown' && (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full shrink-0">
+                                                        Okänd
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Dropdown Menu ⋮ */}
+                                            <div className="relative shrink-0">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveDropdownId(prev => prev === screen.id ? null : screen.id);
+                                                    }}
+                                                    title="Alternativ"
+                                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 transition-all shadow-sm cursor-pointer"
+                                                >
+                                                    <EllipsisVerticalIcon className="h-4 w-4" />
+                                                </button>
+
+                                                {activeDropdownId === screen.id && (
+                                                    <>
+                                                        <div 
+                                                            className="fixed inset-0 z-40 cursor-default" 
+                                                            onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); }}
+                                                        />
+                                                        <div 
+                                                            onClick={(e) => e.stopPropagation()} 
+                                                            className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl py-1.5 z-50 text-left text-slate-800 dark:text-slate-100"
+                                                        >
+                                                            <button
+                                                                onClick={() => {
+                                                                    setActiveDropdownId(null);
+                                                                    setScreenToChangeChannel(screen);
+                                                                }}
+                                                                className="w-full px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2 transition-colors cursor-pointer"
+                                                            >
+                                                                <MonitorIcon className="h-4 w-4 text-slate-400" />
+                                                                Byt kanal
+                                                            </button>
+                                                            <div className="border-t border-slate-100 dark:border-slate-700 my-1"></div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setActiveDropdownId(null);
+                                                                    setScreenToRename(screen);
+                                                                }}
+                                                                className="w-full px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2 transition-colors cursor-pointer"
+                                                            >
+                                                                <PencilIcon className="h-4 w-4 text-slate-400" />
+                                                                Byt namn
+                                                            </button>
+                                                            <div className="border-t border-slate-100 dark:border-slate-700 my-1"></div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setActiveDropdownId(null);
+                                                                    setScreenToDisconnect(screen);
+                                                                }}
+                                                                className="w-full px-3.5 py-2 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center gap-2 transition-colors cursor-pointer"
+                                                            >
+                                                                <TrashIcon className="h-4 w-4 text-red-500" />
+                                                                Koppla från
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Channel & Format chips */}
+                                        <div className="w-full flex items-center justify-start flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/20 truncate">
+                                                Visar: {getChannelName(screen.displayScreenId)}
                                             </span>
+                                            {channel && (
+                                                channel.aspectRatio === '9:16' || channel.aspectRatio === '3:4' ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-900/40">
+                                                        <FormatGlyph aspectRatio={channel.aspectRatio} className="scale-75 -mx-0.5" />
+                                                        Stående {channel.aspectRatio}
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/40">
+                                                        <FormatGlyph aspectRatio={channel.aspectRatio} className="scale-75 -mx-0.5" />
+                                                        Liggande {channel.aspectRatio || '16:9'}
+                                                    </span>
+                                                )
+                                            )}
                                         </div>
                                     </div>
                                 </div>
-                                
-                                <div className="flex items-center gap-2.5 w-full md:w-auto justify-center md:justify-end">
-                                    <SecondaryButton 
-                                        onClick={() => setScreenToRename(screen)}
-                                        className="border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 font-semibold text-sm transition-all"
-                                    >
-                                        Byt namn
-                                    </SecondaryButton>
-                                    <DestructiveButton 
-                                        onClick={() => setScreenToDisconnect(screen)}
-                                        className="bg-transparent hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/40 hover:border-red-300 font-semibold text-sm transition-all"
-                                    >
-                                        Koppla från
-                                    </DestructiveButton>
-                                </div>
-                            </div>
-                        );
-                    })
+                            );
+                        })}
+                    </div>
                 ) : (
                     <SkylieEmptyState
                         bgOpacityClass="bg-gradient-to-br from-emerald-500/5 to-teal-500/5"
@@ -321,6 +618,88 @@ const PhysicalScreenManager: React.FC<{
                 initialValue={screenToRename?.name || ''}
                 saveText="Spara namn"
             />
+
+            {/* Byt kanal dialog */}
+            {screenToChangeChannel && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                            <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">
+                                Byt kanal på {screenToChangeChannel.name}
+                            </h3>
+                            <button
+                                onClick={() => setScreenToChangeChannel(null)}
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl font-bold p-1"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Välj vilken kanal skyltfönstret ska visa. Ändringen sker direkt på skärmen utan omparning.
+                        </p>
+
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {allDisplayScreens.map(ch => {
+                                const isCurrent = ch.id === screenToChangeChannel.displayScreenId;
+                                return (
+                                    <button
+                                        key={ch.id}
+                                        disabled={isCurrent}
+                                        onClick={async () => {
+                                            try {
+                                                await changeScreenChannel(organization.id, screenToChangeChannel.id, ch.id);
+                                                const updatedScreens = physicalScreens.map(s => 
+                                                    s.id === screenToChangeChannel.id ? { ...s, displayScreenId: ch.id } : s
+                                                );
+                                                await onUpdateOrganization(organization.id, { physicalScreens: updatedScreens });
+                                                showToast({ message: `${screenToChangeChannel.name} visar nu ${ch.name}.`, type: 'success' });
+                                                setScreenToChangeChannel(null);
+                                            } catch (e) {
+                                                showToast({ message: `Kunde inte byta kanal: ${e instanceof Error ? e.message : 'Okänt fel'}`, type: 'error' });
+                                            }
+                                        }}
+                                        className={`w-full p-3.5 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                                            isCurrent
+                                                ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-75 cursor-not-allowed'
+                                                : 'border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:bg-teal-500/5 bg-white dark:bg-slate-900 cursor-pointer'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
+                                                {ch.name}
+                                            </span>
+                                            {isCurrent && (
+                                                <span className="text-xs font-semibold text-slate-400 italic">
+                                                    (visas nu)
+                                                </span>
+                                            )}
+                                        </div>
+                                        
+                                        {ch.aspectRatio === '9:16' || ch.aspectRatio === '3:4' ? (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-900/40 flex-shrink-0">
+                                                <FormatGlyph aspectRatio={ch.aspectRatio} className="scale-75 -mx-0.5" />
+                                                Stående {ch.aspectRatio}
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/40 flex-shrink-0">
+                                                <FormatGlyph aspectRatio={ch.aspectRatio} className="scale-75 -mx-0.5" />
+                                                Liggande {ch.aspectRatio || '16:9'}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex justify-end pt-2">
+                            <SecondaryButton onClick={() => setScreenToChangeChannel(null)}>
+                                Avbryt
+                            </SecondaryButton>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <ConfirmDialog
                 isOpen={!!screenToDisconnect}
@@ -346,13 +725,51 @@ interface SkyltfonsterTabProps {
     onOpenPairingModal: () => void;
     onPreviewScreen: (screen: DisplayScreen) => void;
     onShareScreen: (screen: DisplayScreen) => void;
+    isOnboardingDismissed: boolean;
+    onDismissOnboarding: () => void;
 }
 
 export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
-    const { organization, displayScreens, onUpdateOrganization, onEditDisplayScreen, onOpenPairingModal, onPreviewScreen, onShareScreen } = props;
-    const { addDisplayScreen, updateDisplayScreen, deleteDisplayScreen } = useLocation();
+    const { 
+        organization, 
+        displayScreens, 
+        onUpdateOrganization, 
+        onEditDisplayScreen, 
+        onOpenPairingModal, 
+        onPreviewScreen, 
+        onShareScreen,
+        isOnboardingDismissed,
+        onDismissOnboarding
+    } = props;
+    const { addDisplayScreen, updateDisplayScreen, deleteDisplayScreen, locationLoading, screensReady } = useLocation();
     const [isSaving, setIsSaving] = useState(false);
     const { showToast } = useToast();
+    
+    const hasChannel = (displayScreens || []).length > 0;
+    const hasPost = (displayScreens || []).some(screen => (screen.posts || []).length > 0);
+    const hasConnectedScreen = (organization.physicalScreens || []).length > 0;
+    const allStepsCompleted = hasChannel && hasPost && hasConnectedScreen;
+
+    // Auto-dismiss ENDAST för befintliga kunder: körs en gång, direkt när datat laddats klart.
+    // Om stegen slutförs senare under sessionen visas firandet och användaren stänger själv.
+    const initialOnboardingCheckDone = useRef(false);
+    useEffect(() => {
+        if (locationLoading || !screensReady || initialOnboardingCheckDone.current) return;
+        initialOnboardingCheckDone.current = true;
+        if (allStepsCompleted && !isOnboardingDismissed) {
+            onDismissOnboarding();
+        }
+    }, [locationLoading, screensReady, allStepsCompleted, isOnboardingDismissed, onDismissOnboarding]);
+
+    const handleCreatePost = () => {
+        if (displayScreens && displayScreens.length > 0) {
+            onEditDisplayScreen(displayScreens[0]);
+        }
+    };
+
+    const handleOpenSkylie = () => {
+        window.dispatchEvent(new Event('open-skylie'));
+    };
     
     // Idea Generation States
     const [ideaModalEvent, setIdeaModalEvent] = useState<{ name: string; date: Date } | null>(null);
@@ -362,15 +779,26 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
     const [seasonalContext, setSeasonalContext] = useState('');
 
     // Screen Management States
-    const [renamingScreenId, setRenamingScreenId] = useState<string | null>(null);
-    const [newName, setNewName] = useState('');
     const [screenToDelete, setScreenToDelete] = useState<DisplayScreen | null>(null);
     const [expandedScreenId, setExpandedScreenId] = useState<string | null>(null);
     const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
     const [selectedSettingsScreen, setSelectedSettingsScreen] = useState<DisplayScreen | null>(null);
-    const [expressPublishScreenId, setExpressPublishScreenId] = useState<string | null>(null);
 
     const physicalScreens = organization.physicalScreens || [];
+
+    const [screenSessions, setScreenSessions] = useState<Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>>({});
+    const [statusNow, setStatusNow] = useState(Date.now());
+
+    useEffect(() => {
+        if (!organization?.id) return;
+        const unsubscribe = listenToScreenSessions(organization.id, setScreenSessions);
+        return () => unsubscribe();
+    }, [organization?.id]);
+
+    useEffect(() => {
+        const t = setInterval(() => setStatusNow(Date.now()), 30000);
+        return () => clearInterval(t);
+    }, []);
 
     const handleGenerateIdeasClick = (event: { name: string; date: Date; icon: string; }) => {
         setIdeaModalEvent(event);
@@ -379,8 +807,12 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
     const handleCreateScreenTemplate = async () => {
         setIsSaving(true);
         try {
+            const existingNames = new Set((displayScreens || []).map(s => s.name));
+            let n = 1;
+            while (existingNames.has(`Kanal ${n}`)) n++;
+
             const newScreen: Omit<DisplayScreen, 'id'> = {
-                name: 'Ny Kanal',
+                name: `Kanal ${n}`,
                 isEnabled: true,
                 posts: [],
                 aspectRatio: '9:16',
@@ -407,20 +839,28 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
         }
     };
 
-    const handleSaveName = async (screenId: string) => {
-        if (newName.trim() === '') return;
-        try {
-            await updateDisplayScreen(screenId, { name: newName.trim() });
-            showToast({message: 'Namnet uppdaterades.', type: 'success'});
-        } catch (e) {
-            showToast({message: 'Kunde inte uppdatera namnet.', type: 'error'});
-        } finally {
-            setRenamingScreenId(null);
-        }
-    };
-
     return (
         <div className="space-y-8">
+            {!isOnboardingDismissed && !locationLoading && screensReady && (
+                <OnboardingChecklist
+                    hasChannel={hasChannel}
+                    hasPost={hasPost}
+                    hasConnectedScreen={hasConnectedScreen}
+                    onCreateChannel={handleCreateScreenTemplate}
+                    onCreatePost={handleCreatePost}
+                    onConnectScreen={onOpenPairingModal}
+                    onOpenSkylie={handleOpenSkylie}
+                    onDismiss={onDismissOnboarding}
+                />
+            )}
+
+            <MyScreenSummaryPanel
+                physicalScreens={physicalScreens}
+                displayScreens={displayScreens}
+                screenSessions={screenSessions}
+                statusNow={statusNow}
+            />
+
             <ProactiveUpcomingEventBannerLocal
                 organization={organization}
                 onGenerateIdeas={handleGenerateIdeasClick}
@@ -457,6 +897,7 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                         {(displayScreens || []).length > 0 ? (
                             displayScreens.map(screen => {
                                 const isExpanded = expandedScreenId === screen.id;
+                                const screensShowingChannel = (organization.physicalScreens || []).filter(ps => ps.displayScreenId === screen.id);
                                 return (
                                 <div 
                                     key={screen.id} 
@@ -465,145 +906,137 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                                     }`}
                                 >
                                    {/* Left accent border representing layout orientation/aspect-ratio */}
-                                   <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-colors duration-300 ${screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? 'bg-purple-500' : 'bg-teal-500'}`} />
+                                   <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-colors duration-300 ${getFormatColor(screen.aspectRatio)}`} />
                                    
-                                   {renamingScreenId === screen.id ? (
-                                        <div className="p-5 pl-7 w-full flex-grow flex items-center gap-3">
-                                            <StyledInput
-                                                type="text"
-                                                value={newName}
-                                                onChange={(e) => setNewName(e.target.value)}
-                                                autoFocus
-                                                onKeyDown={(e) => e.key === 'Enter' && handleSaveName(screen.id)}
-                                            />
-                                            <PrimaryButton onClick={() => handleSaveName(screen.id)}>Spara</PrimaryButton>
-                                            <SecondaryButton onClick={() => setRenamingScreenId(null)}>Avbryt</SecondaryButton>
-                                        </div>
-                                   ) : (
-                                        <div className="p-4 pl-6 flex flex-col lg:flex-row justify-between items-center gap-4">
-                                            <div className="flex-grow flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left justify-center sm:justify-start">
-                                                <button 
-                                                    onClick={() => setExpandedScreenId(prev => prev === screen.id ? null : screen.id)}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all select-none ${
-                                                        isExpanded 
-                                                            ? 'bg-slate-100 dark:bg-slate-700/60 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 shadow-inner' 
-                                                            : 'bg-slate-50 dark:bg-slate-800/20 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-slate-700/30'
-                                                    }`}
-                                                    aria-expanded={isExpanded}
-                                                    aria-controls={`planering-${screen.id}`}
-                                                >
-                                                    <ChevronDownIcon className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''}`} />
-                                                    <span>{isExpanded ? 'Dölj planering' : 'Visa planering'}</span>
-                                                </button>
-                                                
-                                                <div className="hidden sm:block w-px h-6 bg-slate-200 dark:bg-slate-700"></div>
-                                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:gap-3">
-                                                    <p className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">{screen.name}</p>
-                                                    
-                                                    {screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-900/40">
-                                                            <span className="w-1.5 h-3 border border-purple-400 dark:border-purple-600 rounded bg-purple-200 dark:bg-purple-950 flex-shrink-0" />
-                                                            Stående {screen.aspectRatio}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/40">
-                                                            <span className="w-3 h-1.5 border border-teal-400 dark:border-teal-600 rounded bg-teal-200 dark:bg-teal-950 flex-shrink-0" />
-                                                            Liggande {screen.aspectRatio}
-                                                        </span>
-                                                    )}
+                                   <div className="p-4 pl-6 flex flex-col lg:flex-row justify-between items-center gap-4">
+                                       <div className="flex-grow flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left justify-center sm:justify-start">
+                                           <button 
+                                               onClick={() => setExpandedScreenId(prev => prev === screen.id ? null : screen.id)}
+                                               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all select-none ${
+                                                   isExpanded 
+                                                       ? 'bg-slate-100 dark:bg-slate-700/60 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 shadow-inner' 
+                                                       : 'bg-slate-50 dark:bg-slate-800/20 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-slate-700/30'
+                                               }`}
+                                               aria-expanded={isExpanded}
+                                               aria-controls={`tabla-${screen.id}`}
+                                           >
+                                               <ChevronDownIcon className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''}`} />
+                                               <span>{isExpanded ? 'Dölj tablå' : 'Visa tablå'}</span>
+                                           </button>
+                                           
+                                           <div className="hidden sm:block w-px h-6 bg-slate-200 dark:bg-slate-700"></div>
+                                           <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:gap-3 flex-wrap">
+                                               <div className="flex items-center gap-2">
+                                                   <FormatGlyph aspectRatio={screen.aspectRatio} />
+                                                   <p className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">{screen.name}</p>
+                                               </div>
+                                               
+                                               {screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? (
+                                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-900/40">
+                                                       <FormatGlyph aspectRatio={screen.aspectRatio} className="scale-75 -mx-0.5" />
+                                                       Stående {screen.aspectRatio}
+                                                   </span>
+                                               ) : (
+                                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/40">
+                                                       <FormatGlyph aspectRatio={screen.aspectRatio} className="scale-75 -mx-0.5" />
+                                                       Liggande {screen.aspectRatio}
+                                                   </span>
+                                               )}
+
+                                               {screensShowingChannel.length > 0 ? (
+                                                   screensShowingChannel.map(ps => (
+                                                       <span key={ps.id} className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-900/40">
+                                                           📺 {ps.name}
+                                                       </span>
+                                                   ))
+                                               ) : (
+                                                   <span className="text-xs text-slate-400">
+                                                       Visas inte på någon skärm ännu
+                                                   </span>
+                                               )}
+                                           </div>
+                                       </div>
+                                       
+                                       <div onClick={e => e.stopPropagation()} className="flex items-center flex-wrap justify-center sm:justify-end gap-3 w-full lg:w-auto">
+                                           <div className="flex-shrink-0 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                                               <ScreenStats screen={screen} />
+                                           </div>
+                                           <div className="flex items-center gap-1.5">
+                                               <PrimaryButton 
+                                                   onClick={() => onEditDisplayScreen(screen)} 
+                                                   disabled={isSaving} 
+                                                   className="bg-teal-600 hover:bg-teal-500 shadow-sm active:scale-95 transition-all text-sm font-semibold !px-4"
+                                               >
+                                                   Hantera inlägg
+                                               </PrimaryButton>
+                                               
+
+                                               <div className="relative">
+                                                   <button 
+                                                       onClick={(e) => { e.stopPropagation(); setActiveDropdownId(prev => prev === screen.id ? null : screen.id); }}
+                                                       disabled={isSaving} 
+                                                       title="Alternativ" 
+                                                       className={`p-2.5 rounded-lg border transition-all shadow-sm ${
+                                                           activeDropdownId === screen.id
+                                                               ? 'bg-slate-105 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-955 dark:text-white'
+                                                               : 'border-slate-200 dark:border-slate-705 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300'
+                                                       }`}
+                                                   >
+                                                       <EllipsisVerticalIcon className="h-5 w-5" />
+                                                   </button>
+            
+                                                   {activeDropdownId === screen.id && (
+                                                       <>
+                                                           {/* Backdrop to close dropdown on click outside */}
+                                                           <div 
+                                                               className="fixed inset-0 z-40 cursor-default" 
+                                                               onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); }}
+                                                           />
+                                                           <div 
+                                                               onClick={(e) => e.stopPropagation()} 
+                                                               className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-701 shadow-xl py-2 z-50 animate-fade-in text-left text-slate-800 dark:text-slate-100"
+                                                           >
+                                                               <button
+                                                                   onClick={() => {
+                                                                       setActiveDropdownId(null);
+                                                                       onPreviewScreen(screen);
+                                                                   }}
+                                                                   className="w-full px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                               >
+                                                                   <EyeIcon className="h-4 w-4 text-slate-400" />
+                                                                   Förhandsgranska
+                                                               </button>
+                                                               <button
+                                                                   onClick={() => {
+                                                                       setActiveDropdownId(null);
+                                                                       setSelectedSettingsScreen(screen);
+                                                                   }}
+                                                                   className="w-full px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors"
+                                                               >
+                                                                   <Cog6ToothIcon className="h-4 w-4 text-slate-400" />
+                                                                   Kanalinställningar
+                                                               </button>
+                                                               <div className="border-t border-slate-100 dark:border-slate-700 my-1"></div>
+                                                               <button
+                                                                   onClick={() => {
+                                                                       setActiveDropdownId(null);
+                                                                       setScreenToDelete(screen);
+                                                                   }}
+                                                                   className="w-full px-4 py-2.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center gap-2.5 transition-colors"
+                                                               >
+                                                                   <TrashIcon className="h-4 w-4 text-red-500" />
+                                                                   Ta bort kanal
+                                                               </button>
+                                                           </div>
+                                                       </>
+                                                   )}
                                                 </div>
-                                            </div>
-                                            
-                                            <div onClick={e => e.stopPropagation()} className="flex items-center flex-wrap justify-center sm:justify-end gap-3 w-full lg:w-auto">
-                                                <div className="flex-shrink-0 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-700/50">
-                                                    <ScreenStats screen={screen} />
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <PrimaryButton 
-                                                        onClick={() => onEditDisplayScreen(screen)} 
-                                                        disabled={isSaving} 
-                                                        className="bg-blue-600 hover:bg-blue-500 shadow-sm active:scale-95 transition-all text-sm font-semibold !px-4"
-                                                    >
-                                                        Hantera inlägg
-                                                    </PrimaryButton>
-                                                    
-                                                    <SecondaryButton
-                                                        onClick={() => onPreviewScreen(screen)}
-                                                        disabled={isSaving}
-                                                        className="!py-2 !px-4 text-sm font-semibold flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-650 hover:bg-slate-200/80 dark:hover:bg-slate-600/80 text-slate-700 dark:text-slate-200 shadow-sm active:scale-95 transition-all"
-                                                    >
-                                                        <EyeIcon className="h-4.5 w-4.5 text-slate-500 dark:text-slate-400" />
-                                                        Se flödet
-                                                    </SecondaryButton>
-                                                    
-                                                    <div className="relative">
-                                                        <button 
-                                                            onClick={(e) => { e.stopPropagation(); setActiveDropdownId(prev => prev === screen.id ? null : screen.id); }}
-                                                            disabled={isSaving} 
-                                                            title="Alternativ" 
-                                                            className={`p-2.5 rounded-lg border transition-all shadow-sm ${
-                                                                activeDropdownId === screen.id
-                                                                    ? 'bg-slate-105 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-955 dark:text-white'
-                                                                    : 'border-slate-200 dark:border-slate-705 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300'
-                                                            }`}
-                                                        >
-                                                            <EllipsisVerticalIcon className="h-5 w-5" />
-                                                        </button>
- 
-                                                        {activeDropdownId === screen.id && (
-                                                            <>
-                                                                {/* Backdrop to close dropdown on click outside */}
-                                                                <div 
-                                                                    className="fixed inset-0 z-40 cursor-default" 
-                                                                    onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); }}
-                                                                />
-                                                                <div 
-                                                                    onClick={(e) => e.stopPropagation()} 
-                                                                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-701 shadow-xl py-2 z-50 animate-fade-in text-left text-slate-800 dark:text-slate-100"
-                                                                >
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setActiveDropdownId(null);
-                                                                            setRenamingScreenId(screen.id);
-                                                                            setNewName(screen.name);
-                                                                        }}
-                                                                        className="w-full px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors"
-                                                                    >
-                                                                        <PencilIcon className="h-4 w-4 text-slate-400" />
-                                                                        Byt namn på kanalen
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setActiveDropdownId(null);
-                                                                            setSelectedSettingsScreen(screen);
-                                                                        }}
-                                                                        className="w-full px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors"
-                                                                    >
-                                                                        <Cog6ToothIcon className="h-4 w-4 text-slate-400" />
-                                                                        Kanalinställningar
-                                                                    </button>
-                                                                    <div className="border-t border-slate-100 dark:border-slate-700 my-1"></div>
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setActiveDropdownId(null);
-                                                                            setScreenToDelete(screen);
-                                                                        }}
-                                                                        className="w-full px-4 py-2.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center gap-2.5 transition-colors"
-                                                                    >
-                                                                        <TrashIcon className="h-4 w-4 text-red-500" />
-                                                                        Ta bort kanal
-                                                                    </button>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                     </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
+                                           </div>
+                                       </div>
+                                   </div>
 
                                     {isExpanded && (
-                                        <div id={`planering-${screen.id}`} className="border-t border-slate-200 dark:border-slate-700/80 p-0 sm:p-5 bg-slate-50 dark:bg-slate-900/30 animate-fade-in">
+                                        <div id={`tabla-${screen.id}`} className="border-t border-slate-200 dark:border-slate-700/80 p-0 sm:p-5 bg-slate-50 dark:bg-slate-900/30 animate-fade-in">
                                             <PlanningView 
                                                 screen={screen}
                                                 posts={screen.posts || []}
@@ -643,6 +1076,9 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                             organization={organization}
                             allDisplayScreens={displayScreens}
                             onUpdateOrganization={onUpdateOrganization}
+                            screenSessions={screenSessions}
+                            statusNow={statusNow}
+                            onPreviewScreen={onPreviewScreen}
                         />
                     </Card>
                 </div>

@@ -2,6 +2,23 @@
 
 import { Organization, DisplayScreen, DisplayPost } from '../types';
 
+export const getDnaTextContext = (organization: Organization): string => {
+  const sp = organization.styleProfile || {};
+  const parts = [
+    sp.summary ? `Style profile summary: "${sp.summary}"` : "",
+    sp.brandPersonality ? `Brand personality: ${sp.brandPersonality}` : "",
+    sp.coreMessage ? `Core message: ${sp.coreMessage}` : "",
+    sp.targetAudience ? `Target audience: ${sp.targetAudience}` : "",
+    sp.toneOfVoice ? `Tone of voice (all Swedish copy MUST follow this): ${sp.toneOfVoice}` : "",
+  ].filter(Boolean);
+  return parts.length ? `\n**Brand DNA (follow in all output):**\n${parts.join("\n")}\n` : "";
+};
+
+export const getDnaVisualContext = (organization: Organization): string =>
+  organization.styleProfile?.visualStyle
+    ? `\n- **Visual brand style (MUST influence the image):** ${organization.styleProfile.visualStyle}`
+    : "";
+
 export const getMarketingCoachSystemInstruction = (
   organization: Organization
 ): string => {
@@ -83,6 +100,30 @@ Ditt uppdrag är att vara en proaktiv partner som hjälper företag att kommunic
 **Information om företaget du hjälper:**
 ${orgContext}
 
+// HÅLL I SYNK med motsvarande guide i voice-ws/server.js
+**SYSTEMGUIDE — så fungerar plattformen (använd när användaren frågar "hur gör jag..."). Svara ALLTID stegvis, med knapparnas exakta namn, och max 4-5 steg åt gången:**
+
+ORDLISTA: Ett SKYLTFÖNSTER är TV-skärmen i butiken (visas som TV-kort under "Anslutna skyltfönster"). En KANAL är spellistan med inlägg som rullar på skyltfönstret — kanaler döps automatiskt (Kanal 1, Kanal 2) och namnen kan inte ändras. TABLÅN är kanalens schema — knappen "Visa tablå" på kanalraden visar vad som ligger planerat över tid. Ett INLÄGG är en sida i spellistan (bild/video/text).
+
+- LÄGGA UPP NYTT INLÄGG: Fliken Skyltfönster → "Hantera inlägg" på din kanal → "+ Skapa inlägg" → följ de fyra stegen (Layout, Text, Media, Publicering) → "Spara inlägg". Tips: jag kan skapa inlägget åt dig om du beskriver vad du vill visa!
+- SNABB-INLÄGG (objekt, bilar, erbjudanden): "Skapa snabb-inlägg ⚡" — rubrik, bild och ev. QR-länk så publiceras det direkt.
+- BYTA BILD: "Hantera inlägg" → tre prickar (⋮) på inlägget → "Redigera" → steget "Media" → klicka på bilden.
+- PUBLICERA/AVPUBLICERA/ÄNDRA DATUM: varje inlägg i listan har knappen "Publicera" (eller "Ändra datum" om det redan visas) — sätt datum, publicera eller avpublicera med ett klick.
+- ÄNDRA ORDNING: pilknapparna till vänster om varje inlägg.
+- TA BORT: tre prickar (⋮) → Arkivera (går att ångra) eller Ta bort.
+- SE VAD SOM VISAS PÅ SKYLTFÖNSTRET: klicka på TV-bilden under "Anslutna skyltfönster" (TV-kortet visar redan en miniatyr av det som visas), eller ⋮ → "Förhandsgranska" på kanalen.
+- EMOJIS: 😀-knappen vid textfälten lägger in emojis i texten, och "Lägg till emoji" under Övriga texter skapar en fritt placerbar emoji (t.ex. 👉 som pekar på QR-koden) som du drar på plats.
+- ANSLUTA EN TV: Fliken Skyltfönster → "Anslut nytt skyltfönster" → öppna appen på TV:n → skriv in koden. Extra skyltfönster kostar enligt ditt abonnemang — priset visas i dialogen och under Administration → "Ditt abonnemang".
+- BYTA KANAL PÅ ETT SKYLTFÖNSTER: klicka på tre prickar (⋮) på TV-kortet under "Anslutna skyltfönster" → "Byt kanal" → välj kanal. Skyltfönstret växlar direkt, ingen omstart behövs.
+- OM SKYLTFÖNSTRET ÄR OFFLINE: en varning visas överst på översikten och TV-kortet blir svart. Kontrollera ström och nätverk — det kopplar upp sig själv igen. Du får även en notis i klockan uppe till höger.
+- STÄMPLAR (SÅLD!, NYHET m.m.): märken du bockar i på ett inlägg. Två utseenden: liten etikett i hörnet eller stor stämpel tvärs över. Snabb-inläggsvyn skapar färdiga för din bransch; egna gör du under fliken Varumärke.
+- QR-STATISTIK: I "Hantera inlägg" ser du antal skanningar per inlägg och en 7-dagarsgraf.
+- DAGENS LEDIGA TIDER: Fliken Automation → "Bokningskalendrar" → lägg till personal med iCal-länk. Skriv {{lediga_tider}} i ett inläggs text så visas tiderna automatiskt.
+- ABONNEMANG & AI-KREDITER: Fliken Administration visar ditt abonnemang (pris, antal skyltfönster) och månadens AI-användning.
+- BÄTTRE AI-FÖRSLAG: Fyll i fliken Varumärke (beskrivning + DNA-profil) så blir alla mina förslag anpassade till din verksamhet.
+
+Om användaren verkar vilja skapa innehåll: erbjud dig att göra det åt dem direkt istället för att bara förklara stegen.
+
 **Dina förmågor:**
 - **Strategisk Rådgivning:** Ge råd om kampanjer baserat på säsong, branschtrender och företagets mål.
 - **Kreativt Innehåll:** Föreslå inläggsidéer, rubriker och bildkoncept som är visuellt slående och säljande.
@@ -143,6 +184,7 @@ Skriv ett enda, sammanhängande stycke på SVENSKA som fungerar som instruktion 
 export const getSkyltIdeasPrompt = (prompt: string, organization: Organization): string => `
 You are an expert Creative Director for "${organization.brandName || organization.name}".
 Business: ${organization.businessDescription || (organization.businessType || []).join(", ")}.
+${getDnaTextContext(organization)}
 Context: The user needs ideas for a digital sign based on: "${prompt}".
 
 Task: Generate 3 distinct, high-quality campaign ideas.
@@ -168,6 +210,7 @@ Each object must have:
 export const getCampaignIdeasForEventPrompt = (eventName: string, daysUntil: number, organization: Organization): string => `
 You are a Marketing Strategist for "${organization.brandName || organization.name}".
 Business: ${organization.businessType?.join(", ") || "not specified"}.
+${getDnaTextContext(organization)}
 Event: "${eventName}" in ${daysUntil} days.
 
 Task: Generate 3 strategic campaign ideas for this event.
@@ -181,6 +224,7 @@ Respond ONLY with a JSON object containing:
 
 export const getSeasonalCampaignIdeasPrompt = (organization: Organization, planningContext: string): string => `
 You are a Marketing Strategist for "${organization.brandName || organization.name}".
+${getDnaTextContext(organization)}
 Context: "${planningContext}".
 
 Task: Generate 3 creative campaign ideas that fit this seasonal context and the specific business type.
@@ -197,9 +241,7 @@ export const getCompletePostPrompt = (userPrompt: string, organization: Organiza
 - Colors to use: 'primary', 'secondary', 'accent', 'black', 'white'.
 `;
 
-  const styleProfileContext = organization.styleProfile?.summary
-    ? `Adhere to the user's style profile: "${organization.styleProfile.summary}"`
-    : "";
+  const styleProfileContext = getDnaTextContext(organization);
 
   const targetAudienceContext = organization.preferenceProfile?.targetAudience
     ? `\n- Target Audience: ${organization.preferenceProfile.targetAudience}`
@@ -227,7 +269,7 @@ User Request: "${userPrompt}"
 2. **Art Direction (English):** Design an image prompt for a world-class AI image generator (Imagen). The image should be hyper-realistic, 8k resolution, and commercial grade.
    ${artDirectionInstruction}
    - **Quality:** Focus on clean backgrounds, sharp focus, and professional lighting.
-   - **Composition:** Ensure the subject doesn't clash with text overlays if the layout requires it.
+   - **Composition:** Ensure the subject doesn't clash with text overlays if the layout requires it.${getDnaVisualContext(organization)}
 3. **Layout:** ${layoutInstruction}
 
 **Brand Info:**
@@ -256,7 +298,7 @@ Original Post:
 - Body: "${post.body}"
 - Visual context: "${post.aiImagePrompt || post.structuredImagePrompt?.subject || 'Generic'}"
 
-Brand Context: ${organization.brandName}. ${organization.styleProfile?.summary || ''}
+Brand Context: ${organization.brandName}.${getDnaTextContext(organization)}
 
 **Task:** Generate 3 DISTINCT variants of this post.
 1. **Variation 1 (Bold/Punchy):** Shorten the copy, make it direct. Use high contrast colors.
@@ -279,6 +321,8 @@ export const getFollowUpPostPrompt = (originalPost: DisplayPost, organization: O
 Headline: "${originalPost.headline}"
 Body: "${originalPost.body}"
 
+${getDnaTextContext(organization)}
+
 Goal: Create a new variation or next step in the campaign. Do not repeat the exact same text. Keep the brand voice consistent.
 
 Respond with a JSON object for the new post (headline, body, imagePrompt, layout, colors, etc). All text in Swedish. Image prompt in English (NO TEXT/LETTERS in image, max 50 words).`;
@@ -295,15 +339,17 @@ ${hasUserMedia ? `Användaren har laddat upp egna bilder.` : ""}
 Skapa en JSON-array med ${postCount} inläggsobjekt. Varje inlägg ska vara en del av en sammanhängande kampanj men ha unikt innehåll.
 Objektstruktur: { internalTitle, headline, body, durationSeconds (10-20), layout, imagePrompt (ENGELSKA, ingen text i bild), userMediaIndex (om relevant) }.`;
 
-export const getHeadlineSuggestionsPrompt = (body: string, existingHeadlines?: string[]): string => `
+export const getHeadlineSuggestionsPrompt = (body: string, existingHeadlines?: string[], organization?: Organization): string => `
 Brödtexten är: "${body}".
+${organization ? getDnaTextContext(organization) : ""}
 Generera 5 korta, slagkraftiga rubriker på SVENSKA.
 ${existingHeadlines?.length ? `Undvik dessa: ${existingHeadlines.join(", ")}` : ""}
 Svara med JSON: { "headlines": ["Rubrik 1", "Rubrik 2", ...] }`;
 
-export const getBodySuggestionsPrompt = (headline: string, existingBodies?: string[]): string => `
+export const getBodySuggestionsPrompt = (headline: string, existingBodies?: string[], organization?: Organization): string => `
 Rubriken är: "${headline}".
 Generera 3 korta, säljande brödtexter (max 2 meningar) på SVENSKA.
+${organization ? getDnaTextContext(organization) : ""}
 ${existingBodies?.length ? `Undvik dessa: ${existingBodies.join(", ")}` : ""}
 Svara med JSON: { "bodies": ["Text 1", "Text 2", ...] }`;
 
@@ -317,12 +363,12 @@ Nuvarande: Rubrik="${content.headline}", Brödtext="${content.body}".
 Instruktion: "${customPrompt}".
 Skriv om texten enligt instruktionen. Svara med JSON { "headline": "...", "body": "..." }`;
 
-export const getGenerateImagePrompt = (prompt: string): string => `
+export const getGenerateImagePrompt = (prompt: string, organization?: Organization): string => `
 A hyper-realistic, high-quality, professional commercial image.
 Concept: "${prompt}".
 Requirements:
 1. Photorealistic, 8k resolution, sharp focus.
-2. Clean, uncluttered composition suitable for digital signage.
+2. Clean, uncluttered composition suitable for digital signage.${organization ? getDnaVisualContext(organization) : ""}
 3. ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS in the image. The image must be purely visual.
 4. Aesthetic lighting and composition.
 `;
@@ -344,6 +390,7 @@ export const getEventReminderPrompt = (event: { name: string; icon: string }, da
   return `Du är en proaktiv assistent.
 Händelse: "${event.name}" (${event.icon}).
 Verksamhet: "${organization.brandName}".
+${getDnaTextContext(organization)}
 Status: ${timeContext}
 ${action}
 
@@ -365,6 +412,7 @@ Svara med JSON: { "summary": "..." }`;
 export const getRhythmReminderPrompt = (organization: Organization, context: string): string => `
 Du är en strategisk assistent.
 Företag: ${organization.brandName}.
+${getDnaTextContext(organization)}
 Insikt om rytm: "${context}".
 
 Skapa en vänlig påminnelse.
@@ -373,6 +421,7 @@ Svara med JSON: { "headline": "...", "subtext": "..." }`;
 export const getSeasonalSuggestionPrompt = (organization: Organization, relevantPosts: string, todayDate: string): string => `
 Du är en strategisk assistent. Dagens datum: ${todayDate}.
 Företag: ${organization.brandName}.
+${getDnaTextContext(organization)}
 Förra året vid denna tid gjorde de:
 ${relevantPosts}
 
@@ -423,6 +472,7 @@ Om det är ett AI-skapat inlägg som användaren inte ändrat mycket på: **Var 
 
 **Företag:** ${organization.brandName || organization.name}
 **Verksamhet:** ${organization.businessType?.join(', ') || ''}
+${getDnaTextContext(organization)}
 
 **Inlägg:**
 - Rubrik: "${post.headline || ''}"
@@ -453,7 +503,6 @@ export const getTagStampSuggestionPrompt = (
   const brandName = organization.brandName || organization.name;
   const businessType = organization.businessType?.join(', ') || 'ej angiven';
   const description = organization.businessDescription || 'ej angiven';
-  const dnaSummary = organization.styleProfile?.summary || 'ej analyserad än';
   
   const colorsText = `
 - Primärfärg: ${organization.primaryColor || '#14b8a6'}
@@ -474,7 +523,7 @@ Du är Skylie, en intelligent och hantverksskicklig varumärkesdesigner. Din upp
 - Företagsnamn: ${brandName}
 - Bransch/Verksamhet: ${businessType}
 - Beskrivning: ${description}
-- AI-analyserad stilprofil: ${dnaSummary}
+${getDnaTextContext(organization)}
 
 **Varumärkesfärger (Använd dessa som inspiration!):**
 ${colorsText}

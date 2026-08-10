@@ -687,7 +687,7 @@ const TagManager: React.FC<{
                             </div>
                         ))}
                     </div>
-                    <PrimaryButton onClick={handleAddNew}>Skapa ny tagg/stämpel</PrimaryButton>
+                    <PrimaryButton onClick={handleAddNew}>Skapa ny stämpel</PrimaryButton>
                 </>
             )}
         </div>
@@ -1071,7 +1071,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
             } else {
                 updatedTags = prevTags.map(t => t.id === tagToSave.id ? tagToSave : t);
             }
-            handleSave(() => onUpdateTags(organization.id, updatedTags), isNew ? "Tagg skapad." : "Tagg uppdaterad.");
+            handleSave(() => onUpdateTags(organization.id, updatedTags), isNew ? "Stämpel skapad." : "Stämpel uppdaterad.");
             return updatedTags;
         });
     };
@@ -1093,7 +1093,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
         handleSave(() => Promise.all([
             onUpdateTags(organization.id, updatedTags),
             onUpdateDisplayScreens(organization.id, updatedScreens)
-        ]), `Taggen "${tagToDelete.text}" togs bort.`);
+        ]), `Stämpeln "${tagToDelete.text}" togs bort.`);
 
         setTagToDelete(null);
     };
@@ -1325,7 +1325,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                                 {/* Brand Palette Settings */}
                                 <div className="space-y-2">
                                     <label className="block text-sm font-extrabold text-slate-700 dark:text-slate-300">Dina färgregler</label>
-                                    <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed mb-1">Primärfärg och sekundärfärg används för paneler, texthuvuden och ränder. Accentfärg används sparsamt på taggar/erbjudandestämplar.</p>
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed mb-1">Primärfärg och sekundärfärg används för paneler, texthuvuden och ränder. Accentfärg används sparsamt på erbjudandestämplar.</p>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-800">
                                         <ColorPicker label="Primärfärg (Huvudtema)" color={primaryColor} onChange={setPrimaryColor} />
                                         <OptionalColorPicker label="Sekundärfärg (Bakgrund/Kontraster)" color={secondaryColor} onChange={setSecondaryColor} defaultColor="#1e293b" />
@@ -1358,7 +1358,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                                 <PrimaryButton 
                                     onClick={handleSaveVisualBranding} 
                                     disabled={!isVarumarkeDirty || isSaving}
-                                    className="bg-indigo-600 hover:bg-indigo-500 py-3 px-6 shadow-md"
+                                    className="bg-teal-600 hover:bg-teal-500 py-3 px-6 shadow-md"
                                 >
                                     Spara visuell design
                                 </PrimaryButton>
@@ -1576,9 +1576,9 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                 isOpen={!!tagToDelete}
                 onClose={() => setTagToDelete(null)}
                 onConfirm={confirmDeleteTag}
-                title="Ta bort tagg"
+                title="Ta bort stämpel"
             >
-               <p>Är du säker på att du vill ta bort taggen "{tagToDelete?.text}"? Den kommer också att tas bort från alla inlägg den är kopplad till.</p>
+               <p>Är du säker på att du vill ta bort stämpeln "{tagToDelete?.text}"? Den kommer också att tas bort från alla inlägg den är kopplad till.</p>
             </ConfirmDialog>
             <ConfirmDialog
                 isOpen={!!confirmReset}
@@ -2050,23 +2050,46 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
 
                     <div className="h-[1px] bg-slate-100 dark:bg-slate-800" />
 
-                    {/* Tag vs Stamp Picker & Text area */}
+                    {/* Utseende (Liten etikett vs Stor stämpel) & Text area */}
                     <div className="space-y-4">
-                        <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
-                            <button
-                                type="button"
-                                onClick={() => setCurrentTag(t => ({ ...t, displayType: 'tag' }))}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-bold text-xs transition-all ${(!currentTag.displayType || currentTag.displayType === 'tag') ? 'bg-white dark:bg-slate-800 text-teal-600 dark:text-teal-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
-                            >
-                                🏷️ Tagg (Aktiv form på inlägg)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setCurrentTag(t => ({ ...t, displayType: 'stamp' }))}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-bold text-xs transition-all ${currentTag.displayType === 'stamp' ? 'bg-white dark:bg-slate-800 text-teal-600 dark:text-teal-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
-                            >
-                                💮 Stämpel (Rund/kantig stämpel-design)
-                            </button>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">UTSEENDE</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentTag(t => ({ ...t, displayType: 'tag' }))}
+                                    className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                                        (!currentTag.displayType || currentTag.displayType === 'tag')
+                                        ? 'border-teal-500 bg-teal-500/5 ring-2 ring-teal-500/25'
+                                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-base">🏷️</span>
+                                        <span className="font-bold text-xs text-slate-800 dark:text-slate-100">Liten etikett</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                                        Diskret etikett i hörnet — informerar utan att ta över.
+                                    </p>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentTag(t => ({ ...t, displayType: 'stamp' }))}
+                                    className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                                        currentTag.displayType === 'stamp'
+                                        ? 'border-teal-500 bg-teal-500/5 ring-2 ring-teal-500/25'
+                                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-base">💮</span>
+                                        <span className="font-bold text-xs text-slate-800 dark:text-slate-100">Stor stämpel</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                                        Slås stort tvärs över inlägget — omöjlig att missa. Perfekt för SÅLD!
+                                    </p>
+                                </button>
+                            </div>
                         </div>
 
                         <div>
@@ -2434,7 +2457,7 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                                 <div className={`flex items-center ${isShapeVertical ? 'flex-col gap-1.5' : 'gap-3'}`}>
                                     <span style={{
                                         textShadow: isStamp ? 'none' : '0 2px 4px rgba(0,0,0,0.2)'
-                                    }}>{currentTag.text || "Taggtext"}</span>
+                                    }}>{currentTag.text || "Text på stämpel"}</span>
                                     <div className="bg-white p-1 rounded-md shadow-sm">
                                         <QrCodePreview url={currentTag.url} />
                                     </div>
@@ -2442,7 +2465,7 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                             ) : (
                                 <span style={{
                                     textShadow: isStamp ? 'none' : '0 2px 4px rgba(0,0,0,0.2)'
-                                }}>{currentTag.text || "Taggtext"}</span>
+                                }}>{currentTag.text || "Text på stämpel"}</span>
                             )}
                         </div>
                     </div>

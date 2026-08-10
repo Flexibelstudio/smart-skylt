@@ -8,6 +8,7 @@ import { StyledInput } from './Forms';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { MicrophoneIcon, SparklesIcon } from './icons';
 import { ThinkingDots } from './HelpBot';
+import { DnaStatusBadge } from './DnaStatusBadge';
 
 interface AIIdeaGeneratorProps {
   onIdeaSelect: (idea: SkyltIdeSuggestion) => void;
@@ -136,9 +137,12 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
 
   return (
     <div className="bg-slate-100 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
-        <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">
-            Har du idétorka? Skriv ett nyckelord så hjälper AI:n dig med förslag.
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Har du idétorka? Skriv ett nyckelord så hjälper AI:n dig med förslag.
         </p>
+        <DnaStatusBadge organization={organization} />
+      </div>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-grow">
           <StyledInput

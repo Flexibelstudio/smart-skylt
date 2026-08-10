@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Organization, DisplayScreen, DisplayPost, AiAutomation, SuggestedPost } from '../../types';
+import { Organization, DisplayScreen, DisplayPost, AiAutomation, SuggestedPost, BookingCalendarEntry } from '../../types';
 import { listenToSuggestedPosts, updateSuggestedPost, updateDisplayScreen } from '../../services/firebaseService'; // Using direct updateDisplayScreen here for simplicity as it's a specific action
 import { Card } from '../Card';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
@@ -10,6 +10,8 @@ import { AiAutomationEditorModal } from '../AiAutomationEditorModal';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
+import { DnaStatusBadge } from '../DnaStatusBadge';
+import { StyledInput, StyledSelect } from '../Forms';
 
 // A helper to translate frequencies beautifully
 const getFrequencyText = (auto: AiAutomation) => {
@@ -30,9 +32,10 @@ interface AiAutomationTabProps {
     organization: Organization;
     onUpdateOrganization: (organizationId: string, data: Partial<Organization>) => Promise<void>;
     onEditDisplayScreen: (screen: DisplayScreen, post?: DisplayPost) => void;
+    onGoToBranding?: () => void;
 }
 
-export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, onUpdateOrganization, onEditDisplayScreen }) => {
+export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, onUpdateOrganization, onEditDisplayScreen, onGoToBranding }) => {
     const { showToast } = useToast();
     const [editingAutomation, setEditingAutomation] = useState<AiAutomation | null>(null);
     const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -40,6 +43,108 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
 
     const [suggestedPosts, setSuggestedPosts] = useState<SuggestedPost[]>([]);
     const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true);
+
+    const defaultWorkingHours = {
+        1: { enabled: true, start: '09:00', end: '17:00' }, // Mån
+        2: { enabled: true, start: '09:00', end: '17:00' }, // Tis
+        3: { enabled: true, start: '09:00', end: '17:00' }, // Ons
+        4: { enabled: true, start: '09:00', end: '17:00' }, // Tor
+        5: { enabled: true, start: '09:00', end: '17:00' }, // Fre
+        6: { enabled: false, start: '09:00', end: '17:00' }, // Lör
+        0: { enabled: false, start: '09:00', end: '17:00' }, // Sön
+    };
+
+    const weekdaysList = [
+        { key: 1, name: 'Måndag' },
+        { key: 2, name: 'Tisdag' },
+        { key: 3, name: 'Onsdag' },
+        { key: 4, name: 'Torsdag' },
+        { key: 5, name: 'Fredag' },
+        { key: 6, name: 'Lördag' },
+        { key: 0, name: 'Söndag' },
+    ];
+
+    const [calendars, setCalendars] = useState<BookingCalendarEntry[]>(() => {
+        return organization.bookingCalendars || [];
+    });
+    const [isCalendarsDirty, setIsCalendarsDirty] = useState(false);
+
+    const [expandedCalendarId, setExpandedCalendarId] = useState<string | null>(null);
+    const [isSavingCalendar, setIsSavingCalendar] = useState(false);
+
+    useEffect(() => {
+        if (isCalendarsDirty) return;
+        setCalendars(organization.bookingCalendars || []);
+    }, [organization.bookingCalendars, isCalendarsDirty]);
+
+    const handleSaveCalendar = async () => {
+        setIsSavingCalendar(true);
+        const normalizedList = calendars.map(cal => {
+            let normalizedIcsUrl = (cal.icsUrl || '').trim();
+            if (normalizedIcsUrl.startsWith('webcal://')) {
+                normalizedIcsUrl = 'https://' + normalizedIcsUrl.substring(9);
+            }
+            return {
+                ...cal,
+                icsUrl: normalizedIcsUrl,
+                bookingUrl: cal.bookingUrl?.trim() || undefined
+            };
+        });
+
+        try {
+            await onUpdateOrganization(organization.id, { bookingCalendars: normalizedList });
+            setIsCalendarsDirty(false);
+            showToast({ message: "Bokningskalendrar har sparats framgångsrikt.", type: 'success' });
+        } catch (e) {
+            showToast({ message: "Kunde inte spara bokningskalendrar.", type: 'error' });
+        } finally {
+            setIsSavingCalendar(false);
+        }
+    };
+
+    const handleAddCalendar = () => {
+        const newEntry: BookingCalendarEntry = {
+            id: 'cal_' + Math.random().toString(36).substring(2, 9),
+            staffName: 'Ny personal',
+            enabled: true,
+            icsUrl: '',
+            bookingUrl: '',
+            slotMinutes: 60,
+            workingHours: defaultWorkingHours
+        };
+        setCalendars(prev => [...prev, newEntry]);
+        setIsCalendarsDirty(true);
+        setExpandedCalendarId(newEntry.id);
+    };
+
+    const handleRemoveCalendar = (id: string) => {
+        setCalendars(prev => prev.filter(cal => cal.id !== id));
+        setIsCalendarsDirty(true);
+    };
+
+    const handleUpdateCalendarField = (id: string, field: keyof BookingCalendarEntry, value: any) => {
+        setCalendars(prev => prev.map(cal => cal.id === id ? { ...cal, [field]: value } : cal));
+        setIsCalendarsDirty(true);
+    };
+
+    const handleUpdateWorkingHours = (id: string, weekday: number, field: 'enabled' | 'start' | 'end', value: any) => {
+        setCalendars(prev => prev.map(cal => {
+            if (cal.id !== id) return cal;
+            const currentHours = cal.workingHours || defaultWorkingHours;
+            const dayConfig = currentHours[weekday] || { enabled: false, start: '09:00', end: '17:00' };
+            return {
+                ...cal,
+                workingHours: {
+                    ...currentHours,
+                    [weekday]: {
+                        ...dayConfig,
+                        [field]: value
+                    }
+                }
+            };
+        }));
+        setIsCalendarsDirty(true);
+    };
 
     useEffect(() => {
         setIsLoadingSuggestions(true);
@@ -255,12 +360,309 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                 </div>
             </Card>
 
+            {/* Booking Calendar Config Card */}
+            <Card
+                title={
+                    <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+                        <div className="flex items-center gap-2">
+                            <span className="p-1 px-2.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 text-sm font-bold">Koppling</span>
+                            <span>Bokningskalendrar</span>
+                        </div>
+                        <SecondaryButton
+                            onClick={handleAddCalendar}
+                            className="text-xs font-bold py-1.5 px-3 flex items-center gap-1.5"
+                        >
+                            <span>+ Lägg till personal</span>
+                        </SecondaryButton>
+                    </div>
+                }
+                subTitle="Visa dagens lediga tider på skyltfönstret för din personal — koppla iCal-länkar (t.ex. från Bokadirekt)."
+            >
+                <div className="space-y-6">
+                    {calendars.length === 0 ? (
+                        <div className="text-center py-8 bg-slate-50 dark:bg-slate-900/10 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Ingen personal eller kalender har lagts till ännu.</p>
+                            <PrimaryButton onClick={handleAddCalendar} className="text-xs">
+                                Lägg till din första kalender
+                            </PrimaryButton>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {calendars.map((cal, idx) => {
+                                const isExpanded = expandedCalendarId === cal.id;
+                                return (
+                                    <div 
+                                        key={cal.id} 
+                                        className="bg-white dark:bg-slate-900/20 border border-slate-100 dark:border-slate-800/60 rounded-xl overflow-hidden transition-all duration-200 shadow-sm"
+                                    >
+                                        {/* Calendar Header Row */}
+                                        <div 
+                                            className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800/40 cursor-pointer"
+                                            onClick={() => setExpandedCalendarId(isExpanded ? null : cal.id)}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs font-bold text-slate-400 w-6">#{idx + 1}</span>
+                                                <span className="font-bold text-slate-800 dark:text-white">
+                                                    {cal.staffName || 'Namnlös personal'}
+                                                </span>
+                                                {!cal.enabled && (
+                                                    <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded text-[10px] font-bold uppercase">
+                                                        Inaktiv
+                                                    </span>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-4" onClick={e => e.stopPropagation()}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline">Aktiv</span>
+                                                    <CompactToggleSwitch 
+                                                        checked={cal.enabled} 
+                                                        onChange={(checked) => handleUpdateCalendarField(cal.id, 'enabled', checked)} 
+                                                    />
+                                                </div>
+                                                
+                                                <button
+                                                    onClick={() => handleRemoveCalendar(cal.id)}
+                                                    className="p-1.5 text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors"
+                                                    title="Ta bort personal"
+                                                >
+                                                    <TrashIcon className="w-4 h-4" />
+                                                </button>
+
+                                                <span className="text-slate-400 dark:text-slate-500 text-xs font-semibold select-none">
+                                                    {isExpanded ? '▲' : '▼'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Expandable Form */}
+                                        {isExpanded && (
+                                            <div className="p-6 space-y-6">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <div>
+                                                        <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                            Personalens namn
+                                                        </label>
+                                                        <StyledInput
+                                                            type="text"
+                                                            value={cal.staffName}
+                                                            onChange={(e) => handleUpdateCalendarField(cal.id, 'staffName', e.target.value)}
+                                                            placeholder="T.ex. Anna, Erik"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                            Behandlingslängd (slot-längd)
+                                                        </label>
+                                                        <StyledSelect
+                                                            value={cal.slotMinutes}
+                                                            onChange={(e) => handleUpdateCalendarField(cal.id, 'slotMinutes', parseInt(e.target.value, 10))}
+                                                        >
+                                                            <option value={30}>30 minuter</option>
+                                                            <option value={45}>45 minuter</option>
+                                                            <option value={60}>60 minuter</option>
+                                                            <option value={90}>90 minuter</option>
+                                                        </StyledSelect>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <div>
+                                                        <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                            Kalenderlänk (iCal/.ics)
+                                                        </label>
+                                                        <StyledInput
+                                                            type="text"
+                                                            value={cal.icsUrl}
+                                                            onChange={(e) => handleUpdateCalendarField(cal.id, 'icsUrl', e.target.value)}
+                                                            placeholder="T.ex. https://www.bokadirekt.se/ical/subscription/..."
+                                                        />
+                                                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 leading-relaxed">
+                                                            I Bokadirekt: Inställningar &rarr; Kalendersynk &rarr; kopiera prenumerationslänken. Länkar som börjar med webcal:// fungerar också.
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                            Bokningssida (för QR-kod)
+                                                        </label>
+                                                        <StyledInput
+                                                            type="text"
+                                                            value={cal.bookingUrl || ''}
+                                                            onChange={(e) => handleUpdateCalendarField(cal.id, 'bookingUrl', e.target.value)}
+                                                            placeholder="T.ex. https://www.bokadirekt.se/places/..."
+                                                        />
+                                                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 leading-relaxed">
+                                                            Länken till din publika bokningssida. Används för att visa en QR-kod på skärmen så kunder kan boka direkt.
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Working Hours */}
+                                                <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800/60">
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-800 dark:text-white">Arbetstider</h4>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400">Markera de dagar och tider under vilka du vill att lediga tider ska sökas efter.</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl">
+                                                        {weekdaysList.map(({ key, name }) => {
+                                                            const dayConfig = cal.workingHours?.[key] || { enabled: false, start: '09:00', end: '17:00' };
+                                                            const isDayEnabled = dayConfig.enabled;
+                                                            
+                                                            return (
+                                                                <div key={key} className="flex items-center justify-between gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/45">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            id={`day-${cal.id}-${key}`}
+                                                                            checked={isDayEnabled}
+                                                                            onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'enabled', e.target.checked)}
+                                                                            className="w-4 h-4 rounded text-teal-600 bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-600 focus:ring-teal-500 focus:ring-2 disabled:opacity-50"
+                                                                        />
+                                                                        <label htmlFor={`day-${cal.id}-${key}`} className={`text-sm font-semibold select-none ${isDayEnabled ? 'text-slate-800 dark:text-white' : 'text-slate-400 dark:text-slate-500'}`}>
+                                                                            {name}
+                                                                        </label>
+                                                                    </div>
+                                                                    
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <input
+                                                                            type="time"
+                                                                            value={dayConfig.start || '09:00'}
+                                                                            disabled={!isDayEnabled}
+                                                                            onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'start', e.target.value)}
+                                                                            className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white p-1 px-2 text-xs rounded border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-40"
+                                                                        />
+                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase">till</span>
+                                                                        <input
+                                                                            type="time"
+                                                                            value={dayConfig.end || '17:00'}
+                                                                            disabled={!isDayEnabled}
+                                                                            onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'end', e.target.value)}
+                                                                            className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white p-1 px-2 text-xs rounded border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-40"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Action Block */}
+                    {calendars.length > 0 && (
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-end">
+                            {isCalendarsDirty && (
+                                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 mr-3">
+                                    Osparade ändringar
+                                </span>
+                            )}
+                            {isCalendarsDirty && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setCalendars(organization.bookingCalendars || []); setIsCalendarsDirty(false); }}
+                                    className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 mr-3 transition-colors"
+                                >
+                                    Ångra ändringar
+                                </button>
+                            )}
+                            <PrimaryButton
+                                onClick={() => handleSaveCalendar()}
+                                disabled={isSavingCalendar}
+                                className="bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-2"
+                            >
+                                {isSavingCalendar ? 'Sparar...' : 'Spara inställningar'}
+                            </PrimaryButton>
+                        </div>
+                    )}
+
+                    {/* Status under the configuration fields inside Card */}
+                    {(() => {
+                        const slotsData = organization.todaysAvailableSlots;
+                        if (!slotsData || !slotsData.byCalendar) return null;
+
+                        const calendarIds = Object.keys(slotsData.byCalendar);
+                        if (calendarIds.length === 0) return null;
+
+                        const stockholmToday = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' });
+                        const isStale = slotsData.date !== stockholmToday;
+
+                        const timeStr = slotsData.updatedAt 
+                            ? new Date(slotsData.updatedAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+                            : 'okänd tid';
+
+                        return (
+                            <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-xl space-y-2 text-xs">
+                                <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                                    <span>Senast synkroniserad {timeStr} &mdash; status per kalender:</span>
+                                </div>
+                                {isStale ? (
+                                    <div className="p-2 text-slate-500 dark:text-slate-400 italic">
+                                        Väntar på dagens synkronisering (senaste data är från {slotsData.date}).
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {calendarIds.map(id => {
+                                            const entry = slotsData.byCalendar[id];
+                                            if (!entry) return null;
+                                            const count = entry.slots?.length || 0;
+                                            const hasError = !!entry.error;
+                                            const isClosed = !!entry.closed;
+                                            
+                                            return (
+                                                <div key={id} className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-850">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-slate-700 dark:text-slate-300">{entry.staffName}</span>
+                                                        {hasError ? (
+                                                            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1 font-semibold">
+                                                                ⚠️ {entry.error}
+                                                            </span>
+                                                        ) : isClosed ? (
+                                                            <span className="text-slate-400 dark:text-slate-500 font-medium">
+                                                                &mdash; Stängt idag
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                                                &mdash; <strong>{count} lediga tider</strong> idag
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {!hasError && !isClosed && count > 0 && (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {entry.slots.map(slot => (
+                                                                <span key={slot} className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded font-bold text-[10px]">
+                                                                    {slot}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+                </div>
+            </Card>
+
             {/* Inläggsförslag till granskning section with actual preview phone/screen frames */}
             <Card
                 title={
-                    <div className="flex items-center gap-2">
-                        <span className="p-1 px-2.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-sm font-bold">Granska</span>
-                        <span>Inläggsförslag att granska</span>
+                    <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+                        <div className="flex items-center gap-2">
+                            <span className="p-1 px-2.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-sm font-bold">Granska</span>
+                            <span>Inläggsförslag att granska</span>
+                        </div>
+                        <DnaStatusBadge organization={organization} onGoToBranding={onGoToBranding} />
                     </div>
                 }
                 subTitle="Inlägg framtagna av AI-skribenten baserat på dina schemalagda önskemål. Granska, finjustera och klicka godkänn!"

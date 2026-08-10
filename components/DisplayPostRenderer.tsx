@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride, CollageItem, SubImage, SubImageConfig, AdditionalTextElement } from '../types';
 import QRCode from 'qrcode';
 import { MoveIcon } from './icons';
+import { resolveBookingPlaceholders } from '../utils/bookingPlaceholders';
 
 // --- HELPER FUNCTIONS ---
 
@@ -371,7 +372,7 @@ const SubImageCarousel: React.FC<{
                     {/* Render double sets of images for seamless looping */}
                     {[...images, ...images].map((img, i) => (
                         <div key={`${img.id}-${i}`} className="h-full aspect-[4/3] relative flex-shrink-0 bg-black/20 rounded-lg overflow-hidden shadow-xl border-2 border-white/50">
-                            <img src={img.imageUrl} alt="" className="w-full h-full object-cover" />
+                            <img src={img.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" />
                         </div>
                     ))}
                 </div>
@@ -419,21 +420,21 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string; styl
 };
 
 const DraggableTextElement: React.FC<any> = ({ 
-    type, text, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
+    type, text, editText, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
     bgEnabled, bgColor, mode, organization, isDraggable, 
     shadowType, shadowColor, outlineWidth, outlineColor,
     onUpdatePosition, onUpdateWidth, onUpdateFontScale, onUpdateText,
-    isExpressStyle
+    isExpressStyle, anchor = 'center', maxLines
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
-    const [tempText, setTempText] = useState(text);
+    const [tempText, setTempText] = useState(editText ?? text);
 
     // Update temp text when prop changes
     useEffect(() => {
-        setTempText(text);
-    }, [text]);
+        setTempText(editText ?? text);
+    }, [editText, text]);
 
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !containerRef.current || isEditing) return;
@@ -564,7 +565,7 @@ const DraggableTextElement: React.FC<any> = ({
 
     const handleBlur = () => {
         setIsEditing(false);
-        if (onUpdateText && tempText !== text) {
+        if (onUpdateText && tempText !== (editText ?? text)) {
             onUpdateText(tempText);
         }
     };
@@ -580,7 +581,7 @@ const DraggableTextElement: React.FC<any> = ({
         }
         if (e.key === 'Escape') {
             setIsEditing(false);
-            setTempText(text); // Revert
+            setTempText(editText ?? text); // Revert
         }
     };
 
@@ -588,7 +589,7 @@ const DraggableTextElement: React.FC<any> = ({
         position: 'absolute',
         top: `${y ?? 50}%`,
         left: `${x ?? 50}%`,
-        transform: 'translate(-50%, -50%)',
+        transform: `translate(-50%, ${anchor === 'top' ? '0' : '-50%'})`,
         width: `${width ?? 80}%`,
         textAlign: textAlign || 'center',
         zIndex: isEditing ? 100 : 40,
@@ -674,14 +675,30 @@ const DraggableTextElement: React.FC<any> = ({
                     {/* Ghost Element: Controls the height. Hidden when editing but present in DOM. */}
                     <div className={`${isEditing ? 'invisible' : ''} col-start-1 row-start-1 min-h-[1.2em]`}>
                         {type === 'headline' ? (
-                            <h1 className={fontClass} style={textEffectStyle}>
+                            <h1 className={fontClass} style={{
+                                ...textEffectStyle,
+                                ...(maxLines ? {
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: maxLines,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden'
+                                } : {})
+                            }}>
                                 {isEditing ? (tempText || ' ') : (text || ' ')}
                             </h1>
                         ) : (
                             <PostMarkdownRenderer 
                                 content={isEditing ? (tempText || ' ') : (text || ' ')} 
                                 className={fontClass} 
-                                style={textEffectStyle} 
+                                style={{
+                                    ...textEffectStyle,
+                                    ...(maxLines ? {
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: maxLines,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden'
+                                    } : {})
+                                }} 
                             />
                         )}
                     </div>
@@ -998,8 +1015,10 @@ const BookingPortalRenderer: React.FC<{
     const isBokadirektUrl = (post.webpageUrl || '').toLowerCase().includes('bokadirekt.se');
     
     // Fallback texts
-    const headline = post.headline || (isBokadirektUrl ? 'Boka din behandling enkelt' : 'Välkommen att boka tid');
-    const body = post.body || (isBokadirektUrl 
+    const resolvedHeadline = resolveBookingPlaceholders(post.headline, organization);
+    const resolvedBody = resolveBookingPlaceholders(post.body, organization);
+    const headline = resolvedHeadline || (isBokadirektUrl ? 'Boka din behandling enkelt' : 'Välkommen att boka tid');
+    const body = resolvedBody || (isBokadirektUrl 
         ? 'Skanna QR-koden till höger med din mobilkamera för att se lediga tider och boka på Bokadirekt.' 
         : 'Skanna QR-koden här intill med din mobilkamera för att öppna vår tidsbokning direkt.');
 
@@ -1271,6 +1290,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         return p;
     }, [initialPost, isPortraitLayout]);
 
+    const displayHeadline = resolveBookingPlaceholders(post?.headline, organization);
+    const displayBody = resolveBookingPlaceholders(post?.body, organization);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
@@ -1379,6 +1401,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             <img 
                                 src={post.imageUrl} 
                                 alt="" 
+                                decoding="async"
                                 className="absolute inset-0 w-full h-full object-cover" 
                                 style={mediaStyle}
                                 onLoad={signalReady}
@@ -1422,9 +1445,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                     textShadow: '0 2px 14px rgba(0,0,0,0.98)'
                                 }}
                             >
-                                {post.headline}
+                                {displayHeadline}
                             </h3>
-                            {post.body && (
+                            {displayBody && (
                                 <p 
                                     className={`text-slate-200 leading-relaxed font-semibold line-clamp-4 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                     style={{ 
@@ -1433,7 +1456,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                         textShadow: '0 1px 6px rgba(0,0,0,0.9)'
                                     }}
                                 >
-                                    {post.body}
+                                    {displayBody}
                                 </p>
                             )}
                         </div>
@@ -1446,13 +1469,14 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         {/* Bild eller video i ena halvan */}
                         <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
                             {post.imageUrl ? (
-                                <img src={post.imageUrl} alt="" className="w-full h-full object-cover" onLoad={signalReady} />
+                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" onLoad={signalReady} />
                             ) : post.videoUrl ? (
                                 <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
                             ) : (
                                 <div className="w-full h-full bg-slate-800" />
                             )}
                         </div>
+
                         {/* Elegant centrerat textyta i andra halvan */}
                         <div className="flex-grow p-[5cqw] flex flex-col justify-center items-center text-center bg-slate-900 border-l border-t border-slate-850">
                             <div className="space-y-[2cqw] max-w-full">
@@ -1463,9 +1487,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                         color: post.headlineTextColor || '#ffffff'
                                     }}
                                 >
-                                    {post.headline}
+                                    {displayHeadline}
                                 </h3>
-                                {post.body && (
+                                {displayBody && (
                                     <p 
                                         className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                         style={{ 
@@ -1473,7 +1497,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                             color: post.bodyTextColor || '#cbd5e1'
                                         }}
                                     >
-                                        {post.body}
+                                        {displayBody}
                                     </p>
                                 )}
                             </div>
@@ -1487,7 +1511,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         {/* Bild eller video i ena halvan */}
                         <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
                             {post.imageUrl ? (
-                                <img src={post.imageUrl} alt="" className="w-full h-full object-cover" onLoad={signalReady} />
+                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" onLoad={signalReady} />
                             ) : post.videoUrl ? (
                                 <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
                             ) : (
@@ -1504,9 +1528,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                         color: post.headlineTextColor || '#ffffff'
                                     }}
                                 >
-                                    {post.headline}
+                                    {displayHeadline}
                                 </h3>
-                                {post.body && (
+                                {displayBody && (
                                     <p 
                                         className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                         style={{ 
@@ -1514,7 +1538,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                             color: post.bodyTextColor || '#cbd5e1'
                                         }}
                                     >
-                                        {post.body}
+                                        {displayBody}
                                     </p>
                                 )}
                             </div>
@@ -1686,6 +1710,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         <img 
                             src={post.imageUrl || undefined} 
                             alt="" 
+                            decoding="async"
                             className="absolute z-1 w-full h-full" 
                             style={mediaStyle}
                             onLoad={signalReady}
@@ -1717,14 +1742,13 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 </>
             )}
 
-
-
             {post.layout === 'real-estate' && (
                 <div className="absolute inset-0 z-1 w-full h-full overflow-hidden">
                     {bgImages.length <= 1 ? (
                         <img 
                             src={bgImages[0] || undefined} 
                             alt="" 
+                            decoding="async"
                             className="w-full h-full object-cover" 
                             style={mediaStyle}
                             onLoad={signalReady}
@@ -1732,21 +1756,21 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     ) : bgImages.length === 2 ? (
                         <div className="w-full h-full grid grid-cols-2 gap-[0.5cqw] bg-slate-950">
                             {bgImages.map((img, index) => (
-                                <img key={index} src={img} alt="" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
+                                <img key={index} src={img} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
                             ))}
                         </div>
                     ) : bgImages.length === 3 ? (
                         <div className="w-full h-full grid grid-cols-2 gap-[0.5cqw] bg-slate-950">
-                            <img src={bgImages[0]} alt="" className="w-full h-full object-cover animate-fade-in" onLoad={signalReady} />
+                            <img src={bgImages[0]} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" onLoad={signalReady} />
                             <div className="grid grid-rows-2 gap-[0.5cqw] overflow-hidden">
-                                <img src={bgImages[1]} alt="" className="w-full h-full object-cover animate-fade-in" />
-                                <img src={bgImages[2]} alt="" className="w-full h-full object-cover animate-fade-in" />
+                                <img src={bgImages[1]} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" />
+                                <img src={bgImages[2]} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" />
                             </div>
                         </div>
                     ) : (
                         <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-[0.5cqw] bg-slate-950">
                             {bgImages.slice(0, 4).map((img, index) => (
-                                <img key={index} src={img} alt="" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
+                                <img key={index} src={img} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
                             ))}
                         </div>
                     )}
@@ -1771,6 +1795,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             ) : item.imageUrl ? (
                                 <img 
                                     src={item.imageUrl} 
+                                    decoding="async"
                                     className="w-full h-full object-cover" 
                                     style={{
                                         objectPosition: `${item.mediaPositionX ?? 50}% ${item.mediaPositionY ?? 50}%`,
@@ -1828,11 +1853,11 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     {/* Header line & Category */}
                     <div className="flex flex-col items-center justify-center pt-[1cqw]">
                         <span className="text-[2.8cqw] font-sans font-bold tracking-[0.25em] text-teal-400 uppercase drop-shadow-sm">
-                            {firstTag ? firstTag.name : (organization?.name || 'ANNONS')}
+                            {firstTag ? firstTag.text : (organization?.name || 'ANNONS')}
                         </span>
                         {/* Title */}
                         <h2 className="text-[5.5cqw] font-extrabold font-sans uppercase tracking-[0.06em] leading-tight text-white mt-2 drop-shadow-md">
-                            {post.headline}
+                            {displayHeadline}
                         </h2>
                     </div>
 
@@ -1842,7 +1867,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     {/* Body description */}
                     <div className="flex-1 flex items-center justify-center py-[2cqw] overflow-hidden">
                         <p className="text-[3.6cqw] leading-relaxed text-slate-50 max-w-xl mx-auto whitespace-pre-wrap font-sans font-medium drop-shadow-sm select-text line-clamp-6">
-                            {post.body}
+                            {displayBody}
                         </p>
                     </div>
 
@@ -1867,7 +1892,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                     <QrCodeComponent url={post.qrCodeUrl} className="w-full h-full" />
                                 </div>
                                 <span className="text-[1.8cqw] text-teal-400 font-mono tracking-wider max-w-[28cqw] truncate font-semibold mt-1">
-                                    {post.qrCodeUrl.replace('https://', '').replace('http://', '').replace('www.', '')}
+                                    {(post.qrCodeDisplayUrl || post.qrCodeUrl).replace('https://', '').replace('http://', '').replace('www.', '')}
                                 </span>
                             </div>
                         ) : (
@@ -1883,7 +1908,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {post.headline && post.layout !== 'ai-ad' && post.layout !== 'real-estate' && (
                 <DraggableTextElement
                     type="headline"
-                    text={post.headline}
+                    text={displayHeadline}
+                    editText={post.headline}
                     x={hX} y={hY} width={hW}
                     textAlign={hAlign}
                     fontSize={post.headlineFontSize}
@@ -1913,7 +1939,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {post.body && post.layout !== 'ai-ad' && post.layout !== 'real-estate' && (
                 <DraggableTextElement
                     type="body"
-                    text={post.body}
+                    text={displayBody}
+                    editText={post.body}
                     x={bX} y={bY} width={bW}
                     textAlign={bAlign}
                     fontSize={post.bodyFontSize}
@@ -1922,6 +1949,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     color={post.bodyTextColor || post.textColor}
                     bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
                     bgColor={post.bodyBackgroundColor || post.textBackgroundColor}
+                    anchor={post.bodyAnchor || 'center'}
+                    maxLines={post.bodyMaxLines}
                     // NEW: Effects props
                     shadowType={post.bodyShadowType}
                     shadowColor={post.bodyShadowColor}

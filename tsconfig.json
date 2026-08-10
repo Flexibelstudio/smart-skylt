@@ -12,7 +12,8 @@
     ],
     "skipLibCheck": true,
     "types": [
-      "node"
+      "node",
+      "vite/client"
     ],
     "moduleResolution": "bundler",
     "isolatedModules": true,
@@ -27,6 +28,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["src", "."],
+  "include": ["."],
+  "exclude": ["node_modules", "dist", "functions", "voice-ws", "vite.config.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

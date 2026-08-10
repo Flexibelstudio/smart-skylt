@@ -15,7 +15,8 @@ import {
   deleteDisplayScreen as fbDeleteDisplayScreen,
   updateOrganization as fbUpdateOrganization,
   getOrganizationById,
-  isOffline
+  isOffline,
+  sendScreenHeartbeat
 } from '../services/firebaseService';
 import { useAuth } from './AuthContext';
 import { 
@@ -26,6 +27,7 @@ import {
   useScreenSessionListener 
 } from '../hooks/useRealtimeData';
 import { getAppMode } from '../utils/appMode';
+import { parseToDate } from '../utils/dateUtils';
 
 type SyncStatus = 'synced' | 'syncing' | 'offline';
 
@@ -47,6 +49,7 @@ interface LocationContextType {
   updateSelectedOrganization: (data: Partial<Organization>) => void;
   clearSelection: () => void;
   locationLoading: boolean;
+  screensReady: boolean;
   syncStatus: SyncStatus;
 }
 
@@ -96,7 +99,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [fetchedOrg, immediateOrg, selectedOrgId]);
 
   // 4. Fetch Screens for Selected Organization (Realtime via Hook)
-  const { data: displayScreens = [], isLoading: screensLoading } = useOrganizationScreens(selectedOrgId || undefined);
+  const { data: displayScreens = [], isLoading: screensLoading, hasReceivedSnapshot: screensReady } = useOrganizationScreens(selectedOrgId || undefined);
 
   // 5. Manage Selected Display Screen (Local State)
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
@@ -298,8 +301,8 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       const updatedPosts = screen.posts.map(post => {
         if (post.status !== 'archived' && post.endDate) {
-          const endDate = new Date(post.endDate);
-          if (endDate < now) {
+          const endDate = parseToDate(post.endDate, true);
+          if (endDate && endDate < now) {
             hasUpdates = true;
             return { ...post, status: 'archived' as const };
           }
@@ -320,6 +323,14 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
+
+  // Heartbeat: tala om för admin att skärmen lever, var 60:e sekund
+  useEffect(() => {
+      if (!isScreenMode || !deviceId) return;
+      sendScreenHeartbeat(deviceId); // direkt vid start
+      const interval = setInterval(() => sendScreenHeartbeat(deviceId), 60000);
+      return () => clearInterval(interval);
+  }, [isScreenMode, deviceId]);
 
 
   // --- CRUD Helpers ---
@@ -359,6 +370,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
     updateSelectedOrganization,
     clearSelection,
     locationLoading,
+    screensReady,
     syncStatus: (isOffline ? 'offline' : 'synced') as SyncStatus // Simplified for now
   };
 

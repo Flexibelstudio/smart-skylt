@@ -14,6 +14,9 @@ import {
     generateDisplayPostImage
 } from '../../../services/geminiService';
 import AIIdeaGenerator from '../../AIGeneratorScreen';
+import { DnaStatusBadge } from '../../DnaStatusBadge';
+import { SkylieHint } from '../../SkylieHint';
+import { EmojiPicker } from '../../EmojiPicker';
 
 // --- Shared Color Utilities ---
 const resolveColor = (colorKey: string | undefined, fallback: string, organization?: Organization): string => {
@@ -211,6 +214,27 @@ const TextBlock: React.FC<{
 
     const [isExpanded, setIsExpanded] = useState(!onDelete); // Default expanded for main blocks, collapsed for optional ones if initially created empty? Actually always expanded is fine for now.
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const handleEmojiSelect = (emoji: string) => {
+        const el = textareaRef.current;
+        if (el) {
+            const start = el.selectionStart ?? textValue.length;
+            const end = el.selectionEnd ?? textValue.length;
+            const newVal = textValue.substring(0, start) + emoji + textValue.substring(end);
+            onTextChange(newVal);
+            setTimeout(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                    const newPos = start + emoji.length;
+                    textareaRef.current.setSelectionRange(newPos, newPos);
+                }
+            }, 0);
+        } else {
+            onTextChange(textValue + emoji);
+        }
+    };
 
     return (
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:shadow">
@@ -224,6 +248,23 @@ const TextBlock: React.FC<{
                     <span className="text-base font-extrabold tracking-tight text-slate-800 dark:text-slate-100">{label}</span>
                 </label>
                 <div className="flex items-center gap-2.5">
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                            className="flex items-center gap-1 py-1 px-2.5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700/80 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all cursor-pointer"
+                            title="Lägg till emoji"
+                        >
+                            <span className="text-sm">😀</span>
+                        </button>
+                        {showEmojiPicker && (
+                            <EmojiPicker
+                                onSelect={handleEmojiSelect}
+                                onClose={() => setShowEmojiPicker(false)}
+                                className="top-full right-0 mt-1"
+                            />
+                        )}
+                    </div>
                     {onAiSuggest && (
                         <button
                             type="button"
@@ -246,12 +287,19 @@ const TextBlock: React.FC<{
             {isExpanded && (
                 <>
                     <textarea 
+                        ref={textareaRef}
                         rows={rows} 
                         value={textValue} 
                         onChange={e => onTextChange(e.target.value)} 
                         className="w-full bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 mb-4 focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-white"
                         placeholder={`Skriv din ${label.toLowerCase()} här...`}
                     />
+
+                    {label === 'Brödtext' && (organization?.bookingCalendars || []).some(c => c.enabled) && (
+                        <SkylieHint className="mt-2 mb-4">
+                            💡 Skriv {'{{lediga_tider}}'} i texten så visas dagens lediga bokningstider automatiskt — eller {'{{lediga_tider:Anna}}'} för en specifik person. Uppdateras var 15:e minut.
+                        </SkylieHint>
+                    )}
 
                     {/* Inline Design Controls */}
                     <div className="space-y-4 pt-3 border-t border-slate-100 dark:border-slate-700/50">
@@ -478,6 +526,8 @@ export const Step2_Content: React.FC<{
     const [historyIndex, setHistoryIndex] = useState(-1);
     const isTypingRef = useRef(false);
 
+    const [showElementEmojiPicker, setShowElementEmojiPicker] = useState(false);
+
     useEffect(() => {
         const initialState = { headline: post.headline || '', body: post.body || '' };
         setTextHistory([initialState]);
@@ -495,7 +545,7 @@ export const Step2_Content: React.FC<{
         const newPost = { ...post, [field]: value };
         if (field === 'headline') {
             newPost.internalTitle = value || 'Nytt inlägg';
-        } else if (field === 'url') {
+        } else if (field === 'realEstateUrl') {
             newPost.internalTitle = value ? `Webbplats: ${value}` : 'Webbplats';
         }
         onPostChange(newPost);
@@ -545,7 +595,7 @@ export const Step2_Content: React.FC<{
         if (!post.body) return;
         setAiLoading('suggest-headline');
         try {
-            const suggestions = await generateHeadlineSuggestions(post.body, [post.headline || '']);
+            const suggestions = await generateHeadlineSuggestions(post.body, [post.headline || ''], organization);
             setHeadlineSuggestions(suggestions);
         } catch (error) {
             showToast({ message: "Kunde inte hämta förslag.", type: 'error' });
@@ -553,13 +603,13 @@ export const Step2_Content: React.FC<{
         } finally {
             setAiLoading(false);
         }
-    }, [post.body, post.headline, showToast]);
+    }, [post.body, post.headline, showToast, organization]);
 
     const fetchBodySuggestions = useCallback(async () => {
         if (!post.headline) return;
         setAiLoading('suggest-body');
         try {
-            const suggestions = await generateBodySuggestions(post.headline, [post.body || '']);
+            const suggestions = await generateBodySuggestions(post.headline, [post.body || ''], organization);
             setBodySuggestions(suggestions);
         } catch (error) {
             showToast({ message: "Kunde inte hämta förslag.", type: 'error' });
@@ -567,7 +617,7 @@ export const Step2_Content: React.FC<{
         } finally {
             setAiLoading(false);
         }
-    }, [post.headline, post.body, showToast]);
+    }, [post.headline, post.body, showToast, organization]);
 
     const handleOpenHeadlineSuggestions = useCallback(() => {
         if (!post.body) { showToast({ message: 'Skriv en brödtext först.', type: 'info' }); return; }
@@ -599,7 +649,7 @@ export const Step2_Content: React.FC<{
                     newContent = await refineTextWithCustomPrompt(currentContent, "Förbättra texten. Gör den mer engagerande, tydlig och slagkraftig.");
                     break;
                 default:
-                    newContent = await refineDisplayPostContent(currentContent, command);
+                    newContent = await refineDisplayPostContent(currentContent, command, organization);
             }
             
             // Only update the requested field(s)
@@ -631,6 +681,21 @@ export const Step2_Content: React.FC<{
         };
         const currentElements = post.additionalTextElements || [];
         onPostChange({ ...post, additionalTextElements: [...currentElements, newElement] });
+    };
+
+    const handleAddEmojiElement = (emoji: string) => {
+        const newElement: AdditionalTextElement = {
+            id: `text-${Date.now()}`,
+            text: emoji,
+            x: 70, y: 70, width: 20,
+            fontScale: 12.0,
+            textAlign: 'center',
+            shadowType: 'none',
+            outlineWidth: 0,
+        };
+        const currentElements = post.additionalTextElements || [];
+        onPostChange({ ...post, additionalTextElements: [...currentElements, newElement] });
+        setShowElementEmojiPicker(false);
     };
 
     const handleUpdateAdditionalText = (id: string, updates: Partial<AdditionalTextElement>) => {
@@ -969,9 +1034,12 @@ export const Step2_Content: React.FC<{
             </div>
 
             <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/30">
-                <div className="flex items-center gap-2 text-lg font-bold text-purple-900 dark:text-purple-200 pb-3 flex-shrink-0">
-                    <SparklesIcon className="h-5 w-5 text-purple-500" />
-                    Idétorka? Låt AI hjälpa dig igång
+                <div className="flex flex-wrap items-center justify-between pb-3 gap-2">
+                    <div className="flex items-center gap-2 text-lg font-bold text-purple-900 dark:text-purple-200">
+                        <SparklesIcon className="h-5 w-5 text-purple-500" />
+                        Idétorka? Låt AI hjälpa dig igång
+                    </div>
+                    <DnaStatusBadge organization={organization} />
                 </div>
                 <AIIdeaGenerator
                     onIdeaSelect={handleIdeaSelect}
@@ -1065,9 +1133,27 @@ export const Step2_Content: React.FC<{
             <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <div className="flex justify-between items-center">
                     <h4 className="font-bold text-slate-800 dark:text-slate-200">Övriga texter</h4>
-                    <button onClick={handleAddAdditionalText} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1">
-                        <span>+</span> Lägg till textruta
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setShowElementEmojiPicker(!showElementEmojiPicker)}
+                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                                <span>😀</span> Lägg till emoji
+                            </button>
+                            {showElementEmojiPicker && (
+                                <EmojiPicker
+                                    onSelect={handleAddEmojiElement}
+                                    onClose={() => setShowElementEmojiPicker(false)}
+                                    className="top-full right-0 mt-1"
+                                />
+                            )}
+                        </div>
+                        <button onClick={handleAddAdditionalText} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1">
+                            <span>+</span> Lägg till textruta
+                        </button>
+                    </div>
                 </div>
                 
                 {post.additionalTextElements && post.additionalTextElements.length > 0 ? (

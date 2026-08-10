@@ -1,6 +1,7 @@
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
 import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, VideoOperation, PostTemplate, Tag, DisplayPost, MediaItem, InstagramStory } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
+import { AI_MODELS } from './aiModels';
 
 // Re-export isOffline for use in other components
 export { isOffline };
@@ -724,6 +725,70 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
     });
 };
 
+export const changeScreenChannel = async (
+    orgId: string,
+    physicalScreenId: string,   // = deviceId
+    newChannelId: string
+): Promise<void> => {
+    if (isOffline) {
+        // OFFLINE-grenen: uppdatera mock-orgens physicalScreens +
+        // mock_pairing_codes i localStorage (assignedDisplayScreenId) och
+        // trigga befintliga mock-lyssnare.
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org && org.physicalScreens) {
+            const screen = org.physicalScreens.find(s => s.id === physicalScreenId);
+            if (screen) {
+                screen.displayScreenId = newChannelId;
+            }
+        }
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        let updated = false;
+        codes.forEach((c: any) => {
+            if (c.pairedDeviceId === physicalScreenId) {
+                c.assignedDisplayScreenId = newChannelId;
+                updated = true;
+            }
+        });
+        if (updated) {
+            localStorage.setItem('mock_pairing_codes', JSON.stringify(codes));
+        }
+        return;
+    }
+
+    if (!db) return;
+
+    // ONLINE-grenen, atomisk skrivning med WriteBatch:
+    // 1. Läs org-dokumentet och pairing-frågan FÖRST
+    // 2. Utför alla 3 uppdateringar i en enda atomisk batch
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgDoc = await orgRef.get();
+
+    const pairingQuery = await db.collection('screenPairingCodes')
+        .where('pairedDeviceId', '==', physicalScreenId)
+        .get();
+
+    const sessionRef = db.collection('screenSessions').doc(physicalScreenId);
+
+    const batch = db.batch();
+
+    if (orgDoc.exists) {
+        const orgData = orgDoc.data() as Organization;
+        const currentScreens = orgData.physicalScreens || [];
+        const updatedScreens = currentScreens.map(s => 
+            s.id === physicalScreenId ? { ...s, displayScreenId: newChannelId } : s
+        );
+        batch.update(orgRef, { physicalScreens: updatedScreens });
+    }
+
+    pairingQuery.forEach(doc => {
+        batch.update(doc.ref, { assignedDisplayScreenId: newChannelId });
+    });
+
+    batch.set(sessionRef, { displayScreenId: newChannelId }, { merge: true });
+
+    await batch.commit();
+};
+
 export const listenToScreenSession = (deviceId: string, callback: (data: any | null | undefined) => void) => {
     if (isOffline || !db) return () => {};
     return db.collection('screenSessions').doc(deviceId).onSnapshot(
@@ -736,6 +801,52 @@ export const listenToScreenSession = (deviceId: string, callback: (data: any | n
             callback(undefined); 
         }
     );
+};
+
+export const sendScreenHeartbeat = async (deviceId: string): Promise<void> => {
+    if (isOffline || !db || !deviceId) return;
+    try {
+        await db.collection('screenSessions').doc(deviceId).set({
+            lastHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+            status: 'online',
+        }, { merge: true });
+    } catch (e) {
+        // Tyst: heartbeat får aldrig störa visningen. Sessionen kan saknas före parning.
+        console.warn('Heartbeat misslyckades:', e);
+    }
+};
+
+export const listenToScreenSessions = (
+    orgId: string,
+    callback: (sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>) => void
+): (() => void) => {
+    if (isOffline || !db) {
+        callback({
+            'mock-device-1': {
+                lastHeartbeat: new Date(),
+                status: 'online',
+                displayScreenId: 'screen_flexibel_1',
+            },
+        });
+        return () => {};
+    }
+    return db.collection('screenSessions')
+        .where('organizationId', '==', orgId)
+        .onSnapshot(snapshot => {
+            const sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }> = {};
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                sessions[doc.id] = {
+                    lastHeartbeat: data.lastHeartbeat?.toDate ? data.lastHeartbeat.toDate() : undefined,
+                    status: data.status,
+                    displayScreenId: data.displayScreenId,
+                };
+            });
+            callback(sessions);
+        }, (error) => {
+            console.error('Kunde inte lyssna på skärmsessioner:', error);
+            callback({});
+        });
 };
 
 // --- ANNOUNCEMENTS & NOTIFICATIONS ---
@@ -913,7 +1024,13 @@ export const listenToSuggestedPosts = (orgId: string, callback: (posts: Suggeste
     }
     return db.collection('organizations').doc(orgId).collection('suggestedPosts').onSnapshot(
         snap => {
-            const posts = snap.docs.map(d => ({ id: d.id, ...d.data() } as SuggestedPost));
+            const posts = snap.docs.map(doc => {
+                const raw = doc.data();
+                const createdAt = raw.createdAt?.toDate
+                    ? raw.createdAt.toDate().toISOString()   // äldre dokument med Timestamp
+                    : (raw.createdAt || new Date().toISOString());
+                return { ...raw, id: doc.id, createdAt } as SuggestedPost;
+            });
             callback(posts);
         },
         error => {
@@ -979,7 +1096,7 @@ export const createVideoOperation = async (orgId: string, screenId: string, post
         postId,
         userId: auth.currentUser.uid,
         status: 'processing',
-        model: 'veo-3.1-fast-generate-preview',
+        model: AI_MODELS.VIDEO,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     return docRef.id;
@@ -1003,6 +1120,34 @@ export const listenToInstagramStories = (orgId: string, callback: (stories: Inst
                 callback([]);
             }
         );
+};
+
+export const listenToQrScanCounts = (
+    orgId: string,
+    callback: (counts: Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }>) => void
+): (() => void) => {
+    if (isOffline || !db) {
+        callback({});
+        return () => {};
+    }
+    return db.collection('qrScanCounts')
+        .where('orgId', '==', orgId)
+        .onSnapshot(snapshot => {
+            const counts: Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }> = {};
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                counts[doc.id] = {
+                    count: data.count || 0,
+                    lastScanAt: data.lastScanAt?.toDate ? data.lastScanAt.toDate() : undefined,
+                    daily: data.daily || {},
+                    screenId: data.screenId,
+                };
+            });
+            callback(counts);
+        }, (error) => {
+            console.error('Kunde inte lyssna på QR-statistik:', error);
+            callback({});
+        });
 };
 
 // --- CLOUD FUNCTIONS ---
@@ -1029,4 +1174,20 @@ export const runOrgCollectionsMigration = async (payload: any) => {
     const fn = functions.httpsCallable('runOrgCollectionsMigration');
     const result = await fn(payload);
     return result.data;
+};
+
+export const getAiUsage = async (
+    orgId: string
+): Promise<{ totalCredits: number; counts: Record<string, number> } | null> => {
+    if (isOffline || !db) return null;
+    try {
+        const month = new Date().toISOString().slice(0, 7);
+        const doc = await db.collection('aiUsage').doc(`${orgId}_${month}`).get();
+        if (!doc.exists) return { totalCredits: 0, counts: {} };
+        const data = doc.data() || {};
+        return { totalCredits: data.totalCredits || 0, counts: data.counts || {} };
+    } catch (e) {
+        console.warn('Kunde inte hämta AI-användning:', e);
+        return null;
+    }
 };

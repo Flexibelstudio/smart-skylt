@@ -1109,6 +1109,7 @@ const CollageMediaEditor: React.FC<{
     };
 
     const handleSaveItemToGallery = async (item: CollageItem) => {
+        if (item.type === 'text') return;
         const mediaUrl = item.imageUrl || item.videoUrl;
         if (!mediaUrl) return;
         setIsSavingToGalleryId(item.id);

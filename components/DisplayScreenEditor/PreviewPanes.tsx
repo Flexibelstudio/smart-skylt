@@ -4,6 +4,7 @@ import { DisplayPost, DisplayScreen, Organization, BrandingOptions, AdditionalTe
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { SplitScreenLayout } from '../SplitScreenLayout';
 import { ChevronDownIcon, PlayIcon, PauseIcon } from '../icons';
+import { parseToDate } from '../../utils/dateUtils';
 
 export const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): string => {
     switch (ratio) {
@@ -246,7 +247,7 @@ const SinglePostPreview: React.FC<{
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed font-mono min-h-[40px]">
                                 {simDistance === 2 && "👉 [FOKUS 2M]: Optimal vy intill skylten. Perfekt läsbarhet för all text, detaljerad info och QR-skanning på nära håll."}
                                 {simDistance === 5 && "👉 [FOKUS 5M]: Nära trottoaravstånd. Bra för medelstora texter, logotyper och viktiga huvudbudskap."}
-                                {simDistance === 10 && "👉 [FOKUS 10M]: På avstånd längs trottoaren. Endast större texter och tydliga taggar läses snabbt."}
+                                {simDistance === 10 && "👉 [FOKUS 10M]: På avstånd längs trottoaren. Endast större texter och tydliga stämplar läses snabbt."}
                                 {simDistance === 15 && "👉 [FOKUS 15M]: Tvärsöver gatan. Endast mycket stora och tydliga rubriker samt logotyper har bra läsbarhet."}
                                 {simDistance === 20 && "👉 [FOKUS 20M]: Längre håll. Kräver minimalistisk layout och stark kontrast för att uppfattas."}
                                 {simDistance === 25 && "👉 [FOKUS 25M]: Bilistavstånd på håll. Trafikanter uppfattar endast enkla färgblock och logotypkonturer."}
@@ -421,11 +422,11 @@ const LivePreviewPane: React.FC<{ screen: DisplayScreen, organization: Organizat
         const now = currentTime;
         return screen.posts.filter(post => {
             if (post.status === 'archived' || post.status === 'draft') return false;
-            const hasStartDate = post.startDate && post.startDate.length > 0;
-            const hasEndDate = post.endDate && post.endDate.length > 0;
-            if (hasStartDate && new Date(post.startDate!) > now) return false;
-            if (hasEndDate && new Date(post.endDate!) < now) return false;
-            if (!hasStartDate && !hasEndDate) return false;
+            const start = post.startDate ? parseToDate(post.startDate, false) : null;
+            const end = post.endDate ? parseToDate(post.endDate, true) : null;
+            if (start && start > now) return false;
+            if (end && end < now) return false;
+            if (!start && !end) return false;
             return true;
         });
     }, [screen, currentTime]);

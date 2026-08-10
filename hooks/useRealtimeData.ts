@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen, ScreenPairingCode } from '../types';
 import { 
@@ -61,27 +61,26 @@ export function useOrganizationDetails(orgId: string | undefined) {
 
 export function useOrganizationScreens(orgId: string | undefined) {
   const queryClient = useQueryClient();
+  const [hasReceivedSnapshot, setHasReceivedSnapshot] = useState(false);
 
-  // We use a query to manage the state, but the initial fetch is handled by the listener mostly,
-  // or we could fetch once. For simplicity in this hybrid model, we rely on the listener to populate this.
-  // But providing a queryFn makes it robust if the listener takes time or fails.
   const queryResult = useQuery({
     queryKey: ['screens', orgId],
-    queryFn: () => Promise.resolve([] as DisplayScreen[]), // Initial empty state or could call getDisplayScreens if we had it
+    queryFn: () => Promise.resolve([] as DisplayScreen[]),
     enabled: !!orgId,
   });
 
   useEffect(() => {
     if (!orgId) return;
-
+    setHasReceivedSnapshot(false);
     const unsubscribe = listenToDisplayScreens(orgId, (screens) => {
       queryClient.setQueryData(['screens', orgId], screens);
+      setHasReceivedSnapshot(true);
     });
 
     return () => unsubscribe();
   }, [orgId, queryClient]);
 
-  return queryResult;
+  return { ...queryResult, hasReceivedSnapshot };
 }
 
 // --- Pairing ---
