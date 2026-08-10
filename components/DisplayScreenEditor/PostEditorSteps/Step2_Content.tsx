@@ -15,7 +15,6 @@ import {
 } from '../../../services/geminiService';
 import AIIdeaGenerator from '../../AIGeneratorScreen';
 import { DnaStatusBadge } from '../../DnaStatusBadge';
-import { SkylieHint } from '../../SkylieHint';
 import { EmojiPicker } from '../../EmojiPicker';
 
 // --- Shared Color Utilities ---
@@ -137,6 +136,27 @@ const EffectColorPicker: React.FC<{
                 className="w-6 h-6 p-0 rounded-full border border-slate-300 dark:border-slate-600 cursor-pointer overflow-hidden"
                 title="Välj färg"
             />
+        </div>
+    );
+};
+
+// --- Booking Placeholder Helper Component ---
+const BookingPlaceholderHelper: React.FC<{
+    organization?: Organization;
+    onInsert: () => void;
+}> = ({ organization, onInsert }) => {
+    const calendars = (organization?.bookingCalendars || []).filter(c => c.enabled);
+    if (calendars.length === 0) return null;
+    return (
+        <div className="mt-2 mb-4 p-3 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200/70 dark:border-teal-800/50 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-teal-800 dark:text-teal-300">
+                💡 Visa dagens lediga bokningstider automatiskt i texten. Uppdateras var 15:e minut.
+                {calendars.length > 1 && <> För en enskild person: <code className="font-mono">{'{{lediga_tider:' + calendars[0].staffName + '}}'}</code></>}
+            </p>
+            <button type="button" onClick={onInsert}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white whitespace-nowrap transition-colors">
+                + Infoga lediga tider
+            </button>
         </div>
     );
 };
@@ -295,10 +315,15 @@ const TextBlock: React.FC<{
                         placeholder={`Skriv din ${label.toLowerCase()} här...`}
                     />
 
-                    {label === 'Brödtext' && (organization?.bookingCalendars || []).some(c => c.enabled) && (
-                        <SkylieHint className="mt-2 mb-4">
-                            💡 Skriv {'{{lediga_tider}}'} i texten så visas dagens lediga bokningstider automatiskt — eller {'{{lediga_tider:Anna}}'} för en specifik person. Uppdateras var 15:e minut.
-                        </SkylieHint>
+                    {label === 'Brödtext' && (
+                        <BookingPlaceholderHelper
+                            organization={organization}
+                            onInsert={() => {
+                                const val = textValue || '';
+                                const needsSpace = val.length > 0 && !val.endsWith(' ');
+                                onTextChange(val + (needsSpace ? ' ' : '') + '{{lediga_tider}}');
+                            }}
+                        />
                     )}
 
                     {/* Inline Design Controls */}
@@ -923,6 +948,14 @@ export const Step2_Content: React.FC<{
                                             placeholder="Skanna QR-koden till höger med din mobilkamera för att se lediga tider hos oss direkt."
                                             rows={2}
                                             className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-slate-700 dark:text-slate-300"
+                                        />
+                                        <BookingPlaceholderHelper
+                                            organization={organization}
+                                            onInsert={() => {
+                                                const currentBody = post.body || '';
+                                                const needsSpace = currentBody.length > 0 && !currentBody.endsWith(' ');
+                                                handleFieldChange('body', currentBody + (needsSpace ? ' ' : '') + '{{lediga_tider}}');
+                                            }}
                                         />
                                     </div>
 

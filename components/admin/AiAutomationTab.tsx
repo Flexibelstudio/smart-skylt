@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Organization, DisplayScreen, DisplayPost, AiAutomation, SuggestedPost, BookingCalendarEntry } from '../../types';
-import { listenToSuggestedPosts, updateSuggestedPost, updateDisplayScreen } from '../../services/firebaseService'; // Using direct updateDisplayScreen here for simplicity as it's a specific action
+import { listenToSuggestedPosts, updateSuggestedPost, updateDisplayScreen, getOrgIcsUrls, saveOrgIcsUrls } from '../../services/firebaseService'; // Using direct updateDisplayScreen here for simplicity as it's a specific action
 import { Card } from '../Card';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
 import { CompactToggleSwitch, PencilIcon, TrashIcon, LoadingSpinnerIcon, SparklesIcon, MonitorIcon } from '../icons';
@@ -64,8 +64,48 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
         { key: 0, name: 'Söndag' },
     ];
 
+    const getCalendarSummary = (cal: BookingCalendarEntry): string => {
+        const active = weekdaysList.filter(d => cal.workingHours?.[d.key]?.enabled);
+        let daysPart: string;
+        if (active.length === 0) {
+            daysPart = 'Inga dagar valda';
+        } else {
+            // Sammanhängande spann skrivs som "Mån–Fre", annars kommaseparerat
+            const shorten = (n: string) => n.slice(0, 3);
+            const keysInOrder = weekdaysList.map(d => d.key);
+            const activeIdx = active.map(d => keysInOrder.indexOf(d.key));
+            const isRun = activeIdx.every((v, i) => i === 0 || v === activeIdx[i - 1] + 1);
+            daysPart = (isRun && active.length > 2)
+                ? `${shorten(active[0].name)}–${shorten(active[active.length - 1].name)}`
+                : active.map(d => shorten(d.name)).join(', ');
+        }
+        const times = active.map(d => `${cal.workingHours?.[d.key]?.start || '09:00'}–${cal.workingHours?.[d.key]?.end || '17:00'}`);
+        const sameTime = times.length > 0 && times.every(t => t === times[0]);
+        const timePart = times.length === 0 ? '' : (sameTime ? ` ${times[0]}` : ' olika tider');
+        return `${daysPart}${timePart} · ${cal.slotMinutes} min`;
+    };
+
+    const [icsUrlsLoaded, setIcsUrlsLoaded] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        let isMounted = true;
+        getOrgIcsUrls(organization.id).then(urls => {
+            if (isMounted) {
+                setIcsUrlsLoaded(urls || {});
+            }
+        });
+        return () => { isMounted = false; };
+    }, [organization.id]);
+
+    const getCombinedCalendars = (orgCalendars: BookingCalendarEntry[] | undefined, loadedUrls: Record<string, string>): BookingCalendarEntry[] => {
+        return (orgCalendars || []).map(cal => ({
+            ...cal,
+            icsUrl: loadedUrls[cal.id] ?? cal.icsUrl ?? ''
+        }));
+    };
+
     const [calendars, setCalendars] = useState<BookingCalendarEntry[]>(() => {
-        return organization.bookingCalendars || [];
+        return getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded);
     });
     const [isCalendarsDirty, setIsCalendarsDirty] = useState(false);
 
@@ -74,25 +114,34 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
 
     useEffect(() => {
         if (isCalendarsDirty) return;
-        setCalendars(organization.bookingCalendars || []);
-    }, [organization.bookingCalendars, isCalendarsDirty]);
+        setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded));
+    }, [organization.bookingCalendars, icsUrlsLoaded, isCalendarsDirty]);
 
     const handleSaveCalendar = async () => {
         setIsSavingCalendar(true);
-        const normalizedList = calendars.map(cal => {
+        const icsUrlsToSave: Record<string, string> = {};
+
+        const normalizedListForOrg = calendars.map(cal => {
             let normalizedIcsUrl = (cal.icsUrl || '').trim();
             if (normalizedIcsUrl.startsWith('webcal://')) {
                 normalizedIcsUrl = 'https://' + normalizedIcsUrl.substring(9);
             }
-            return {
+            if (normalizedIcsUrl) {
+                icsUrlsToSave[cal.id] = normalizedIcsUrl;
+            }
+
+            const calCopy: any = {
                 ...cal,
-                icsUrl: normalizedIcsUrl,
                 bookingUrl: cal.bookingUrl?.trim() || undefined
             };
+            delete calCopy.icsUrl;
+            return calCopy as BookingCalendarEntry;
         });
 
         try {
-            await onUpdateOrganization(organization.id, { bookingCalendars: normalizedList });
+            await saveOrgIcsUrls(organization.id, icsUrlsToSave);
+            await onUpdateOrganization(organization.id, { bookingCalendars: normalizedListForOrg });
+            setIcsUrlsLoaded(icsUrlsToSave);
             setIsCalendarsDirty(false);
             showToast({ message: "Bokningskalendrar har sparats framgångsrikt.", type: 'success' });
         } catch (e) {
@@ -402,14 +451,26 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                         >
                                             <div className="flex items-center gap-3">
                                                 <span className="text-xs font-bold text-slate-400 w-6">#{idx + 1}</span>
-                                                <span className="font-bold text-slate-800 dark:text-white">
-                                                    {cal.staffName || 'Namnlös personal'}
-                                                </span>
-                                                {!cal.enabled && (
-                                                    <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded text-[10px] font-bold uppercase">
-                                                        Inaktiv
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-slate-800 dark:text-white">
+                                                            {cal.staffName || 'Namnlös personal'}
+                                                        </span>
+                                                        {!cal.enabled && (
+                                                            <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded text-[10px] font-bold uppercase">
+                                                                Inaktiv
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                        {getCalendarSummary(cal)}
+                                                        {cal.icsUrl && cal.icsUrl.trim() ? (
+                                                            <span> · Kalender kopplad</span>
+                                                        ) : (
+                                                            <span className="text-amber-600 dark:text-amber-400"> · Ingen kalenderlänk</span>
+                                                        )}
                                                     </span>
-                                                )}
+                                                </div>
                                             </div>
                                             
                                             <div className="flex items-center gap-4" onClick={e => e.stopPropagation()}>
@@ -566,7 +627,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                             {isCalendarsDirty && (
                                 <button
                                     type="button"
-                                    onClick={() => { setCalendars(organization.bookingCalendars || []); setIsCalendarsDirty(false); }}
+                                    onClick={() => { setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded)); setIsCalendarsDirty(false); }}
                                     className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 mr-3 transition-colors"
                                 >
                                     Ångra ändringar

@@ -404,6 +404,26 @@ export const updateOrganizationPostTemplates = async (orgId: string, templates: 
     await updateOrganization(orgId, { postTemplates: templates });
 };
 
+export const getOrgIcsUrls = async (orgId: string): Promise<Record<string, string>> => {
+    if (isOffline) return {};
+    if (!db) return {};
+    try {
+        const doc = await db.collection('orgPrivateSettings').doc(orgId).get();
+        if (!doc.exists) return {};
+        const data = doc.data();
+        return data?.icsUrls || {};
+    } catch (e) {
+        console.warn(`[getOrgIcsUrls] Error loading icsUrls for org ${orgId}:`, e);
+        return {};
+    }
+};
+
+export const saveOrgIcsUrls = async (orgId: string, icsUrls: Record<string, string>): Promise<void> => {
+    if (isOffline) return offlineWarning('saveOrgIcsUrls');
+    if (!db) return;
+    await db.collection('orgPrivateSettings').doc(orgId).set({ icsUrls }, { merge: true });
+};
+
 // --- DISPLAY SCREENS (SUBCOLLECTION) ---
 
 export const listenToDisplayScreens = (orgId: string, callback: (screens: DisplayScreen[]) => void) => {

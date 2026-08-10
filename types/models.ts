@@ -108,7 +108,7 @@ export interface BookingCalendarEntry {
   id: string;              // t.ex. genererat vid skapande
   staffName: string;       // "Anna", "Erik" — visas på skärmen
   enabled: boolean;
-  icsUrl: string;
+  icsUrl?: string;
   bookingUrl?: string;     // Personlig bokningslänk (QR)
   slotMinutes: number;
   workingHours: { [weekday: number]: { enabled: boolean; start: string; end: string } };

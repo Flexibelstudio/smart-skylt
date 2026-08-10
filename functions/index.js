@@ -960,7 +960,16 @@ export const syncBookingCalendars = onSchedule(
 
     for (const orgDoc of orgsSnap.docs) {
       const orgData = orgDoc.data() || {};
-      const bookingCalendars = (orgData.bookingCalendars || []).filter((e) => e && e.enabled && e.icsUrl);
+      const privateDoc = await db.collection("orgPrivateSettings").doc(orgDoc.id).get();
+      const privateData = privateDoc.exists ? privateDoc.data() : null;
+      const icsUrls = privateData?.icsUrls || {};
+
+      const bookingCalendars = (orgData.bookingCalendars || []).filter((e) => {
+        if (!e || !e.enabled) return false;
+        const icsUrl = icsUrls[e.id] || e.icsUrl;
+        return Boolean(icsUrl);
+      });
+
       if (bookingCalendars.length === 0) {
         // Städa bort inaktuell data om kalendrarna tagits bort/inaktiverats
         if (orgData.todaysAvailableSlots) {
@@ -973,10 +982,11 @@ export const syncBookingCalendars = onSchedule(
       const byCalendar = {};
 
       for (const entry of bookingCalendars) {
-        if (!entry.enabled || !entry.icsUrl) continue;
+        const icsUrl = icsUrls[entry.id] || entry.icsUrl;
+        if (!entry.enabled || !icsUrl) continue;
 
         try {
-          const events = await ical.async.fromURL(entry.icsUrl, { timeout: 15000 });
+          const events = await ical.async.fromURL(icsUrl, { timeout: 15000 });
 
           // INTEGRITET: vi läser ENDAST tidsblock. Titlar, beskrivningar och deltagare
           // (kan innehålla kundnamn) får aldrig läsas, loggas eller sparas.

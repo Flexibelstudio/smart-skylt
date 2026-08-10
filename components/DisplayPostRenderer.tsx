@@ -1047,7 +1047,7 @@ const BookingPortalRenderer: React.FC<{
             <div className="absolute bottom-0 left-0 w-[40cqw] h-[40cqw] bg-emerald-500/10 rounded-full blur-[8cqw] pointer-events-none -ml-[10cqw] -mb-[10cqw]"></div>
 
             {/* Left Content Area (or Top on Portrait) */}
-            <div className={`flex flex-col justify-center h-full ${isPortrait ? 'w-full text-center space-y-[2.5cqw] mt-[2cqw] max-h-[55%]' : 'w-1/2 text-left space-y-[2cqw] pr-[4cqw]'}`}>
+            <div className={`flex flex-col justify-center ${isPortrait ? 'w-full text-center space-y-[2.5cqw] mt-[2cqw] max-h-[55%] min-h-0 overflow-hidden' : 'h-full w-1/2 text-left space-y-[2cqw] pr-[4cqw]'}`}>
                 
                 {/* Brand / Partner Tag */}
                 <div className={`flex ${isPortrait ? 'justify-center' : 'justify-start'}`}>
@@ -1069,35 +1069,37 @@ const BookingPortalRenderer: React.FC<{
                     {body}
                 </p>
 
-                {/* Checklist (Only showed when we have a bit of vertical space) */}
-                <div className={`grid grid-cols-1 gap-[1cqw] pt-[1cqw] ${isPortrait ? 'hidden sm:grid text-left max-w-md mx-auto w-full' : ''}`}>
-                    <div className="flex items-center gap-[1cqw]">
-                        <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
-                            <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Se lediga tider dygnet runt</span>
-                    </div>
-                    <div className="flex items-center gap-[1cqw]">
-                        <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
-                            <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Boka snabbt directly on your phone</span>
-                    </div>
-                    {isBokadirektUrl && (
+                {/* Checklist (Only showed when we have a bit of vertical space in landscape) */}
+                {!isPortrait && (
+                    <div className="grid grid-cols-1 gap-[1cqw] pt-[1cqw]">
                         <div className="flex items-center gap-[1cqw]">
                             <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
                                 <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
                             </span>
-                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Betala enkelt via Bokadirekt</span>
+                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Se lediga tider dygnet runt</span>
                         </div>
-                    )}
-                </div>
+                        <div className="flex items-center gap-[1cqw]">
+                            <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
+                                <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </span>
+                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Boka snabbt i din mobil</span>
+                        </div>
+                        {isBokadirektUrl && (
+                            <div className="flex items-center gap-[1cqw]">
+                                <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
+                                    <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </span>
+                                <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Betala enkelt via Bokadirekt</span>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Right QR Area with premium floating glass card representing physical signage reception screen */}
