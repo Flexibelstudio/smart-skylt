@@ -1196,6 +1196,22 @@ export const runOrgCollectionsMigration = async (payload: any) => {
     return result.data;
 };
 
+export const testBookingCalendars = async (orgId?: string): Promise<{
+    date: string;
+    results: { staffName: string; slots: string[]; closed?: boolean; error?: string }[];
+    hasCalendars: boolean;
+}> => {
+    if (isOffline) return { date: '', results: [], hasCalendars: false };
+    if (!functions) throw new Error("Functions not initialized");
+    const fn = functions.httpsCallable('testBookingCalendars');
+    const result = await fn({ orgId });
+    return result.data as {
+        date: string;
+        results: { staffName: string; slots: string[]; closed?: boolean; error?: string }[];
+        hasCalendars: boolean;
+    };
+};
+
 export const getAiUsage = async (
     orgId: string
 ): Promise<{ totalCredits: number; counts: Record<string, number> } | null> => {

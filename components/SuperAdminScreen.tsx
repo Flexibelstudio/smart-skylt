@@ -765,7 +765,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                 </div>
             </div>
 
-            {!isProfileModalOpen && organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson) && (
+            {!isProfileModalOpen && isOnboardingDismissed && organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson) && (
                 <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-amber-800 dark:text-amber-300 px-4 py-2.5 rounded-xl flex items-center justify-between gap-3 text-sm animate-fade-in">
                     <span>Era organisationsuppgifter är inte kompletta ännu — de behövs för fakturering.</span>
                     <button type="button" onClick={() => setIsProfileModalOpen(true)} className="font-bold underline hover:no-underline whitespace-nowrap">Fyll i nu</button>

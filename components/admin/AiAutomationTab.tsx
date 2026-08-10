@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Organization, DisplayScreen, DisplayPost, AiAutomation, SuggestedPost, BookingCalendarEntry } from '../../types';
-import { listenToSuggestedPosts, updateSuggestedPost, updateDisplayScreen, getOrgIcsUrls, saveOrgIcsUrls } from '../../services/firebaseService'; // Using direct updateDisplayScreen here for simplicity as it's a specific action
+import { listenToSuggestedPosts, updateSuggestedPost, updateDisplayScreen, getOrgIcsUrls, saveOrgIcsUrls, testBookingCalendars } from '../../services/firebaseService'; // Using direct updateDisplayScreen here for simplicity as it's a specific action
 import { Card } from '../Card';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
 import { CompactToggleSwitch, PencilIcon, TrashIcon, LoadingSpinnerIcon, SparklesIcon, MonitorIcon } from '../icons';
@@ -111,11 +111,33 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
 
     const [expandedCalendarId, setExpandedCalendarId] = useState<string | null>(null);
     const [isSavingCalendar, setIsSavingCalendar] = useState(false);
+    const [isTestingCalendar, setIsTestingCalendar] = useState(false);
+    const [testResult, setTestResult] = useState<{
+        date: string;
+        results: { staffName: string; slots: string[]; closed?: boolean; error?: string }[];
+        hasCalendars: boolean;
+    } | null>(null);
 
     useEffect(() => {
         if (isCalendarsDirty) return;
         setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded));
     }, [organization.bookingCalendars, icsUrlsLoaded, isCalendarsDirty]);
+
+    const handleTestCalendar = async () => {
+        setIsTestingCalendar(true);
+        setTestResult(null);
+        try {
+            const res = await testBookingCalendars(organization.id);
+            setTestResult(res);
+        } catch (e) {
+            showToast({
+                message: `Kunde inte testa kalendern: ${e instanceof Error ? e.message : 'Okänt fel'}`,
+                type: 'error'
+            });
+        } finally {
+            setIsTestingCalendar(false);
+        }
+    };
 
     const handleSaveCalendar = async () => {
         setIsSavingCalendar(true);
@@ -163,17 +185,20 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
         };
         setCalendars(prev => [...prev, newEntry]);
         setIsCalendarsDirty(true);
+        setTestResult(null);
         setExpandedCalendarId(newEntry.id);
     };
 
     const handleRemoveCalendar = (id: string) => {
         setCalendars(prev => prev.filter(cal => cal.id !== id));
         setIsCalendarsDirty(true);
+        setTestResult(null);
     };
 
     const handleUpdateCalendarField = (id: string, field: keyof BookingCalendarEntry, value: any) => {
         setCalendars(prev => prev.map(cal => cal.id === id ? { ...cal, [field]: value } : cal));
         setIsCalendarsDirty(true);
+        setTestResult(null);
     };
 
     const handleUpdateWorkingHours = (id: string, weekday: number, field: 'enabled' | 'start' | 'end', value: any) => {
@@ -193,6 +218,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
             };
         }));
         setIsCalendarsDirty(true);
+        setTestResult(null);
     };
 
     useEffect(() => {
@@ -540,8 +566,17 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                                             placeholder="T.ex. https://www.bokadirekt.se/ical/subscription/..."
                                                         />
                                                         <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 leading-relaxed">
-                                                            I Bokadirekt: Inställningar &rarr; Kalendersynk &rarr; kopiera prenumerationslänken. Länkar som börjar med webcal:// fungerar också.
+                                                            <strong>Bokadirekt:</strong> Inställningar &rarr; Kalendersynk &rarr; kopiera prenumerationslänken.<br />
+                                                            <strong>Google Kalender:</strong> Inställningar &rarr; Integrera kalender &rarr; <strong>Hemlig adress i iCal-format</strong>. Använd den — inte den publika adressen, som kräver att hela kalendern delas offentligt.<br />
+                                                            Länkar som börjar med webcal:// fungerar också. Länken behandlas som en hemlighet och lagras skyddat.
                                                         </p>
+                                                        {(cal.icsUrl || '').toLowerCase().includes('calendar.google.com') && (cal.icsUrl || '').toLowerCase().includes('/public/') && (
+                                                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 font-semibold leading-relaxed">
+                                                                ⚠️ Det här ser ut att vara en publik kalenderadress. Den fungerar bara om
+                                                                kalendern är delad offentligt — då kan vem som helst läsa dina bokningar,
+                                                                inklusive kundernas namn. Använd i stället "Hemlig adress i iCal-format".
+                                                            </p>
+                                                        )}
                                                     </div>
 
                                                     <div>
@@ -618,28 +653,81 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
 
                     {/* Action Block */}
                     {calendars.length > 0 && (
-                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-end">
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-end gap-3">
                             {isCalendarsDirty && (
-                                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 mr-3">
+                                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
                                     Osparade ändringar
                                 </span>
                             )}
                             {isCalendarsDirty && (
                                 <button
                                     type="button"
-                                    onClick={() => { setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded)); setIsCalendarsDirty(false); }}
-                                    className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 mr-3 transition-colors"
+                                    onClick={() => { setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded)); setIsCalendarsDirty(false); setTestResult(null); }}
+                                    className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
                                 >
                                     Ångra ändringar
                                 </button>
                             )}
+                            <SecondaryButton
+                                type="button"
+                                onClick={handleTestCalendar}
+                                disabled={isTestingCalendar || isCalendarsDirty}
+                                title={isCalendarsDirty ? "Spara dina ändringar först" : undefined}
+                                className="text-xs font-bold flex items-center gap-1.5"
+                            >
+                                {isTestingCalendar && <LoadingSpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
+                                <span>{isTestingCalendar ? 'Testar...' : 'Testa kalendern nu'}</span>
+                            </SecondaryButton>
                             <PrimaryButton
+                                type="button"
                                 onClick={() => handleSaveCalendar()}
                                 disabled={isSavingCalendar}
                                 className="bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-2"
                             >
                                 {isSavingCalendar ? 'Sparar...' : 'Spara inställningar'}
                             </PrimaryButton>
+                        </div>
+                    )}
+
+                    {/* Test result box */}
+                    {testResult && (
+                        <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 rounded-xl space-y-3 relative text-xs">
+                            <button
+                                type="button"
+                                onClick={() => setTestResult(null)}
+                                className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold p-1"
+                                title="Stäng"
+                            >
+                                ✕
+                            </button>
+                            <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <span>Resultat från kalendertest</span>
+                                {testResult.date && (
+                                    <span className="text-slate-400 font-normal">({testResult.date})</span>
+                                )}
+                            </div>
+                            {!testResult.hasCalendars || testResult.results.length === 0 ? (
+                                <p className="text-slate-600 dark:text-slate-400 italic">
+                                    Ingen aktiverad kalender med länk.
+                                </p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {testResult.results.map((res, index) => (
+                                        <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2.5 bg-white dark:bg-slate-800/60 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                                            <span className="font-bold text-slate-800 dark:text-slate-200">{res.staffName || 'Personal'}</span>
+                                            {res.error ? (
+                                                <span className="text-red-600 dark:text-red-400 font-semibold">{res.error}</span>
+                                            ) : res.closed ? (
+                                                <span className="text-slate-500 dark:text-slate-400 font-medium">Stängt idag</span>
+                                            ) : res.slots && res.slots.length > 0 ? (
+                                                <span className="font-mono text-emerald-700 dark:text-emerald-300 font-semibold">{res.slots.join(' · ')}</span>
+                                            ) : (
+                                                <span className="text-slate-500 dark:text-slate-400 italic">Inga lediga tider kvar idag</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 

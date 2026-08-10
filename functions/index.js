@@ -950,27 +950,134 @@ const toLocalParts = (d) => {
 
 const minutesToHHMM = (t) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
 
+async function computeTodaysSlotsForOrg(orgId, orgData, nowDate) {
+  const now = nowDate || new Date();
+  const { date: todayStr, minutes: nowMinutes } = toLocalParts(now);
+  const weekday = new Date(now.toLocaleString("en-US", { timeZone: BOOKING_TZ })).getDay(); // 0 = söndag
+
+  const privateDoc = await db.collection("orgPrivateSettings").doc(orgId).get();
+  const privateData = privateDoc.exists ? privateDoc.data() : null;
+  const icsUrls = privateData?.icsUrls || {};
+
+  const bookingCalendars = (orgData.bookingCalendars || []).filter((e) => {
+    if (!e || !e.enabled) return false;
+    const icsUrl = icsUrls[e.id] || e.icsUrl;
+    return Boolean(icsUrl);
+  });
+
+  if (bookingCalendars.length === 0) {
+    return null;
+  }
+
+  const byCalendar = {};
+
+  for (const entry of bookingCalendars) {
+    const icsUrl = icsUrls[entry.id] || entry.icsUrl;
+    if (!entry.enabled || !icsUrl) continue;
+
+    try {
+      const events = await ical.async.fromURL(icsUrl, { timeout: 15000 });
+
+      // INTEGRITET: vi läser ENDAST tidsblock. Titlar, beskrivningar och deltagare
+      // (kan innehålla kundnamn) får aldrig läsas, loggas eller sparas.
+      const busy = [];
+      // Brett fönster ±36h för rrule-expansion; exakt dagfiltrering görs sedan
+      // per förekomst i svensk tid (toLocalParts), vilket löser tidszonsproblemet.
+      const windowStart = new Date(now.getTime() - 36 * 3600000);
+      const windowEnd = new Date(now.getTime() + 36 * 3600000);
+
+      for (const key of Object.keys(events)) {
+        const ev = events[key];
+        if (ev.type !== "VEVENT" || !ev.start) continue;
+
+        const occurrences = [];
+        if (ev.rrule) {
+          const durationMs = (ev.end?.getTime() || ev.start.getTime()) - ev.start.getTime();
+          ev.rrule.between(windowStart, windowEnd, true).forEach((occStart) => {
+            // EXDATE: hoppa över inställda förekomster
+            if (ev.exdate && Object.values(ev.exdate).some((d) => d?.getTime && Math.abs(d.getTime() - occStart.getTime()) < 60000)) return;
+            // Förekomster med override (RECURRENCE-ID) ersätts av sina nya tider nedan
+            if (ev.recurrences && Object.values(ev.recurrences).some((r) => r?.recurrenceid?.getTime && Math.abs(r.recurrenceid.getTime() - occStart.getTime()) < 60000)) return;
+            occurrences.push({ start: occStart, end: new Date(occStart.getTime() + durationMs) });
+          });
+          // Lägg till flyttade förekomster med sina NYA tider
+          if (ev.recurrences) {
+            for (const rec of Object.values(ev.recurrences)) {
+              if (rec && rec.start) occurrences.push({ start: rec.start, end: rec.end || rec.start });
+            }
+          }
+        } else {
+          occurrences.push({ start: ev.start, end: ev.end || ev.start });
+        }
+
+        for (const occ of occurrences) {
+          const s = toLocalParts(occ.start);
+          const e = toLocalParts(occ.end);
+
+          if (ev.datetype === "date") {
+            // Heldagshändelser: DTEND är EXKLUSIVT (RFC 5545) — blockera [startdag, slutdag)
+            const coversToday = s.date <= todayStr && (e.date > s.date ? todayStr < e.date : todayStr === s.date);
+            if (coversToday) busy.push({ start: 0, end: 1440 });
+            continue;
+          }
+
+          if (s.date > todayStr || e.date < todayStr) continue;
+          // Tidsatt händelse som slutar exakt 00:00 idag tillhör gårdagen
+          if (e.date === todayStr && e.minutes === 0 && s.date < todayStr) continue;
+
+          busy.push({
+            start: s.date === todayStr ? s.minutes : 0,
+            end: e.date === todayStr ? e.minutes : 1440,
+          });
+        }
+      }
+
+      // Räkna luckor mot arbetstiderna
+      const day = entry.workingHours?.[weekday];
+      const slotMin = Number(entry.slotMinutes) || 60;
+      const isClosed = !(day?.enabled && day.start && day.end);
+      const slots = [];
+      if (day?.enabled && day.start && day.end) {
+        const [wsH, wsM] = day.start.split(":").map(Number);
+        const [weH, weM] = day.end.split(":").map(Number);
+        const workStart = wsH * 60 + wsM;
+        const workEnd = weH * 60 + weM;
+        for (let t = workStart; t + slotMin <= workEnd; t += slotMin) {
+          if (t < nowMinutes) continue; // visa aldrig passerade tider
+          const isFree = !busy.some((b) => t < b.end && t + slotMin > b.start);
+          if (isFree) slots.push(minutesToHHMM(t));
+        }
+      }
+
+      byCalendar[entry.id] = {
+        staffName: entry.staffName,
+        slots,
+        ...(isClosed ? { closed: true } : {}),
+      };
+    } catch (err) {
+      console.error(`Kalendersynk misslyckades för personal ${entry.staffName} i org ${orgId}:`, err.message);
+      byCalendar[entry.id] = {
+        staffName: entry.staffName,
+        slots: [],
+        error: "Kunde inte hämta kalendern. Kontrollera att länken är korrekt.",
+      };
+    }
+  }
+
+  return { date: todayStr, byCalendar };
+}
+
 export const syncBookingCalendars = onSchedule(
   { schedule: "every 15 minutes", region: "us-central1", timeoutSeconds: 300, memory: "512MiB" },
   async () => {
     const orgsSnap = await db.collection("organizations").get();
     const now = new Date();
-    const { date: todayStr, minutes: nowMinutes } = toLocalParts(now);
-    const weekday = new Date(now.toLocaleString("en-US", { timeZone: BOOKING_TZ })).getDay(); // 0 = söndag
 
     for (const orgDoc of orgsSnap.docs) {
       const orgData = orgDoc.data() || {};
-      const privateDoc = await db.collection("orgPrivateSettings").doc(orgDoc.id).get();
-      const privateData = privateDoc.exists ? privateDoc.data() : null;
-      const icsUrls = privateData?.icsUrls || {};
+      const result = await computeTodaysSlotsForOrg(orgDoc.id, orgData, now);
 
-      const bookingCalendars = (orgData.bookingCalendars || []).filter((e) => {
-        if (!e || !e.enabled) return false;
-        const icsUrl = icsUrls[e.id] || e.icsUrl;
-        return Boolean(icsUrl);
-      });
-
-      if (bookingCalendars.length === 0) {
+      if (!result) {
         // Städa bort inaktuell data om kalendrarna tagits bort/inaktiverats
         if (orgData.todaysAvailableSlots) {
           await orgDoc.ref.update({ todaysAvailableSlots: FieldValue.delete() })
@@ -979,101 +1086,7 @@ export const syncBookingCalendars = onSchedule(
         continue;
       }
 
-      const byCalendar = {};
-
-      for (const entry of bookingCalendars) {
-        const icsUrl = icsUrls[entry.id] || entry.icsUrl;
-        if (!entry.enabled || !icsUrl) continue;
-
-        try {
-          const events = await ical.async.fromURL(icsUrl, { timeout: 15000 });
-
-          // INTEGRITET: vi läser ENDAST tidsblock. Titlar, beskrivningar och deltagare
-          // (kan innehålla kundnamn) får aldrig läsas, loggas eller sparas.
-          const busy = [];
-          // Brett fönster ±36h för rrule-expansion; exakt dagfiltrering görs sedan
-          // per förekomst i svensk tid (toLocalParts), vilket löser tidszonsproblemet.
-          const windowStart = new Date(now.getTime() - 36 * 3600000);
-          const windowEnd = new Date(now.getTime() + 36 * 3600000);
-
-          for (const key of Object.keys(events)) {
-            const ev = events[key];
-            if (ev.type !== "VEVENT" || !ev.start) continue;
-
-            const occurrences = [];
-            if (ev.rrule) {
-              const durationMs = (ev.end?.getTime() || ev.start.getTime()) - ev.start.getTime();
-              ev.rrule.between(windowStart, windowEnd, true).forEach((occStart) => {
-                // EXDATE: hoppa över inställda förekomster
-                if (ev.exdate && Object.values(ev.exdate).some((d) => d?.getTime && Math.abs(d.getTime() - occStart.getTime()) < 60000)) return;
-                // Förekomster med override (RECURRENCE-ID) ersätts av sina nya tider nedan
-                if (ev.recurrences && Object.values(ev.recurrences).some((r) => r?.recurrenceid?.getTime && Math.abs(r.recurrenceid.getTime() - occStart.getTime()) < 60000)) return;
-                occurrences.push({ start: occStart, end: new Date(occStart.getTime() + durationMs) });
-              });
-              // Lägg till flyttade förekomster med sina NYA tider
-              if (ev.recurrences) {
-                for (const rec of Object.values(ev.recurrences)) {
-                  if (rec && rec.start) occurrences.push({ start: rec.start, end: rec.end || rec.start });
-                }
-              }
-            } else {
-              occurrences.push({ start: ev.start, end: ev.end || ev.start });
-            }
-
-            for (const occ of occurrences) {
-              const s = toLocalParts(occ.start);
-              const e = toLocalParts(occ.end);
-
-              if (ev.datetype === "date") {
-                // Heldagshändelser: DTEND är EXKLUSIVT (RFC 5545) — blockera [startdag, slutdag)
-                const coversToday = s.date <= todayStr && (e.date > s.date ? todayStr < e.date : todayStr === s.date);
-                if (coversToday) busy.push({ start: 0, end: 1440 });
-                continue;
-              }
-
-              if (s.date > todayStr || e.date < todayStr) continue;
-              // Tidsatt händelse som slutar exakt 00:00 idag tillhör gårdagen
-              if (e.date === todayStr && e.minutes === 0 && s.date < todayStr) continue;
-
-              busy.push({
-                start: s.date === todayStr ? s.minutes : 0,
-                end: e.date === todayStr ? e.minutes : 1440,
-              });
-            }
-          }
-
-          // Räkna luckor mot arbetstiderna
-          const day = entry.workingHours?.[weekday];
-          const slotMin = Number(entry.slotMinutes) || 60;
-          const isClosed = !(day?.enabled && day.start && day.end);
-          const slots = [];
-          if (day?.enabled && day.start && day.end) {
-            const [wsH, wsM] = day.start.split(":").map(Number);
-            const [weH, weM] = day.end.split(":").map(Number);
-            const workStart = wsH * 60 + wsM;
-            const workEnd = weH * 60 + weM;
-            for (let t = workStart; t + slotMin <= workEnd; t += slotMin) {
-              if (t < nowMinutes) continue; // visa aldrig passerade tider
-              const isFree = !busy.some((b) => t < b.end && t + slotMin > b.start);
-              if (isFree) slots.push(minutesToHHMM(t));
-            }
-          }
-
-          byCalendar[entry.id] = {
-            staffName: entry.staffName,
-            slots,
-            ...(isClosed ? { closed: true } : {}),
-          };
-        } catch (err) {
-          console.error(`Kalendersynk misslyckades för personal ${entry.staffName} i org ${orgDoc.id}:`, err.message);
-          byCalendar[entry.id] = {
-            staffName: entry.staffName,
-            slots: [],
-            error: "Kunde inte hämta kalendern. Kontrollera att länken är korrekt.",
-          };
-        }
-      }
-
+      const { date: todayStr, byCalendar } = result;
       const prev = orgData.todaysAvailableSlots;
       const unchanged = prev &&
         prev.date === todayStr &&
@@ -1095,6 +1108,60 @@ export const syncBookingCalendars = onSchedule(
     }
   }
 );
+
+export const testBookingCalendars = onCall({ cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Du måste vara inloggad.");
+  }
+
+  const userDoc = await db.collection("users").doc(request.auth.uid).get();
+  const userData = userDoc.exists ? userDoc.data() : {};
+  let orgId = userData.organizationId || null;
+
+  if (userData.role === "systemowner" && request.data?.orgId) {
+    orgId = request.data.orgId;
+  }
+
+  if (!orgId) {
+    throw new HttpsError("invalid-argument", "Ingen organisation hittades.");
+  }
+
+  const orgDoc = await db.collection("organizations").doc(orgId).get();
+  if (!orgDoc.exists) {
+    throw new HttpsError("not-found", "Organisationen hittades inte.");
+  }
+
+  const orgData = orgDoc.data() || {};
+  const now = new Date();
+  const result = await computeTodaysSlotsForOrg(orgId, orgData, now);
+
+  if (!result) {
+    return { date: "", results: [], hasCalendars: false };
+  }
+
+  const { date: todayStr, byCalendar } = result;
+
+  await orgDoc.ref.update({
+    todaysAvailableSlots: {
+      date: todayStr,
+      byCalendar,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
+  const results = Object.values(byCalendar).map((e) => ({
+    staffName: e.staffName || "",
+    slots: e.slots || [],
+    ...(e.closed ? { closed: true } : {}),
+    ...(e.error ? { error: e.error } : {}),
+  }));
+
+  return {
+    date: todayStr,
+    results,
+    hasCalendars: true,
+  };
+});
 
 export const runAiAutomationsNow = onCall({ cors: true, secrets: ["API_KEY"] }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");

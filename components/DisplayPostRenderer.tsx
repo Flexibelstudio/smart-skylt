@@ -220,7 +220,7 @@ const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, c
         }
     }, [url]);
     if (!dataUrl) return null;
-    return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', display: 'block' }} />;
+    return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />;
 };
 
 const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdatePosition, onUpdateWidth }) => {
