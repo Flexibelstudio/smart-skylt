@@ -9,11 +9,12 @@ interface OnboardingChecklistProps {
     onOpenSkylie?: () => void;
     onConnectScreen: () => void;
     onDismiss: () => void;
+    onGoToBranding?: () => void;
 }
 
 export const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
     hasChannel, hasPost, hasConnectedScreen,
-    onCreateChannel, onCreatePost, onOpenSkylie, onConnectScreen, onDismiss,
+    onCreateChannel, onCreatePost, onOpenSkylie, onConnectScreen, onDismiss, onGoToBranding,
 }) => {
     const steps = [
         { done: hasChannel, num: 1, title: 'Skapa din första kanal', desc: 'Kanalen är spellistan som dina inlägg rullar i. Vi skapar den med smarta standardinställningar.', cta: 'Skapa kanal', action: onCreateChannel },
@@ -75,6 +76,16 @@ export const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
                         </div>
                     );
                 })}
+            </div>
+            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                    💡 Tips: fyll i ditt <strong>varumärke</strong> först, så skapar AI:n innehåll som ser ut och låter som just din verksamhet.
+                </p>
+                {onGoToBranding && (
+                    <button type="button" onClick={onGoToBranding} className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 whitespace-nowrap">
+                        Till Varumärke →
+                    </button>
+                )}
             </div>
         </div>
     );

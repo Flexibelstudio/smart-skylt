@@ -831,6 +831,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                             localStorage.setItem(onboardingDismissedKey, 'true');
                             setIsOnboardingDismissed(true);
                         }}
+                        onGoToBranding={() => setActiveTab('organisation')}
                     />
                 )}
                 {activeTab === 'organisation' && <OrganisationTab {...props} />}

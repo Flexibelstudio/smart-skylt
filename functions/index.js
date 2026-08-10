@@ -94,6 +94,70 @@ function normalizeTimeZone(tz) {
   }
 }
 
+async function fetchSiteBrandData(url) {
+    const fetchText = async (u, maxBytes) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+            const res = await fetch(u, {
+                signal: controller.signal,
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SmartskyltBot/1.0)' },
+            });
+            if (!res.ok) return null;
+            const text = await res.text();
+            return text.slice(0, maxBytes);
+        } catch { return null; } finally { clearTimeout(timer); }
+    };
+
+    const html = await fetchText(url, 400_000);
+    if (!html) return null;
+
+    const cssTexts = [html];
+    const linkHrefs = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi)]
+        .map(m => m[1]).slice(0, 3);
+    for (const href of linkHrefs) {
+        try {
+            const cssUrl = new URL(href, url).toString();
+            const css = await fetchText(cssUrl, 200_000);
+            if (css) cssTexts.push(css);
+        } catch { /* ignorera trasiga href */ }
+    }
+
+    // Räkna hexfärger, filtrera bort gråskala/nära vitt/svart
+    const counts = new Map();
+    for (const text of cssTexts) {
+        for (const m of text.matchAll(/#([0-9a-fA-F]{6})\b/g)) {
+            const hex = m[1].toLowerCase();
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const spread = max - min;
+            const sum = r + g + b;
+            if (spread < 25 || sum > 720 || sum < 60) continue;
+            counts.set(hex, (counts.get(hex) || 0) + 1);
+        }
+    }
+    const colorCandidates = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1]).slice(0, 15)
+        .map(([hex, n]) => `#${hex} (${n} förekomster)`);
+
+    const themeColor = (html.match(/<meta[^>]+name=["']theme-color["'][^>]+content=["'](#[0-9a-fA-F]{3,6})["']/i) || [])[1] || null;
+
+    const logoCandidates = [...html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)]
+        .filter(m => /logo/i.test(m[0])).map(m => { try { return new URL(m[1], url).toString(); } catch { return null; } })
+        .filter(Boolean).slice(0, 3);
+
+    const visibleText = html
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ').slice(0, 5000);
+
+    return { colorCandidates, themeColor, logoCandidates, visibleText };
+}
+
 // Central förteckning över AI-modeller. Byt modell HÄR — aldrig i anropen.
 const AI_MODELS = {
   TEXT: "gemini-3.5-flash",
@@ -1090,7 +1154,53 @@ export const gemini = onCall(
 
             case "analyzeBrandFromWebsite": {
                 if (!params.url) throw new HttpsError("invalid-argument", "URL required.");
-                
+
+                const siteData = await fetchSiteBrandData(params.url);
+
+                if (siteData) {
+                    const themeColorInfo = siteData.themeColor ? `Meta theme-color: ${siteData.themeColor}` : '';
+                    const colorsList = siteData.colorCandidates.length > 0
+                        ? siteData.colorCandidates.join(', ')
+                        : 'Inga specifika hexfärger hittades i CSS';
+
+                    const prompt = `
+                        Analyze the brand identity of this website (${params.url}).
+                        Extract the following information based on the actual scraped site data provided below:
+
+                        Sidans text (utdrag):
+                        ${siteData.visibleText}
+
+                        Färger som FAKTISKT förekommer i sidans HTML/CSS, sorterade efter frekvens:
+                        ${colorsList}
+                        ${themeColorInfo}
+
+                        Logotypkandidater:
+                        ${siteData.logoCandidates.join(', ') || 'Inga tydliga logobilder hittades'}
+
+                        Instruktion:
+                        1. primaryColor och secondaryColor MÅSTE väljas ur färglistan ovan — hitta ALDRIG på egna hexkoder. Välj de två mättade färger som tydligast bär sajtens identitet (primär = den mest framträdande profilfärgen, sekundär = komplementet, t.ex. bakgrunds-/jordton om sådan finns i listan). Anges som hexkod (t.ex. #ff6600).
+                        2. Font style for headlines (categorize as 'sans', 'serif', 'display', or 'script').
+                        3. Font style for body text (categorize as 'sans' or 'serif').
+                        4. A concise business description (max 2 sentences) in Swedish.
+                        5. 3-5 short phrases or keywords from the site that capture the tone of voice (in Swedish).
+                        6. A list of 1-3 business type keywords (e.g. Café, Butik, Frisör, Konsult) in Swedish.
+                        7. The URL of the main logo image found on the website. Prefer a direct image link from the candidates or site.
+
+                        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
+                        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
+                    `;
+
+                    const response = await ai.models.generateContent({
+                        model: AI_MODELS.TEXT,
+                        contents: prompt,
+                        config: {
+                            responseMimeType: "application/json"
+                        }
+                    });
+
+                    return { text: response.text };
+                }
+
                 const response = await ai.models.generateContent({
                     model: AI_MODELS.TEXT,
                     contents: `

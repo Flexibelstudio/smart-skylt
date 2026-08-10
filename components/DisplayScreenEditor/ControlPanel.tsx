@@ -55,10 +55,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         postId: string,
         changes: Partial<Pick<DisplayPost, 'startDate' | 'endDate' | 'status'>>
     ) => {
-        const updatedPosts = (screen.posts || []).map(p =>
-            p.id === postId ? { ...p, ...changes } : p
-        );
-        await onUpdateScreen({ posts: updatedPosts });
+        try {
+            const updatedPosts = (screen.posts || []).map(p =>
+                p.id === postId ? { ...p, ...changes } : p
+            );
+            await onUpdateScreen({ posts: updatedPosts });
+        } catch (err) {
+            console.error('Schemauppdatering misslyckades för inlägg', postId, err);
+            showToast({
+                message: `Kunde inte spara datumet: ${err instanceof Error ? err.message : 'Okänt fel'}`,
+                type: 'error'
+            });
+        }
     };
 
     const [qrScanCounts, setQrScanCounts] = useState<Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }>>({});

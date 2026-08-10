@@ -727,6 +727,7 @@ interface SkyltfonsterTabProps {
     onShareScreen: (screen: DisplayScreen) => void;
     isOnboardingDismissed: boolean;
     onDismissOnboarding: () => void;
+    onGoToBranding?: () => void;
 }
 
 export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
@@ -739,7 +740,8 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
         onPreviewScreen, 
         onShareScreen,
         isOnboardingDismissed,
-        onDismissOnboarding
+        onDismissOnboarding,
+        onGoToBranding
     } = props;
     const { addDisplayScreen, updateDisplayScreen, deleteDisplayScreen, locationLoading, screensReady } = useLocation();
     const [isSaving, setIsSaving] = useState(false);
@@ -851,6 +853,7 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                     onConnectScreen={onOpenPairingModal}
                     onOpenSkylie={handleOpenSkylie}
                     onDismiss={onDismissOnboarding}
+                    onGoToBranding={onGoToBranding}
                 />
             )}
 
