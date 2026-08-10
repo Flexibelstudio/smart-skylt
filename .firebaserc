@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "prod": "smart-skylt",
+    "staging": "smart-skylt-staging"
+  }
+}
