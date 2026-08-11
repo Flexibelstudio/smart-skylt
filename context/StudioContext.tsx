@@ -370,12 +370,36 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
 
-  // Heartbeat: tala om för admin att skärmen lever, var 60:e sekund
+  // Heartbeat: tala om för admin att skärmen lever, var 60:e sekund samt omedelbart vid wake-up/reconnect
   useEffect(() => {
       if (!isScreenMode || !deviceId) return;
-      sendScreenHeartbeat(deviceId, collectDeviceInfo() || undefined); // direkt vid start
+
+      // Heartbeat direkt vid start med enhetsdata
+      sendScreenHeartbeat(deviceId, collectDeviceInfo() || undefined);
+
+      // Regelbunden heartbeat
       const interval = setInterval(() => sendScreenHeartbeat(deviceId), 60000);
-      return () => clearInterval(interval);
+
+      // Omedelbar heartbeat när sidan blir synlig igen (t.ex. väcks ur viloläge)
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+              sendScreenHeartbeat(deviceId);
+          }
+      };
+
+      // Omedelbar heartbeat när nätverket återvänder
+      const handleOnline = () => {
+          sendScreenHeartbeat(deviceId);
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', handleOnline);
+
+      return () => {
+          clearInterval(interval);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('online', handleOnline);
+      };
   }, [isScreenMode, deviceId]);
 
 

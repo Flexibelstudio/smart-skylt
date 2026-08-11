@@ -674,7 +674,7 @@ const SingleMediaEditor: React.FC<{
 
                         {/* Rörelse på bilden selector */}
                         {post.imageUrl && !post.videoUrl && (
-                            <div className="bg-slate-100 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                            <div className="bg-slate-100 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
                                 <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
                                     Rörelse på bilden
                                 </label>
@@ -702,8 +702,39 @@ const SingleMediaEditor: React.FC<{
                                         );
                                     })}
                                 </div>
+
+                                {post.imageMotion && post.imageMotion !== 'none' && (
+                                    <div className="pt-2 space-y-1.5">
+                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                            Styrka
+                                        </label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {[
+                                                { id: 'lugn', label: 'Lugn' },
+                                                { id: 'tydlig', label: 'Tydlig' }
+                                            ].map(chip => {
+                                                const isSelected = (post.imageMotionStrength || 'tydlig') === chip.id;
+                                                return (
+                                                    <button
+                                                        key={chip.id}
+                                                        type="button"
+                                                        onClick={() => onPostChange({ ...post, imageMotionStrength: chip.id as any })}
+                                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                                                            isSelected
+                                                                ? 'bg-primary text-white border-primary shadow-sm'
+                                                                : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                                                        }`}
+                                                    >
+                                                        {chip.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <p className="text-xs text-slate-500 dark:text-slate-400 pt-1">
-                                    Rörelse gör att skylten fångar blicken — effekten skapas direkt på skärmen och kostar inga AI-krediter.
+                                    Rörelse gör att skylten fångar blicken. Tydlig syns på håll, lugn är mer diskret — effekten skapas direkt på skärmen och kostar inga AI-krediter.
                                 </p>
                             </div>
                         )}

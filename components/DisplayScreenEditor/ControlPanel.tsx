@@ -69,6 +69,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         }
     };
 
+    // Fältet heter isExpressSold av historiska skäl men används numera för SÅLD-stämpeln på alla inlägg
     const handleToggleSold = async (post: DisplayPost) => {
         try {
             const updatedPosts = (screen.posts || []).map(p =>
@@ -516,66 +517,62 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                         </div>
 
                                         {/* Action tags/stamps toggle on posts */}
-                                        {(isExpress || (organization.tags && organization.tags.length > 0)) && (
-                                            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 w-full">
-                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
-                                                    <span>Stämplar:</span>
-                                                </div>
-                                                <div className="flex flex-wrap items-center gap-1.5">
-                                                    {/* SÅLD Stamp - Express posts only */}
-                                                    {isExpress && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleToggleSold(post);
-                                                            }}
-                                                            className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer select-none active:scale-95 ${
-                                                                post.isExpressSold
-                                                                    ? 'bg-[#ef4444] text-white border-[#ef4444]'
-                                                                    : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
-                                                            }`}
-                                                            title={post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld'}
-                                                        >
-                                                            <span>🔴</span>
-                                                            <span>SÅLD</span>
-                                                            {post.isExpressSold && (
-                                                                <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
-                                                            )}
-                                                        </button>
-                                                    )}
-
-                                                    {organization.tags && organization.tags.length > 0 ? (
-                                                        organization.tags.map(tag => {
-                                                            const isActive = (post.tagIds || []).includes(tag.id);
-                                                            return (
-                                                                <button
-                                                                    type="button"
-                                                                    key={tag.id}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleToggleTagOnPost(post, tag.id);
-                                                                    }}
-                                                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 border-slate-200 dark:border-slate-700/80 cursor-pointer select-none active:scale-95 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30`}
-                                                                    style={isActive ? { backgroundColor: tag.backgroundColor, color: tag.textColor, borderColor: tag.backgroundColor } : {}}
-                                                                    title={`Klicka för att ${isActive ? 'avaktivera' : 'aktivera'} ${tag.text}`}
-                                                                >
-                                                                    <span>{tag.displayType === 'stamp' ? '💮' : '🏷️'}</span>
-                                                                    <span>{tag.text}</span>
-                                                                    {isActive && (
-                                                                        <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
-                                                                    )}
-                                                                </button>
-                                                            );
-                                                        })
-                                                    ) : isExpress ? (
-                                                        <span className="text-[11px] text-slate-400 dark:text-slate-500 italic select-none ml-1">
-                                                            Mallen har inga övriga stämplar definierade.
-                                                        </span>
-                                                    ) : null}
-                                                </div>
+                                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 w-full">
+                                            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
+                                                <span>Stämplar:</span>
                                             </div>
-                                        )}
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                {/* SÅLD Stamp */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleToggleSold(post);
+                                                    }}
+                                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer select-none active:scale-95 ${
+                                                        post.isExpressSold
+                                                            ? 'bg-[#ef4444] text-white border-[#ef4444]'
+                                                            : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
+                                                    }`}
+                                                    title={post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld'}
+                                                >
+                                                    <span>🔴</span>
+                                                    <span>SÅLD</span>
+                                                    {post.isExpressSold && (
+                                                        <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
+                                                    )}
+                                                </button>
+
+                                                {organization.tags && organization.tags.length > 0 ? (
+                                                    organization.tags.map(tag => {
+                                                        const isActive = (post.tagIds || []).includes(tag.id);
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={tag.id}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleToggleTagOnPost(post, tag.id);
+                                                                }}
+                                                                className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 border-slate-200 dark:border-slate-700/80 cursor-pointer select-none active:scale-95 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30`}
+                                                                style={isActive ? { backgroundColor: tag.backgroundColor, color: tag.textColor, borderColor: tag.backgroundColor } : {}}
+                                                                title={`Klicka för att ${isActive ? 'avaktivera' : 'aktivera'} ${tag.text}`}
+                                                            >
+                                                                <span>{tag.displayType === 'stamp' ? '💮' : '🏷️'}</span>
+                                                                <span>{tag.text}</span>
+                                                                {isActive && (
+                                                                    <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <span className="text-[11px] text-slate-400 dark:text-slate-500 italic select-none ml-1">
+                                                        Mallen har inga övriga stämplar definierade.
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
      
                                     {/* Actions */}

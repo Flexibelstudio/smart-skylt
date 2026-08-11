@@ -64,9 +64,13 @@ const getMotionStyle = (post: DisplayPost): React.CSSProperties => {
                : motion === 'zoom-out' ? 'smartskylt-kb-zoom-out'
                : 'smartskylt-kb-pan';
     const seconds = Math.max(5, Number(post.durationSeconds) || 15);
+    const strength = post.imageMotionStrength || 'tydlig';
+    const zoomFactor = strength === 'lugn' ? 1.10 : 1.22;
+    const panAmount  = strength === 'lugn' ? '4%' : '9%';
     return {
         ['--kb-base' as any]: String(base),
-        ['--kb-zoomed' as any]: String(base * 1.08),
+        ['--kb-zoomed' as any]: String(base * zoomFactor),
+        ['--kb-pan' as any]: panAmount,
         animation: `${name} ${seconds}s linear forwards`,
         willChange: 'transform',
     };
