@@ -11,6 +11,7 @@ import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ScaledPreviewWrapper } from '../DisplayScreenEditor/PreviewPanes';
 import { DisplayScreenPreviewModal } from '../SuperAdminScreen';
 import { EmojiPicker } from '../EmojiPicker';
+import { resizeImageFile } from '../../utils/imageResize';
 
 interface ExpressPublishTabProps {
     organization: Organization;
@@ -281,12 +282,13 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     }, [headline, description, webpageUrl, layout, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
 
     // Handle Image Upload -> Base64
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
         const maxFiles = 4;
-        const processFile = (file: File): Promise<string> => {
+        const processFile = async (rawFile: File): Promise<string> => {
+            const file = await resizeImageFile(rawFile);
             return new Promise((resolve, reject) => {
                 if (!file.type.startsWith('image/')) {
                     reject(new Error("Inte en bild"));

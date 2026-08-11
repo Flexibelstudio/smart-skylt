@@ -1,7 +1,6 @@
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
-import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, VideoOperation, PostTemplate, Tag, DisplayPost, MediaItem, InstagramStory } from '../types';
+import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, PostTemplate, Tag, DisplayPost, MediaItem, InstagramStory } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
-import { AI_MODELS } from './aiModels';
 
 // Re-export isOffline for use in other components
 export { isOffline };
@@ -823,12 +822,16 @@ export const listenToScreenSession = (deviceId: string, callback: (data: any | n
     );
 };
 
-export const sendScreenHeartbeat = async (deviceId: string): Promise<void> => {
+export const sendScreenHeartbeat = async (
+    deviceId: string,
+    deviceInfo?: Record<string, any>
+): Promise<void> => {
     if (isOffline || !db || !deviceId) return;
     try {
         await db.collection('screenSessions').doc(deviceId).set({
             lastHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
             status: 'online',
+            ...(deviceInfo ? { deviceInfo } : {}),
         }, { merge: true });
     } catch (e) {
         // Tyst: heartbeat får aldrig störa visningen. Sessionen kan saknas före parning.
@@ -838,7 +841,7 @@ export const sendScreenHeartbeat = async (deviceId: string): Promise<void> => {
 
 export const listenToScreenSessions = (
     orgId: string,
-    callback: (sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>) => void
+    callback: (sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }>) => void
 ): (() => void) => {
     if (isOffline || !db) {
         callback({
@@ -846,6 +849,7 @@ export const listenToScreenSessions = (
                 lastHeartbeat: new Date(),
                 status: 'online',
                 displayScreenId: 'screen_flexibel_1',
+                deviceInfo: { screenWidth: 1920, screenHeight: 1080, userAgent: 'Chrome 120' },
             },
         });
         return () => {};
@@ -853,13 +857,14 @@ export const listenToScreenSessions = (
     return db.collection('screenSessions')
         .where('organizationId', '==', orgId)
         .onSnapshot(snapshot => {
-            const sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }> = {};
+            const sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }> = {};
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
                 sessions[doc.id] = {
                     lastHeartbeat: data.lastHeartbeat?.toDate ? data.lastHeartbeat.toDate() : undefined,
                     status: data.status,
                     displayScreenId: data.displayScreenId,
+                    deviceInfo: data.deviceInfo,
                 };
             });
             callback(sessions);
@@ -1078,48 +1083,6 @@ export const updateSuggestedPost = async (orgId: string, suggestionId: string, d
     }
     if (!db) return;
     await db.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggestionId).update(sanitizeForFirestore(data));
-};
-
-export const listenToVideoOperationForPost = (orgId: string, postId: string, callback: (op: VideoOperation | null) => void) => {
-    if (isOffline || !db) {
-        callback(null);
-        return () => {};
-    }
-    // Updated to listen to subcollection under organization
-    return db.collection('organizations').doc(orgId).collection('videoOperations')
-        .where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1)
-        .onSnapshot(
-            snap => {
-                if (!snap.empty) callback({ id: snap.docs[0].id, ...snap.docs[0].data() } as VideoOperation);
-                else callback(null);
-            },
-            error => {
-                console.error("Error listening to video operation:", error);
-                callback(null);
-            }
-        );
-};
-
-export const createVideoOperation = async (orgId: string, screenId: string, postId: string, prompt: string, operationName: string) => {
-    if (isOffline) return 'mock-op-id';
-    if (!db) throw new Error("DB not initialized");
-    if (!auth?.currentUser) throw new Error("User not authenticated");
-
-    const opId = operationName.split('/').pop(); // Extract clean ID if it's a path
-    // Updated to save under organization subcollection
-    const docRef = db.collection('organizations').doc(orgId).collection('videoOperations').doc(opId || `op-${Date.now()}`);
-    
-    await docRef.set({
-        operationName: operationName,
-        orgId,
-        screenId,
-        postId,
-        userId: auth.currentUser.uid,
-        status: 'processing',
-        model: AI_MODELS.VIDEO,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    return docRef.id;
 };
 
 export const listenToInstagramStories = (orgId: string, callback: (stories: InstagramStory[]) => void) => {

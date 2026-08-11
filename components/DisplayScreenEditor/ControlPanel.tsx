@@ -69,6 +69,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         }
     };
 
+    const handleToggleSold = async (post: DisplayPost) => {
+        try {
+            const updatedPosts = (screen.posts || []).map(p =>
+                p.id === post.id ? { ...p, isExpressSold: !p.isExpressSold } : p
+            );
+            await onUpdateScreen({ posts: updatedPosts });
+        } catch (err) {
+            console.error('Kunde inte ändra SÅLD-status för inlägg', post.id, err);
+            showToast({
+                message: `Kunde inte ändra status: ${err instanceof Error ? err.message : 'Okänt fel'}`,
+                type: 'error'
+            });
+        }
+    };
+
     const [qrScanCounts, setQrScanCounts] = useState<Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }>>({});
 
     useEffect(() => {
@@ -506,9 +521,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                 <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
                                                     <span>Stämplar:</span>
                                                 </div>
-                                                {organization.tags && organization.tags.length > 0 ? (
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        {organization.tags.map(tag => {
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    {/* SÅLD Stamp */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleToggleSold(post);
+                                                        }}
+                                                        className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer select-none active:scale-95 ${
+                                                            post.isExpressSold
+                                                                ? 'bg-[#ef4444] text-white border-[#ef4444]'
+                                                                : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
+                                                        }`}
+                                                        title={post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld'}
+                                                    >
+                                                        <span>🔴</span>
+                                                        <span>SÅLD</span>
+                                                        {post.isExpressSold && (
+                                                            <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
+                                                        )}
+                                                    </button>
+
+                                                    {organization.tags && organization.tags.length > 0 ? (
+                                                        organization.tags.map(tag => {
                                                             const isActive = (post.tagIds || []).includes(tag.id);
                                                             return (
                                                                 <button
@@ -529,13 +565,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                                     )}
                                                                 </button>
                                                             );
-                                                        })}
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-                                                        Mallen har inga stämplar definierade.
-                                                    </div>
-                                                )}
+                                                        })
+                                                    ) : (
+                                                        <span className="text-[11px] text-slate-400 dark:text-slate-500 italic select-none ml-1">
+                                                            Mallen har inga övriga stämplar definierade.
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>

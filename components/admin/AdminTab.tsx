@@ -166,9 +166,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ organization, adminRole, onU
                 const pct = Math.min(100, Math.round((used / limit) * 100));
 
                 const grouped = Object.entries(usage.counts).reduce((acc, [action, n]) => {
-                    const key = action === 'initiateVideoGeneration' ? 'Video'
-                        : /image/i.test(action) ? 'Bilder'
-                        : 'Text & idéer';
+                    const key = /image/i.test(action) ? 'Bilder' : 'Text & idéer';
                     acc[key] = (acc[key] || 0) + (n as number);
                     return acc;
                 }, {} as Record<string, number>);
@@ -177,7 +175,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ organization, adminRole, onU
                 const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
                 const barColor = pct > 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-teal-500';
 
-                const groupSummary = ['Video', 'Bilder', 'Text & idéer']
+                const groupSummary = ['Bilder', 'Text & idéer']
                     .map(key => `${key}: ${grouped[key] || 0} st`)
                     .join(' · ');
 
@@ -203,7 +201,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ organization, adminRole, onU
 
                             {pct >= 90 && (
                                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
-                                    Nära månadens tak — bild- och videogenerering pausas vid {limit} krediter. Kontakta oss för utökad kvot.
+                                    Nära månadens tak — bildgenerering pausas vid {limit} krediter. Kontakta oss för utökad kvot.
                                 </div>
                             )}
                         </div>

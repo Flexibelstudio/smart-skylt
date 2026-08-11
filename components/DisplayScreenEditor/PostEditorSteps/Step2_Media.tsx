@@ -6,7 +6,8 @@ import { PrimaryButton, SecondaryButton } from '../../Buttons';
 import { SparklesIcon, TrashIcon, PhotoIcon, VideoCameraIcon, MicrophoneIcon, PencilIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, DownloadIcon, StarIcon, MoveIcon, ToggleSwitch, MagnifyingGlassIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { uploadPostAsset, uploadMediaForGallery, addMediaItemsToLibrary } from '../../../services/firebaseService';
-import { generateDisplayPostImage, generateVideoFromPrompt, urlToBase64, editDisplayPostImage, fileToBase64 } from '../../../services/geminiService';
+import { generateDisplayPostImage, urlToBase64, editDisplayPostImage, fileToBase64 } from '../../../services/geminiService';
+import { resizeImageFile } from '../../../utils/imageResize';
 import { useAuth } from '../../../context/AuthContext';
 import { MediaPickerModal, AiStudioModifierGroup, AiImageEditorModal } from '../Modals';
 import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
@@ -292,8 +293,9 @@ const SubImageManager: React.FC<{
         if (e.target.files && e.target.files.length > 0) {
             const newImages: SubImage[] = [];
             for (let i = 0; i < e.target.files.length; i++) {
-                const file = e.target.files[i];
+                const rawFile = e.target.files[i];
                 try {
+                    const file = await resizeImageFile(rawFile);
                     const { data, mimeType } = await fileToBase64(file);
                     newImages.push({
                         id: `sub-${Date.now()}-${i}`,
@@ -437,9 +439,6 @@ const SingleMediaEditor: React.FC<{
     const [isSavingToGallery, setIsSavingToGallery] = useState(false);
     const { currentUser } = useAuth();
     const { showToast } = useToast();
-    const [videoProgressText, setVideoProgressText] = useState("");
-    const [useImageForVideo, setUseImageForVideo] = useState(false);
-    const [isImageAliveEnabled, setIsImageAliveEnabled] = useState(false);
 
     // Cooldown state
     const [cooldown, setCooldown] = useState(0);
@@ -459,14 +458,6 @@ const SingleMediaEditor: React.FC<{
           showToast({ message: `Röstigenkänning misslyckades: ${speechError}`, type: 'error' });
         }
     }, [speechError, showToast]);
-    
-    // Reset toggles if image is removed
-    useEffect(() => {
-        if (!post.imageUrl && !post.videoUrl) {
-            setUseImageForVideo(false);
-            setIsImageAliveEnabled(false);
-        }
-    }, [post.imageUrl, post.videoUrl]);
 
     // Handle cooldown countdown
     useEffect(() => {
@@ -518,87 +509,6 @@ const SingleMediaEditor: React.FC<{
             startCooldown(); // Start cooldown even on error to prevent hammer-clicking
         } finally {
             setAiLoading(false);
-        }
-    };
-
-    const handleGenerateVideo = async () => {
-        if (!post.aiVideoPrompt && !isImageAliveEnabled) {
-            showToast({ message: "Skriv en beskrivning av videon först.", type: 'info' });
-            return;
-        }
-        if (!currentUser) return;
-        
-        let imagePayload = undefined;
-        const shouldAnimateImage = (useImageForVideo || isImageAliveEnabled) && post.imageUrl;
-
-        if (shouldAnimateImage) {
-             try {
-                 setAiLoading('preparing-image');
-                 const { mimeType, data } = await urlToBase64(post.imageUrl!);
-                 imagePayload = { mimeType, data };
-             } catch (e) {
-                 console.error("Failed to process start image for video", e);
-                 showToast({ message: "Kunde inte använda bilden för animering.", type: 'error' });
-                 setAiLoading(false);
-                 return;
-             }
-        }
-
-        // --- Save state for undo BEFORE generation ---
-        const currentVariants = [...(post.aiImageVariants || [])];
-        if (post.imageUrl) {
-            currentVariants.push({
-                id: `history-${Date.now()}`,
-                url: post.imageUrl,
-                prompt: post.aiImagePrompt || '',
-                createdAt: new Date().toISOString(),
-                createdByUid: currentUser.uid
-            });
-        }
-
-        let finalPrompt = post.aiVideoPrompt || '';
-        if (isImageAliveEnabled || useImageForVideo) {
-            // EXTREMT SKÄRPTA instruktioner mot svart ridå / fade-in
-            const technicalConstraint = "CRITICAL: The first frame MUST be identical to the source image. ABSOLUTELY NO FADE-IN FROM BLACK. NO BLACK FRAMES AT START. START INSTANTLY FROM FRAME ZERO. Maintaining original exposure and colors is mandatory.";
-            const motionInstruction = isImageAliveEnabled 
-                ? "Apply a continuous, very slow cinematic zoom-in starting immediately. Add high-quality looping ambient motion: if steam, make it rise; if liquid, add ripples; if foliage, add gentle breeze. Instant playback start."
-                : "Apply a smooth, slow cinematic zoom-in motion starting immediately from the very first frame. No intro delay.";
-            
-            finalPrompt = finalPrompt 
-                ? `${finalPrompt}. ${technicalConstraint} ${motionInstruction}` 
-                : `${technicalConstraint} ${motionInstruction}`;
-        }
-
-        setAiLoading('generate-video');
-        setVideoProgressText("Startar...");
-
-        try {
-            const videoUrl = await generateVideoFromPrompt(
-                finalPrompt,
-                organization.id,
-                screen.id,
-                post.id,
-                (status) => setVideoProgressText(status),
-                imagePayload
-            );
-            
-            showToast({ message: 'Videogenerering klar!', type: 'success' });
-            
-            onPostChange({
-                ...post,
-                videoUrl: videoUrl,
-                isAiGeneratedVideo: true,
-                imageUrl: undefined, // Byt till video-vyn
-                aiImageVariants: currentVariants // Skicka med historiken för att "Backa"
-            });
-            startCooldown();
-        } catch (error) {
-            console.error("Video generation failed:", error);
-            showToast({ message: error instanceof Error ? error.message : 'Kunde inte starta videogenerering.', type: 'error' });
-            startCooldown();
-        } finally {
-            setAiLoading(false);
-            setVideoProgressText("");
         }
     };
 
@@ -727,7 +637,6 @@ const SingleMediaEditor: React.FC<{
         }
     };
     
-    const isVideoGenerating = aiLoading === 'generate-video' || aiLoading === 'preparing-image';
     const isImageGenerating = aiLoading === 'generate-image' || aiLoading === 'edit-image';
 
     return (
@@ -766,74 +675,6 @@ const SingleMediaEditor: React.FC<{
                             {cooldown > 0 ? `Väntar... (${cooldown}s)` : "Generera bild"}
                         </PrimaryButton>
                     </div>
-                </div>
-
-                <div className="p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 space-y-3">
-                    <label className="flex items-center gap-2 text-sm font-semibold text-indigo-800 dark:text-indigo-300">
-                        <VideoCameraIcon className="w-5 h-5"/>
-                        Skapa video med AI
-                    </label>
-                    {isVideoGenerating ? (
-                        <div className="flex items-center gap-3 p-4 bg-indigo-600 dark:bg-indigo-700 rounded-lg text-white border border-indigo-500 shadow-xl animate-pulse">
-                            <LoadingSpinnerIcon className="w-6 h-6 animate-spin" />
-                            <div>
-                                <p className="font-bold flex items-center gap-2">
-                                    {videoProgressText || (aiLoading === 'preparing-image' ? "Förbereder bild..." : "Skapar video...")}
-                                    <ThinkingDots className="text-white/70" />
-                                </p>
-                                <p className="text-xs opacity-80 mt-1">Skylie renderar din vision. Det här kan ta en stund.</p>
-                            </div>
-                        </div>
-                    ) : (
-                        <>
-                            {post.imageUrl && (
-                                <div className="space-y-2 mb-1 p-3 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg border border-indigo-200 dark:border-indigo-700/50">
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            id="useImageForVideo"
-                                            checked={useImageForVideo}
-                                            onChange={(e) => setUseImageForVideo(e.target.checked)}
-                                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
-                                            disabled={!!aiLoading || cooldown > 0}
-                                        />
-                                        <label htmlFor="useImageForVideo" className="text-sm font-medium text-indigo-800 dark:text-indigo-200 cursor-pointer select-none">
-                                            Använd inläggets bild som startbild
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            id="makeImageAlive"
-                                            checked={isImageAliveEnabled}
-                                            onChange={(e) => setIsImageAliveEnabled(e.target.checked)}
-                                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
-                                            disabled={!!aiLoading || cooldown > 0}
-                                        />
-                                        <label htmlFor="makeImageAlive" className="text-sm font-bold text-indigo-900 dark:text-white cursor-pointer select-none flex items-center gap-1">
-                                            ✨ Gör bilden levande (rök, vind, ljusblänk)
-                                        </label>
-                                    </div>
-                                </div>
-                            )}
-                            <textarea
-                                value={post.aiVideoPrompt || ''}
-                                onChange={e => onPostChange({ ...post, aiVideoPrompt: e.target.value })}
-                                placeholder={isImageAliveEnabled ? "Skriv inget här för automatisk 'liv', eller beskriv rörelsen själv..." : (useImageForVideo ? "Beskriv hur bilden ska röra sig (t.ex. 'Kameran zoomar långsamt in', 'Vågorna rör sig')..." : "Beskriv en kort video du vill skapa...")}
-                                rows={3}
-                                className="w-full bg-white dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
-                                disabled={!!aiLoading || cooldown > 0}
-                            />
-                            <PrimaryButton 
-                                onClick={handleGenerateVideo} 
-                                loading={aiLoading === 'generate-video'} 
-                                disabled={(!post.aiVideoPrompt?.trim() && !isImageAliveEnabled) || !!aiLoading || cooldown > 0} 
-                                className="bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
-                            >
-                                {cooldown > 0 ? `Väntar... (${cooldown}s)` : (isImageAliveEnabled ? "Skapa magisk rörelse" : (useImageForVideo ? "Animera bild" : "Generera video"))}
-                            </PrimaryButton>
-                        </>
-                    )}
                 </div>
 
                 {isImageGenerating && (
@@ -888,6 +729,42 @@ const SingleMediaEditor: React.FC<{
                             </button>
                         </div>
                         
+                        {/* Rörelse på bilden selector */}
+                        {post.imageUrl && !post.videoUrl && (
+                            <div className="bg-slate-100 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                    Rörelse på bilden
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { id: 'none', label: 'Ingen' },
+                                        { id: 'zoom-in', label: 'Långsam zoom in' },
+                                        { id: 'zoom-out', label: 'Långsam zoom ut' },
+                                        { id: 'pan-right', label: 'Panorera' }
+                                    ].map(chip => {
+                                        const isSelected = (post.imageMotion || 'none') === chip.id;
+                                        return (
+                                            <button
+                                                key={chip.id}
+                                                type="button"
+                                                onClick={() => onPostChange({ ...post, imageMotion: chip.id as any })}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                                                    isSelected
+                                                        ? 'bg-primary text-white border-primary shadow-sm'
+                                                        : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                                                }`}
+                                            >
+                                                {chip.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 pt-1">
+                                    Rörelse gör att skylten fångar blicken — effekten skapas direkt på skärmen och kostar inga AI-krediter.
+                                </p>
+                            </div>
+                        )}
+
                         {/* Image Controls Container */}
                         <div className="bg-slate-100 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 space-y-4">
                             
@@ -1021,8 +898,9 @@ const CollageMediaEditor: React.FC<{
         onPostChange({ ...post, layout: 'collage', collageItems: updatedItems });
     };
 
-    const handleAddFile = async (file: File, index: number) => {
+    const handleAddFile = async (rawFile: File, index: number) => {
         try {
+            const file = await resizeImageFile(rawFile);
             const reader = new FileReader();
             reader.onload = (e) => {
                 const isVideo = file.type.startsWith('video/');
@@ -1041,7 +919,8 @@ const CollageMediaEditor: React.FC<{
     const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         
-        const files = Array.from(e.target.files);
+        const rawFiles = Array.from(e.target.files);
+        const files = await Promise.all(rawFiles.map(f => resizeImageFile(f)));
         const updatedItems = [...items];
         let fileIndex = 0;
         
@@ -1463,9 +1342,10 @@ export const Step3_Atmosphere: React.FC<{
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const { showToast } = useToast();
 
-    const handleFileChange = async (file: File) => {
+    const handleFileChange = async (rawFile: File) => {
         setUploadProgress(0); 
         try {
+            const file = await resizeImageFile(rawFile);
             const reader = new FileReader();
             reader.onprogress = (event) => {
                 if (event.lengthComputable) {

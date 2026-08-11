@@ -56,6 +56,22 @@ const mapLegacySize = (size?: string): number => {
 
 const mapLegacyPosition = (position?: string) => ({ x: 90, y: 90 });
 
+const getMotionStyle = (post: DisplayPost): React.CSSProperties => {
+    const motion = post.imageMotion || 'none';
+    if (motion === 'none') return {};
+    const base = (post.mediaZoom && post.mediaZoom > 1) ? post.mediaZoom : 1;
+    const name = motion === 'zoom-in' ? 'smartskylt-kb-zoom-in'
+               : motion === 'zoom-out' ? 'smartskylt-kb-zoom-out'
+               : 'smartskylt-kb-pan';
+    const seconds = Math.max(5, Number(post.durationSeconds) || 15);
+    return {
+        ['--kb-base' as any]: String(base),
+        ['--kb-zoomed' as any]: String(base * 1.08),
+        animation: `${name} ${seconds}s linear forwards`,
+        willChange: 'transform',
+    };
+};
+
 // --- STYLE GENERATORS ---
 
 const isPreviewMode = (mode?: 'preview' | 'live') => mode === 'preview';
@@ -1413,7 +1429,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                 alt="" 
                                 decoding="async"
                                 className="absolute inset-0 w-full h-full object-cover" 
-                                style={mediaStyle}
+                                style={{ ...mediaStyle, ...getMotionStyle(post) }}
                                 onLoad={signalReady}
                             />
                         )}
@@ -1479,7 +1495,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         {/* Bild eller video i ena halvan */}
                         <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
                             {post.imageUrl ? (
-                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" onLoad={signalReady} />
+                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" style={getMotionStyle(post)} onLoad={signalReady} />
                             ) : post.videoUrl ? (
                                 <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
                             ) : (
@@ -1521,7 +1537,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         {/* Bild eller video i ena halvan */}
                         <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
                             {post.imageUrl ? (
-                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" onLoad={signalReady} />
+                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" style={getMotionStyle(post)} onLoad={signalReady} />
                             ) : post.videoUrl ? (
                                 <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
                             ) : (
@@ -1677,7 +1693,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             alt="" 
                             decoding="async"
                             className="absolute z-1 w-full h-full" 
-                            style={mediaStyle}
+                            style={{ ...mediaStyle, ...getMotionStyle(post) }}
                             onLoad={signalReady}
                             onError={() => !post.videoUrl && onLoadError && onLoadError()} 
                         />

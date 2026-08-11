@@ -128,19 +128,3 @@ export interface ChatMessage {
   role: 'user' | 'model';
   parts: ({ text: string } | { inlineData: { mimeType: string; data: string; url?: string } })[];
 }
-
-// For tracking long-running video generation operations.
-export interface VideoOperation {
-  id: string; // The operation ID from Gemini (without 'operations/')
-  orgId: string;
-  screenId: string;
-  postId: string;
-  userId: string;
-  prompt: string;
-  model: string;
-  status: 'processing' | 'done' | 'error' | 'cancelled';
-  createdAt: any; // Firestore Timestamp
-  completedAt?: any; // Firestore Timestamp
-  videoUrl?: string; // Final storage URL
-  errorMessage?: string;
-}

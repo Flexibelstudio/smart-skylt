@@ -171,6 +171,7 @@ export interface DisplayPost {
   mediaPositionX?: number; // 0-100%
   mediaPositionY?: number; // 0-100%
   mediaZoom?: number; // 1.0 - 3.0
+  imageMotion?: 'none' | 'zoom-in' | 'zoom-out' | 'pan-right';
   
   webpageUrl?: string;
   webpageUseSmartPortal?: boolean;

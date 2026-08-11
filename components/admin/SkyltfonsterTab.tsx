@@ -214,7 +214,7 @@ const ProactiveUpcomingEventBannerLocal: React.FC<{
 const MyScreenSummaryPanel: React.FC<{
     physicalScreens: PhysicalScreen[];
     displayScreens: DisplayScreen[];
-    screenSessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>;
+    screenSessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }>;
     statusNow: number;
 }> = ({ physicalScreens, displayScreens, screenSessions, statusNow }) => {
     if (!physicalScreens || physicalScreens.length === 0) {
@@ -352,11 +352,39 @@ const getFirstActivePost = (screen?: DisplayScreen): DisplayPost | undefined => 
     return undefined;
 };
 
+const formatDeviceInfo = (info?: Record<string, any>): string | null => {
+    if (!info) return null;
+    const width = info.screenWidth || info.viewportWidth;
+    const height = info.screenHeight || info.viewportHeight;
+    const res = width && height ? `${width}×${height}` : '';
+    
+    let browser = '';
+    const ua = info.userAgent || '';
+    if (/chrome|crios|crmo/i.test(ua) && !/edg/i.test(ua)) {
+        const match = ua.match(/(?:chrome|crios|crmo)\/(\d+)/i);
+        browser = match ? `Chrome ${match[1]}` : 'Chrome';
+    } else if (/edg/i.test(ua)) {
+        const match = ua.match(/edg\/(\d+)/i);
+        browser = match ? `Edge ${match[1]}` : 'Edge';
+    } else if (/safari/i.test(ua) && !/chrome/i.test(ua)) {
+        const match = ua.match(/version\/(\d+)/i);
+        browser = match ? `Safari ${match[1]}` : 'Safari';
+    } else if (/firefox|fxios/i.test(ua)) {
+        const match = ua.match(/(?:firefox|fxios)\/(\d+)/i);
+        browser = match ? `Firefox ${match[1]}` : 'Firefox';
+    } else if (ua) {
+        browser = ua.slice(0, 20);
+    }
+
+    const parts = [res, browser].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : null;
+};
+
 const PhysicalScreenManager: React.FC<{ 
     organization: Organization;
     allDisplayScreens: DisplayScreen[];
     onUpdateOrganization: (orgId: string, data: Partial<Organization>) => Promise<void>;
-    screenSessions?: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>;
+    screenSessions?: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }>;
     statusNow?: number;
     onPreviewScreen?: (screen: DisplayScreen) => void;
 }> = ({ organization, allDisplayScreens, onUpdateOrganization, screenSessions: propSessions, statusNow: propNow, onPreviewScreen }) => {
@@ -367,7 +395,7 @@ const PhysicalScreenManager: React.FC<{
     const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
     const physicalScreens = organization.physicalScreens || [];
 
-    const [internalSessions, setInternalSessions] = useState<Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string }>>({});
+    const [internalSessions, setInternalSessions] = useState<Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }>>({});
     const [internalNow, setInternalNow] = useState(Date.now());
 
     useEffect(() => {
@@ -440,6 +468,7 @@ const PhysicalScreenManager: React.FC<{
                             const screenStatus = getScreenStatus(screen.id);
                             const state = screenStatus.state;
                             const firstActivePost = getFirstActivePost(channel);
+                            const devInfoText = formatDeviceInfo(screenSessions[screen.id]?.deviceInfo);
 
                             const aspectClass = channel?.aspectRatio === '9:16' ? 'aspect-[9/16] w-[130px]'
                                               : channel?.aspectRatio === '3:4' ? 'aspect-[3/4] w-[140px]'
@@ -499,17 +528,26 @@ const PhysicalScreenManager: React.FC<{
                                             <div className="flex items-center gap-2 truncate">
                                                 <p className="font-bold text-base text-slate-900 dark:text-white truncate">{screen.name}</p>
                                                 {state === 'online' && (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/50 px-2 py-0.5 rounded-full shrink-0">
+                                                    <span 
+                                                        title={devInfoText ? `Hårdvara: ${devInfoText}` : undefined}
+                                                        className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/50 px-2 py-0.5 rounded-full shrink-0 cursor-default"
+                                                    >
                                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                                                     </span>
                                                 )}
                                                 {state === 'offline' && (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-800/50 px-2 py-0.5 rounded-full shrink-0">
+                                                    <span 
+                                                        title={devInfoText ? `Hårdvara: ${devInfoText}` : undefined}
+                                                        className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-800/50 px-2 py-0.5 rounded-full shrink-0 cursor-default"
+                                                    >
                                                         Offline
                                                     </span>
                                                 )}
                                                 {state === 'unknown' && (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full shrink-0">
+                                                    <span 
+                                                        title={devInfoText ? `Hårdvara: ${devInfoText}` : undefined}
+                                                        className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full shrink-0 cursor-default"
+                                                    >
                                                         Okänd
                                                     </span>
                                                 )}
@@ -536,8 +574,13 @@ const PhysicalScreenManager: React.FC<{
                                                         />
                                                         <div 
                                                             onClick={(e) => e.stopPropagation()} 
-                                                            className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl py-1.5 z-50 text-left text-slate-800 dark:text-slate-100"
+                                                            className="absolute right-0 mt-2 w-52 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl py-1.5 z-50 text-left text-slate-800 dark:text-slate-100"
                                                         >
+                                                            {devInfoText && (
+                                                                <div className="px-3.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-slate-700/60 truncate" title={devInfoText}>
+                                                                    🖥️ {devInfoText}
+                                                                </div>
+                                                            )}
                                                             <button
                                                                 onClick={() => {
                                                                     setActiveDropdownId(null);

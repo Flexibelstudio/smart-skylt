@@ -28,6 +28,23 @@ import {
 } from '../hooks/useRealtimeData';
 import { getAppMode } from '../utils/appMode';
 import { parseToDate } from '../utils/dateUtils';
+import { APP_VERSION } from '../version';
+
+const collectDeviceInfo = () => {
+    try {
+        return {
+            userAgent: (navigator.userAgent || '').slice(0, 300),
+            screenWidth: window.screen?.width ?? null,
+            screenHeight: window.screen?.height ?? null,
+            viewportWidth: window.innerWidth ?? null,
+            viewportHeight: window.innerHeight ?? null,
+            devicePixelRatio: window.devicePixelRatio ?? null,
+            deviceMemory: (navigator as any).deviceMemory ?? null,
+            appVersion: APP_VERSION,
+            reportedAt: new Date().toISOString(),
+        };
+    } catch { return null; }
+};
 
 type SyncStatus = 'synced' | 'syncing' | 'offline';
 
@@ -327,7 +344,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   // Heartbeat: tala om för admin att skärmen lever, var 60:e sekund
   useEffect(() => {
       if (!isScreenMode || !deviceId) return;
-      sendScreenHeartbeat(deviceId); // direkt vid start
+      sendScreenHeartbeat(deviceId, collectDeviceInfo() || undefined); // direkt vid start
       const interval = setInterval(() => sendScreenHeartbeat(deviceId), 60000);
       return () => clearInterval(interval);
   }, [isScreenMode, deviceId]);

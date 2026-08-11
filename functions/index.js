@@ -247,10 +247,9 @@ const AI_MODELS = {
   TEXT_LIGHT: "gemini-2.5-flash",
   IMAGE: "gemini-2.5-flash-image",
   IMAGE_GENERATION: "imagen-4.0-generate-001",
-  VIDEO: "veo-3.1-fast-generate-preview",
 };
 
-// Kreditvikter per åtgärd (text ≈ ören, bild/video är de dyra)
+// Kreditvikter per åtgärd (text ≈ ören, bild är de dyra)
 const AI_CREDIT_COSTS = {
   generateContent: 1,
   formatPageWithAI: 1,
@@ -263,7 +262,6 @@ const AI_CREDIT_COSTS = {
   generateImages: 10,
   generateDisplayPostImage: 10,
   editDisplayPostImage: 10,
-  initiateVideoGeneration: 100,
   automationSuggestionText: 1,
   automationSuggestionImage: 10,
 };
@@ -446,165 +444,6 @@ export const qrRedirect = onRequest({ region: "us-central1" }, async (req, res) 
     res.status(500).send("Något gick fel.");
   }
 });
-
-/* ------------------------------------------------------------------ */
-/*                  Video Generation                                   */
-/* ------------------------------------------------------------------ */
-
-export const initiateVideoGeneration = onCall(
-  {
-    timeoutSeconds: 60,
-    secrets: ["API_KEY"],
-    cors: true,
-  },
-  async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "You must be logged in.");
-
-    const { prompt, image, orgId, screenId, postId } = request.data;
-    if (orgId) await checkAiCreditLimit(orgId);
-    trackAiUsage(orgId || null, "initiateVideoGeneration", AI_CREDIT_COSTS.initiateVideoGeneration);
-    const API_KEY = process.env.API_KEY;
-
-    if (!API_KEY) throw new HttpsError("internal", "Service configuration error.");
-
-    try {
-      const ai = new GoogleGenAI({ apiKey: API_KEY });
-      const model = AI_MODELS.VIDEO;
-      
-      let imagePart = undefined;
-      if (image && image.imageBytes && image.mimeType) {
-          imagePart = {
-              imageBytes: image.imageBytes,
-              mimeType: image.mimeType
-          };
-      }
-
-      const operation = await ai.models.generateVideos({
-        model,
-        prompt,
-        image: imagePart,
-        config: { numberOfVideos: 1 },
-      });
-
-      const operationName = operation.name || (operation).operation?.name;
-      if (!operationName) throw new Error("No operation name returned from Google AI.");
-
-      if (orgId && postId) {
-        try {
-          await db.collection("organizations").doc(orgId).collection("videoOperations").add({
-            orgId,
-            postId,
-            screenId: screenId || null,
-            prompt: prompt || "",
-            operationName,
-            model,
-            status: "processing",
-            createdAt: new Date().toISOString(),
-          });
-        } catch (e) {
-          console.warn("Kunde inte skriva videoOperations-dokument:", e);
-        }
-      }
-
-      return { success: true, operationName };
-
-    } catch (error) {
-      console.error("Video initiation failed:", error);
-      throw new HttpsError("internal", error.message || "Failed to start video generation.");
-    }
-  }
-);
-
-export const saveGeneratedVideo = onCall(
-  {
-    timeoutSeconds: 300,
-    memory: "1GiB",
-    secrets: ["API_KEY"],
-    cors: true,
-  },
-  async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "You must be logged in.");
-
-    const { videoUri, orgId, postId, screenId } = request.data;
-    const API_KEY = process.env.API_KEY;
-
-    if (!videoUri || !orgId || !postId || !screenId) throw new HttpsError("invalid-argument", "Missing parameters.");
-
-    try {
-        const separator = videoUri.includes("?") ? "&" : "?";
-        const downloadUrl = `${videoUri}${separator}key=${API_KEY}`;
-        
-        const response = await fetch(downloadUrl);
-        if (!response.ok) throw new Error(`Download failed: ${response.statusText}`);
-        const buffer = await response.arrayBuffer();
-
-        const bucket = storage.bucket();
-        const fileName = `organizations/${orgId}/post_assets/${postId}/ai-video-${Date.now()}.mp4`;
-        const file = bucket.file(fileName);
-        const token = randomUUID();
-
-        await file.save(Buffer.from(buffer), {
-            metadata: {
-                contentType: "video/mp4",
-                metadata: { firebaseStorageDownloadTokens: token }
-            }
-        });
-
-        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
-
-        const postRef = db.collection("organizations").doc(orgId).collection("displayScreens").doc(screenId);
-        const orgRef = db.collection("organizations").doc(orgId);
-        
-        let aiPrompt = "AI Video";
-        try {
-            const opSnap = await db.collection("organizations").doc(orgId).collection("videoOperations")
-                .where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1).get();
-            if (!opSnap.empty) {
-                aiPrompt = opSnap.docs[0].data().prompt || "AI Video";
-            }
-        } catch (e) {
-            console.warn("Could not fetch prompt info", e);
-        }
-
-        await db.runTransaction(async (t) => {
-            const doc = await t.get(postRef);
-            if (!doc.exists) throw new Error("Screen not found");
-            
-            const postData = doc.data();
-            const posts = parseScreenPosts(postData);
-            const idx = posts.findIndex(p => p.id === postId);
-            
-            if (idx > -1) {
-                posts[idx].videoUrl = publicUrl;
-                posts[idx].isAiGeneratedVideo = true;
-                delete posts[idx].imageUrl;
-                delete posts[idx].isAiGeneratedImage;
-                t.update(postRef, { _serialized_posts: JSON.stringify(posts), posts: FieldValue.delete() });
-            }
-
-            const newMediaItem = {
-                id: `media-ai-video-${Date.now()}`,
-                type: 'video',
-                url: publicUrl,
-                internalTitle: `AI: ${aiPrompt.slice(0, 30)}...`,
-                createdAt: new Date().toISOString(),
-                createdBy: 'ai',
-                aiPrompt: aiPrompt
-            };
-            
-            t.update(orgRef, {
-                mediaLibrary: FieldValue.arrayUnion(newMediaItem)
-            });
-        });
-
-        return { success: true, videoUrl: publicUrl };
-
-    } catch (error) {
-        console.error("Error saving video:", error);
-        throw new HttpsError("internal", error.message || "Failed to save video.");
-    }
-  }
-);
 
 /* ------------------------------------------------------------------ */
 /*                         Organization Deletion                       */
@@ -1307,11 +1146,6 @@ export const gemini = onCall(
               };
             }
 
-            case "getVideosOperation": {
-                if (!params.operation) throw new HttpsError("invalid-argument", "Missing operation.");
-                return await ai.operations.getVideosOperation({ operation: params.operation });
-            }
-
             case "analyzeBrandFromWebsite": {
                 if (!params.url) throw new HttpsError("invalid-argument", "URL required.");
 
@@ -1338,7 +1172,19 @@ export const gemini = onCall(
                         : 'Ingen specifik metadata hittades';
 
                     const colorInstruction = hasColors
-                        ? `1. primaryColor och secondaryColor MÅSTE väljas ur färglistan ovan — hitta ALDRIG på egna hexkoder. Välj de två mättade färger som tydligast bär sajtens identitet (primär = den mest framträdande profilfärgen, sekundär = komplementet, t.ex. bakgrunds-/jordton om sådan finns i listan). Anges som hexkod (t.ex. #ff6600).`
+                        ? `1. FÄRGER: Listan ovan innehåller färger som faktiskt förekommer på sajten.
+Du MÅSTE välja primaryColor och secondaryColor ur listan — du får aldrig
+hitta på en egen hexkod, men du får inte heller utelämna färgerna när
+listan innehåller minst en färg.
+Så här väljer du:
+- primaryColor = den mest MÄTTADE, karaktärsfulla färgen i listan (den som
+  bär varumärkets identitet). Frekvens spelar mindre roll — en färg som
+  förekommer få gånger kan mycket väl vara profilfärgen, medan en ljus ton
+  som förekommer ofta oftast bara är sidans bakgrund.
+- secondaryColor = en färg som kompletterar primärfärgen, typiskt en ljus
+  bakgrundston eller en mörkare variant av samma kulör.
+- Innehåller listan bara ljusa, lågmättade toner: välj ändå de två som bäst
+  representerar sajten. Utelämna ENDAST om listan är helt tom.`
                         : `1. Inga hexfärger hittades på sajten. Utlämna primaryColor och secondaryColor HELT ur JSON-svaret (inkludera inte dessa nycklar). Hitta ALDRIG på egna hexkoder.`;
 
                     const jsonKeysInstruction = hasColors
