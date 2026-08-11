@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Organization, UserRole, DisplayScreen, DisplayPost, Tag, SystemSettings, PostTemplate, PhysicalScreen } from '../types';
-import { getSystemSettings, pairAndActivateScreen, getPairingCode } from '../services/firebaseService';
+import { getSystemSettings, pairAndActivateScreen, getPairingCode, listenToSuggestedPosts } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { PrimaryButton, SecondaryButton } from './Buttons';
@@ -9,6 +9,7 @@ import { StyledInput, StyledSelect } from './Forms';
 import { SparklesIcon, CodeBracketIcon, ShareIcon } from './icons';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
 import { parseToDate } from '../utils/dateUtils';
+import { getDisplayHost } from '../utils/appMode';
 import QRCode from 'qrcode';
 import { AIGuideModal } from './AIGuideModal';
 import { useLocation } from '../context/StudioContext';
@@ -45,7 +46,7 @@ const getAspectRatioClass = (ratio?: DisplayScreen['aspectRatio']): string => {
     }
 };
 
-const DisplayScreenPreviewModal: React.FC<{
+export const DisplayScreenPreviewModal: React.FC<{
     screen: DisplayScreen;
     organization: Organization;
     onClose: () => void;
@@ -56,6 +57,8 @@ const DisplayScreenPreviewModal: React.FC<{
     }, [displayScreens, screen]);
 
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(true);
+    const [isQuickMode, setIsQuickMode] = useState(true); // Snabbläge: 4s per inlägg i preview
     const timerRef = React.useRef<number | null>(null);
 
     const activePosts = useMemo(() => {
@@ -83,18 +86,28 @@ const DisplayScreenPreviewModal: React.FC<{
         setCurrentIndex(prev => (prev + 1) % activePosts.length);
     }, [activePosts.length]);
 
+    const goBack = React.useCallback(() => {
+        if (activePosts.length <= 1) return;
+        setCurrentIndex(prev => (prev - 1 + activePosts.length) % activePosts.length);
+    }, [activePosts.length]);
+
     useEffect(() => {
         if (timerRef.current) clearTimeout(timerRef.current);
-        if (activePosts.length <= 1) return;
+        if (activePosts.length <= 1 || !isPlaying) return;
 
         const currentPost = activePosts[currentIndex];
-        if (!currentPost || (currentPost.layout === 'video-fullscreen' && currentPost.videoUrl)) return;
+        if (!currentPost) return;
 
-        const duration = (currentPost.durationSeconds || 15) * 1000;
+        const isVideo = currentPost.layout === 'video-fullscreen' && currentPost.videoUrl;
+        // Realtidsläge: videor styrs av onVideoEnded, ingen timer.
+        if (isVideo && !isQuickMode) return;
+
+        // Snabbläge: 4s per inlägg oavsett inställd visningstid.
+        const duration = isQuickMode ? 4000 : (currentPost.durationSeconds || 15) * 1000;
         timerRef.current = window.setTimeout(advance, duration);
 
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [currentIndex, activePosts, advance]);
+    }, [currentIndex, activePosts, advance, isPlaying, isQuickMode]);
 
     const currentPost = activePosts[currentIndex];
     
@@ -158,11 +171,23 @@ const DisplayScreenPreviewModal: React.FC<{
                             </SplitScreenLayout>
                         </ScaledPreviewWrapper>
                         
-                        {/* Overlay Controls */}
-                        {activePosts.length > 1 && (
-                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-full flex items-center gap-4 opacity-0 hover:opacity-100 transition-opacity duration-200">
-                                <button onClick={advance} className="hover:text-primary transition-colors">Nästa &rarr;</button>
-                                <span className="text-xs text-white/50">{currentIndex + 1} / {activePosts.length}</span>
+                        {/* Overlay Controls - alltid synliga */}
+                        {activePosts.length > 0 && (
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md text-white px-4 py-2 rounded-full flex items-center gap-3 text-sm shadow-lg">
+                                <button onClick={goBack} disabled={activePosts.length <= 1} className="hover:text-white/70 disabled:opacity-30 transition-colors" title="Föregående inlägg">&larr;</button>
+                                <button onClick={() => setIsPlaying(p => !p)} className="hover:text-white/70 transition-colors w-5" title={isPlaying ? 'Pausa' : 'Spela'}>
+                                    {isPlaying ? '⏸' : '▶'}
+                                </button>
+                                <button onClick={advance} disabled={activePosts.length <= 1} className="hover:text-white/70 disabled:opacity-30 transition-colors" title="Nästa inlägg">&rarr;</button>
+                                <span className="text-xs text-white/50 tabular-nums">{currentIndex + 1} / {activePosts.length}</span>
+                                <div className="w-px h-4 bg-white/20" />
+                                <button
+                                    onClick={() => setIsQuickMode(q => !q)}
+                                    className={`text-xs px-2 py-0.5 rounded-full transition-colors ${isQuickMode ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white'}`}
+                                    title="Snabbläge: 4 sekunder per inlägg istället för inställd visningstid"
+                                >
+                                    {isQuickMode ? 'Snabbläge' : 'Realtid'}
+                                </button>
                             </div>
                         )}
                      </div>
@@ -190,6 +215,9 @@ const PairingModal: React.FC<{
 
     const { currentUser } = useAuth();
     const { displayScreens: allDisplayScreens } = useLocation();
+
+    const pairedCount = (organization.physicalScreens || []).length;
+    const maxScreens = organization.maxScreens ?? 1;
 
     useEffect(() => {
         if (isOpen) {
@@ -240,7 +268,18 @@ const PairingModal: React.FC<{
             });
 
             const updatedScreens = [...(organization.physicalScreens || []), newScreen];
-            onUpdateOrganization(organization.id, { physicalScreens: updatedScreens });
+            const newScreenCount = updatedScreens.length;
+            const currentMaxScreens = organization.maxScreens ?? 1;
+
+            const orgUpdates: Partial<Organization> = {
+                physicalScreens: updatedScreens,
+            };
+
+            if (newScreenCount > currentMaxScreens) {
+                orgUpdates.maxScreens = newScreenCount;
+            }
+
+            await onUpdateOrganization(organization.id, orgUpdates);
             
             onPairSuccess(newScreen);
             setStep('success');
@@ -257,8 +296,35 @@ const PairingModal: React.FC<{
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-lg text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in" onClick={e => e.stopPropagation()}>
                 {step === 'code' && (
                     <form onSubmit={handleVerifyCode}>
-                        <h2 className="text-2xl font-bold mb-4">Anslut ett nytt skyltfönster</h2>
-                        <p className="text-slate-600 dark:text-slate-300 mb-6">Ange den 6-siffriga koden som visas på skärmen du vill ansluta.</p>
+                        <h2 className="text-2xl font-bold mb-1">Anslut ett nytt skyltfönster</h2>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">
+                            {pairedCount} av {maxScreens} skyltfönster används
+                        </p>
+
+                        <ol className="list-decimal list-inside space-y-2 text-slate-600 dark:text-slate-300 mb-6 text-sm">
+                            <li>
+                                Öppna webbläsaren på din TV och gå till <span className="font-mono font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md">{getDisplayHost()}</span>
+                            </li>
+                            <li>
+                                Skriv in koden som visas på TV:n här nedanför
+                            </li>
+                        </ol>
+
+                        {pairedCount >= maxScreens && (
+                            <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 p-4 rounded-xl text-sm mb-6 leading-relaxed">
+                                Ditt abonnemang omfattar {maxScreens} skyltfönster.
+                                {systemSettings?.pricePerScreenAdditional != null && (
+                                    ` Ansluter du det här utökas abonnemanget med +${systemSettings.pricePerScreenAdditional} kr/mån.`
+                                )}
+                            </div>
+                        )}
+
+                        {pairedCount < maxScreens && pairedCount >= 1 && systemSettings?.pricePerScreenAdditional != null && (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 mb-6 bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                                Den här skärmen läggs till ditt abonnemang: +{systemSettings.pricePerScreenAdditional} kr/mån.
+                            </p>
+                        )}
+
                         <StyledInput
                             type="text"
                             value={code}
@@ -289,7 +355,7 @@ const PairingModal: React.FC<{
                                         {allDisplayScreens.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                     </StyledSelect>
                                 ) : (
-                                    <p className="text-yellow-400 bg-yellow-900/50 p-3 rounded-lg text-sm">Du måste skapa en kanal först under "Kanaler".</p>
+                                    <p className="text-yellow-400 bg-yellow-900/50 p-3 rounded-lg text-sm">Du måste skapa en kanal först under fliken "Skyltfönster".</p>
                                 )}
                             </div>
                         </div>
@@ -434,8 +500,9 @@ const ShareModal: React.FC<{
 const CompleteProfileModal: React.FC<{
     isOpen: boolean;
     onSave: (data: Partial<Organization>) => Promise<void>;
+    onClose: () => void;
     organization: Organization;
-}> = ({ isOpen, onSave, organization }) => {
+}> = ({ isOpen, onSave, onClose, organization }) => {
     const [address, setAddress] = useState(organization.address || '');
     const [phone, setPhone] = useState(organization.phone || '');
     const [orgNumber, setOrgNumber] = useState(organization.orgNumber || '');
@@ -469,8 +536,8 @@ const CompleteProfileModal: React.FC<{
     return (
          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-lg text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in">
-                <h2 className="text-2xl font-bold mb-2">Slutför er profil</h2>
-                <p className="text-slate-600 dark:text-slate-300 mb-6">För att kunna ge bästa möjliga service och för framtida fakturering, vänligen fyll i de sista uppgifterna om er organisation.</p>
+                <h2 className="text-2xl font-bold mb-2">Välkommen! Berätta lite om er</h2>
+                <p className="text-slate-600 dark:text-slate-300 mb-6">Uppgifterna behövs för fakturering och support. Du kan fylla i dem nu — eller hoppa över och göra det senare.</p>
                 <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Organisationsnummer</label>
@@ -489,7 +556,10 @@ const CompleteProfileModal: React.FC<{
                         <StyledInput type="tel" value={phone} onChange={e => setPhone(e.target.value)} />
                     </div>
                 </div>
-                <div className="flex justify-end mt-6">
+                <div className="flex justify-between items-center mt-6 gap-3">
+                    <button type="button" onClick={onClose} className="text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+                        Fyll i senare
+                    </button>
                     <PrimaryButton onClick={handleSave} loading={isSaving} disabled={!canSave}>
                         Spara och fortsätt
                     </PrimaryButton>
@@ -561,6 +631,15 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
     const [activeTab, setActiveTab] = useState<AdminTabType>('skyltfonster');
     
     const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+    const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
+
+    useEffect(() => {
+        if (!organization?.id) return;
+        const unsubscribe = listenToSuggestedPosts(organization.id, (posts) => {
+            setPendingSuggestionsCount(posts.filter(p => p.status === 'pending').length);
+        });
+        return () => unsubscribe();
+    }, [organization?.id]);
     
     const [isPairingModalOpen, setIsPairingModalOpen] = useState(false);
     const [screenToPreview, setScreenToPreview] = useState<DisplayScreen | null>(null);
@@ -572,18 +651,28 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
     const [isBrandingGuideVisible, setIsBrandingGuideVisible] = useState(false);
     const brandingGuideDismissedKey = `smart-skylt-branding-guide-dismissed-${organization.id}`;
 
+    const onboardingDismissedKey = `smart-skylt-onboarding-dismissed-${organization.id}`;
+    const [isOnboardingDismissed, setIsOnboardingDismissed] = useState(() => {
+        return localStorage.getItem(onboardingDismissedKey) === 'true';
+    });
+
+    useEffect(() => {
+        const key = `smart-skylt-onboarding-dismissed-${organization.id}`;
+        setIsOnboardingDismissed(localStorage.getItem(key) === 'true');
+    }, [organization.id]);
+
     const isBrandingProfileIncomplete = useMemo(() => {
         return !organization.businessDescription || !organization.businessType || organization.businessType.length === 0;
     }, [organization.businessDescription, organization.businessType]);
 
     useEffect(() => {
         const dismissed = localStorage.getItem(brandingGuideDismissedKey);
-        if (isBrandingProfileIncomplete && !dismissed) {
+        if (isBrandingProfileIncomplete && !dismissed && isOnboardingDismissed) {
             setIsBrandingGuideVisible(true);
         } else {
             setIsBrandingGuideVisible(false);
         }
-    }, [isBrandingProfileIncomplete, brandingGuideDismissedKey]);
+    }, [isBrandingProfileIncomplete, brandingGuideDismissedKey, isOnboardingDismissed]);
 
     const handleDismissBrandingGuide = () => {
         localStorage.setItem(brandingGuideDismissedKey, 'true');
@@ -607,17 +696,14 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
         fetchSettings();
     }, []);
     
-     useEffect(() => {
-        // Check if essential information is missing. 
-        // We use ignoreProfileCheck to prevent re-opening immediately after saving but before data sync.
-        if (!ignoreProfileCheck.current && organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson)) {
+    useEffect(() => {
+        const profileIncomplete = organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson);
+        const dismissed = organization && localStorage.getItem(`smart-skylt-profile-prompt-dismissed-${organization.id}`) === 'true';
+        if (!ignoreProfileCheck.current && profileIncomplete && !dismissed) {
             setIsProfileModalOpen(true);
-        } else {
-            // If data is present, ensure modal is closed and reset the ignore flag for future
-            if (organization && organization.address && organization.phone && organization.orgNumber && organization.contactPerson) {
-                setIsProfileModalOpen(false);
-                ignoreProfileCheck.current = false;
-            }
+        } else if (organization && !profileIncomplete) {
+            setIsProfileModalOpen(false);
+            ignoreProfileCheck.current = false;
         }
     }, [organization]);
 
@@ -630,20 +716,61 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
         await onUpdateOrganization(organization.id, data);
     };
 
+    const handleDismissProfileModal = () => {
+        setIsProfileModalOpen(false);
+        if (organization) {
+            localStorage.setItem(`smart-skylt-profile-prompt-dismissed-${organization.id}`, 'true');
+        }
+    };
+
     const displayLogoUrl = theme === 'dark' 
         ? (organization.logoUrlDark || organization.logoUrlLight)
         : (organization.logoUrlLight || organization.logoUrlDark);
 
+    const screenCount = (organization.physicalScreens || []).length;
+    const channelCount = (displayScreens || []).length;
+    const activePostCount = (displayScreens || []).reduce((sum, ch) =>
+        sum + (ch.posts || []).filter(p => {
+            if (p.status === 'archived' || p.status === 'draft' || !p.startDate) return false;
+            const start = parseToDate(p.startDate, false);
+            const end = p.endDate ? parseToDate(p.endDate, true) : null;
+            const now = new Date();
+            return !!start && start <= now && (!end || end >= now);
+        }).length, 0);
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fade-in pb-12">
             {/* Identity Header */}
-            <div className="text-center mb-4 min-h-[64px] flex items-center justify-center">
-                {displayLogoUrl ? (
-                    <img src={displayLogoUrl} alt={`${organization.name} logotyp`} className="max-h-16 object-contain" />
-                ) : (
-                    <h1 className="text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight">{organization.brandName || organization.name}</h1>
-                )}
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+                <div>
+                    {displayLogoUrl ? (
+                        <img src={displayLogoUrl} alt={`${organization.name} logotyp`} className="max-h-12 object-contain" />
+                    ) : (
+                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                            {organization.brandName || organization.name}
+                        </h1>
+                    )}
+                </div>
+                <div className="flex items-center gap-6 sm:gap-8">
+                    {[
+                        { value: screenCount, label: screenCount === 1 ? 'Skyltfönster' : 'Skyltfönster' },
+                        { value: channelCount, label: channelCount === 1 ? 'Kanal' : 'Kanaler' },
+                        { value: activePostCount, label: 'Aktiva inlägg' },
+                    ].map(stat => (
+                        <div key={stat.label} className="text-right">
+                            <div className="text-2xl font-extrabold text-slate-900 dark:text-white leading-none">{stat.value}</div>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">{stat.label}</div>
+                        </div>
+                    ))}
+                </div>
             </div>
+
+            {!isProfileModalOpen && isOnboardingDismissed && organization && (!organization.address || !organization.phone || !organization.orgNumber || !organization.contactPerson) && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-amber-800 dark:text-amber-300 px-4 py-2.5 rounded-xl flex items-center justify-between gap-3 text-sm animate-fade-in">
+                    <span>Era organisationsuppgifter är inte kompletta ännu — de behövs för fakturering.</span>
+                    <button type="button" onClick={() => setIsProfileModalOpen(true)} className="font-bold underline hover:no-underline whitespace-nowrap">Fyll i nu</button>
+                </div>
+            )}
 
             {isBrandingGuideVisible && (
                 <BrandingSetupGuide 
@@ -670,6 +797,11 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                     </TabButton>
                     <TabButton tabId="automation" activeTab={activeTab} setActiveTab={setActiveTab}>
                         Automation
+                        {pendingSuggestionsCount > 0 && (
+                            <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-purple-600 text-white text-[10px] font-black align-middle">
+                                {pendingSuggestionsCount}
+                            </span>
+                        )}
                     </TabButton>
                     <TabButton tabId="admin" activeTab={activeTab} setActiveTab={setActiveTab}>
                         Administration
@@ -694,11 +826,17 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                         onOpenPairingModal={() => setIsPairingModalOpen(true)}
                         onPreviewScreen={setScreenToPreview}
                         onShareScreen={setScreenToShare}
+                        isOnboardingDismissed={isOnboardingDismissed}
+                        onDismissOnboarding={() => {
+                            localStorage.setItem(onboardingDismissedKey, 'true');
+                            setIsOnboardingDismissed(true);
+                        }}
+                        onGoToBranding={() => setActiveTab('organisation')}
                     />
                 )}
                 {activeTab === 'organisation' && <OrganisationTab {...props} />}
                 {activeTab === 'galleri' && <MediaGalleryTab {...props} />}
-                {activeTab === 'automation' && <AiAutomationTab {...props} />}
+                {activeTab === 'automation' && <AiAutomationTab {...props} onGoToBranding={() => setActiveTab('organisation')} />}
                 {activeTab === 'admin' && <AdminTab {...props} />}
             </div>
             
@@ -727,6 +865,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
             <CompleteProfileModal
                 isOpen={isProfileModalOpen}
                 onSave={handleSaveProfile}
+                onClose={handleDismissProfileModal}
                 organization={organization}
             />
             <AIGuideModal

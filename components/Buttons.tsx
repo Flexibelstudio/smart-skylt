@@ -19,16 +19,16 @@ export const PrimaryButton: React.FC<ButtonProps> = ({ onClick, disabled, childr
     </button>
 );
 
-export const SecondaryButton: React.FC<ButtonProps> = ({ onClick, disabled, children, className, type = 'button', loading = false }) => (
-    <button onClick={onClick} disabled={disabled || loading} type={type}
+export const SecondaryButton: React.FC<ButtonProps> = ({ onClick, disabled, children, title, className, type = 'button', loading = false }) => (
+    <button onClick={onClick} disabled={disabled || loading} title={title} type={type}
         className={`bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${className}`}>
         {loading && <LoadingSpinnerIcon className="h-5 w-5 text-slate-500" />}
         {children}
     </button>
 );
 
-export const DestructiveButton: React.FC<ButtonProps> = ({ onClick, disabled, children, className, loading = false }) => (
-     <button onClick={onClick} disabled={disabled || loading} 
+export const DestructiveButton: React.FC<ButtonProps> = ({ onClick, disabled, children, title, className, type = 'button', loading = false }) => (
+     <button onClick={onClick} disabled={disabled || loading} title={title} type={type}
         className={`bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${className}`}>
         {loading && <LoadingSpinnerIcon className="h-5 w-5" />}
         {children}

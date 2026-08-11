@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Organization, UserRole } from '../../types';
-import { callTestFunction } from '../../services/firebaseService';
+import { Organization, UserRole, SystemSettings } from '../../types';
+import { callTestFunction, getAiUsage, getSystemSettings } from '../../services/firebaseService';
 import { Card } from '../Card';
 import { StyledInput } from '../Forms';
 import { PrimaryButton } from '../Buttons';
@@ -23,7 +23,27 @@ export const AdminTab: React.FC<AdminTabProps> = ({ organization, adminRole, onU
     const [orgNumber, setOrgNumber] = useState(organization.orgNumber || '');
     const [isSavingOrgDetails, setIsSavingOrgDetails] = useState(false);
     const [isTestingFunction, setIsTestingFunction] = useState(false);
+    const [usage, setUsage] = useState<{ totalCredits: number; counts: Record<string, number> } | null>(null);
+    const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
     const { showToast } = useToast();
+
+    useEffect(() => {
+        let isMounted = true;
+        getSystemSettings().then(res => {
+            if (isMounted) setSystemSettings(res);
+        });
+        return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        if (organization?.id) {
+            getAiUsage(organization.id).then(res => {
+                if (isMounted) setUsage(res);
+            });
+        }
+        return () => { isMounted = false; };
+    }, [organization?.id]);
 
     useEffect(() => {
         setName(organization.name);
@@ -86,8 +106,109 @@ export const AdminTab: React.FC<AdminTabProps> = ({ organization, adminRole, onU
         }
     };
 
+    const renderSubscriptionCard = () => {
+        if (!systemSettings || systemSettings.basePriceIncludingFirstScreen === undefined) {
+            return null;
+        }
+
+        const basePrice = systemSettings.basePriceIncludingFirstScreen;
+        const pricePerScreenAdditional = systemSettings.pricePerScreenAdditional ?? 0;
+        const connectedScreensCount = (organization.physicalScreens || []).length;
+        const extraScreensCount = Math.max(0, connectedScreensCount - 1);
+        const extraPriceTotal = extraScreensCount * pricePerScreenAdditional;
+        const subtotal = basePrice + extraPriceTotal;
+
+        const discountPercent = organization.discountScreen || 0;
+        const discountAmount = discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+        const totalPrice = subtotal - discountAmount;
+
+        return (
+            <Card title="Ditt abonnemang">
+                <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
+                    <div className="flex justify-between items-center">
+                        <span>Grundpaket (inkl. 1 skyltfönster)</span>
+                        <span className="font-semibold">{basePrice.toLocaleString('sv-SE')} kr/mån</span>
+                    </div>
+
+                    {extraScreensCount > 0 && (
+                        <div className="flex justify-between items-center">
+                            <span>{extraScreensCount} extra skyltfönster à {pricePerScreenAdditional.toLocaleString('sv-SE')} kr</span>
+                            <span className="font-semibold">{extraPriceTotal.toLocaleString('sv-SE')} kr/mån</span>
+                        </div>
+                    )}
+
+                    {discountPercent > 0 && (
+                        <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-medium">
+                            <span>Rabatt</span>
+                            <span>−{discountAmount.toLocaleString('sv-SE')} kr/mån</span>
+                        </div>
+                    )}
+
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between items-center text-base font-bold text-slate-900 dark:text-white">
+                        <span>Totalt</span>
+                        <span>{totalPrice.toLocaleString('sv-SE')} kr/mån</span>
+                    </div>
+
+                    <p className="text-xs text-slate-500 dark:text-slate-400 pt-2">
+                        Priserna gäller från nästa hela månad vid ändringar. Vill du ansluta fler skyltfönster? Kontakta oss.
+                    </p>
+                </div>
+            </Card>
+        );
+    };
+
     return (
         <div className="space-y-8">
+            {renderSubscriptionCard()}
+            {usage && (() => {
+                const limit = organization.aiMonthlyCreditLimit ?? 4000;
+                const used = usage.totalCredits;
+                const pct = Math.min(100, Math.round((used / limit) * 100));
+
+                const grouped = Object.entries(usage.counts).reduce((acc, [action, n]) => {
+                    const key = /image/i.test(action) ? 'Bilder' : 'Text & idéer';
+                    acc[key] = (acc[key] || 0) + (n as number);
+                    return acc;
+                }, {} as Record<string, number>);
+
+                const monthName = new Date().toLocaleDateString('sv-SE', { month: 'long' });
+                const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                const barColor = pct > 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-teal-500';
+
+                const groupSummary = ['Bilder', 'Text & idéer']
+                    .map(key => `${key}: ${grouped[key] || 0} st`)
+                    .join(' · ');
+
+                return (
+                    <Card title={`AI-användning · ${formattedMonth}`}>
+                        <div className="space-y-4">
+                            <div>
+                                <div className="flex justify-between items-center text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">
+                                    <span>{used} av {limit} krediter</span>
+                                    <span>{pct}%</span>
+                                </div>
+                                <div className="w-full bg-slate-200 dark:bg-slate-700 h-3 rounded-full overflow-hidden">
+                                    <div 
+                                        className={`h-full transition-all duration-500 ${barColor}`} 
+                                        style={{ width: `${pct}%` }} 
+                                    />
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-slate-600 dark:text-slate-400">
+                                {groupSummary}
+                            </p>
+
+                            {pct >= 90 && (
+                                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                                    Nära månadens tak — bildgenerering pausas vid {limit} krediter. Kontakta oss för utökad kvot.
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                );
+            })()}
+
             <Card title="Grunduppgifter" saving={isSavingOrgDetails}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>

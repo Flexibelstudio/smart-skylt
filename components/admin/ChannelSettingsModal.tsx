@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { DisplayScreen, ScreenZoneConfig, BrandingConfig } from '../../types';
+import { DisplayScreen, ScreenZoneConfig, BrandingOptions } from '../../types';
 import { StyledInput, StyledSelect } from '../Forms';
 import { ToggleSwitch, Cog6ToothIcon, MonitorIcon, SparklesIcon } from '../icons';
 import { PrimaryButton, SecondaryButton } from '../Buttons';
+import { useToast } from '../../context/ToastContext';
 
 interface ChannelSettingsModalProps {
     isOpen: boolean;
@@ -17,7 +18,7 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
     screen,
     onUpdateScreen
 }) => {
-    const [channelName, setChannelName] = useState(screen.name);
+    const { showToast } = useToast();
     const [aspectRatio, setAspectRatio] = useState(screen.aspectRatio || '16:9');
     
     // Branding
@@ -40,7 +41,6 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
 
     // Keep state synced if screen changes
     useEffect(() => {
-        setChannelName(screen.name);
         setAspectRatio(screen.aspectRatio || '16:9');
         setShowLogo(screen.branding?.showLogo ?? false);
         setShowName(screen.branding?.showName ?? false);
@@ -61,10 +61,11 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const branding: BrandingConfig = {
+            const branding: BrandingOptions = {
+                isEnabled: screen.branding?.isEnabled ?? (showLogo || showName),
                 showLogo,
                 showName,
-                position: brandingPosition as any
+                position: brandingPosition,
             };
 
             const zones: ScreenZoneConfig = {
@@ -81,7 +82,6 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
             };
 
             await onUpdateScreen(screen.id, {
-                name: channelName,
                 aspectRatio,
                 branding,
                 zones
@@ -129,58 +129,46 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
 
                 {/* Scrollable Content */}
                 <div className="p-6 md:p-8 space-y-8 overflow-y-auto flex-grow">
-                    {/* Basic Info & Orientation Row */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Kanalens namn</label>
-                            <StyledInput 
-                                type="text" 
-                                value={channelName} 
-                                onChange={(e) => setChannelName(e.target.value)} 
-                                placeholder="Namn på kanalen"
-                                className="!py-3 !px-4 text-base"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Skärmriktning / Format</label>
-                            <div className="flex gap-4">
-                                {/* Landscape Option */}
-                                <button
-                                    onClick={() => setAspectRatio('16:9')}
-                                    className={`relative flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 group ${
-                                        aspectRatio === '16:9'
-                                            ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
-                                            : 'border-slate-200 dark:border-slate-750 hover:border-primary/50 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'
-                                    }`}
-                                >
-                                    <div className={`w-12 h-8 border-2 rounded transition-colors ${aspectRatio === '16:9' ? 'border-primary bg-primary/20' : 'border-slate-400 dark:border-slate-500 group-hover:border-primary/50'}`} />
-                                    <span className="text-xs font-bold uppercase tracking-wide">Liggande (16:9)</span>
-                                </button>
+                    {/* Format Section */}
+                    <div>
+                        <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">FORMAT</label>
+                        <div className="flex gap-4">
+                            {/* Landscape Option */}
+                            <button
+                                onClick={() => setAspectRatio('16:9')}
+                                className={`relative flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 group ${
+                                    aspectRatio === '16:9'
+                                        ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
+                                        : 'border-slate-200 dark:border-slate-750 hover:border-primary/50 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'
+                                }`}
+                            >
+                                <div className={`w-12 h-8 border-2 rounded transition-colors ${aspectRatio === '16:9' ? 'border-primary bg-primary/20' : 'border-slate-400 dark:border-slate-500 group-hover:border-primary/50'}`} />
+                                <span className="text-xs font-bold uppercase tracking-wide">Liggande (16:9)</span>
+                            </button>
 
-                                {/* Portrait Option */}
-                                <button
-                                    onClick={() => setAspectRatio('9:16')}
-                                    className={`relative flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 group ${
-                                        aspectRatio === '9:16' || aspectRatio === '3:4'
-                                            ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
-                                            : 'border-slate-200 dark:border-slate-750 hover:border-primary/50 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'
-                                    }`}
-                                >
-                                    <div className={`w-6 h-10 border-2 rounded transition-colors ${aspectRatio === '9:16' || aspectRatio === '3:4' ? 'border-primary bg-primary/20' : 'border-slate-400 dark:border-slate-500 group-hover:border-primary/50'}`} />
-                                    <span className="text-xs font-bold uppercase tracking-wide">Stående (9:16)</span>
-                                </button>
-                            </div>
-                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">Välj det format som matchar monteringen av den fysiska TV-skärmen.</p>
+                            {/* Portrait Option */}
+                            <button
+                                onClick={() => setAspectRatio('9:16')}
+                                className={`relative flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 group ${
+                                    aspectRatio === '9:16' || aspectRatio === '3:4'
+                                        ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
+                                        : 'border-slate-200 dark:border-slate-750 hover:border-primary/50 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'
+                                }`}
+                            >
+                                <div className={`w-6 h-10 border-2 rounded transition-colors ${aspectRatio === '9:16' || aspectRatio === '3:4' ? 'border-primary bg-primary/20' : 'border-slate-400 dark:border-slate-500 group-hover:border-primary/50'}`} />
+                                <span className="text-xs font-bold uppercase tracking-wide">Stående (9:16)</span>
+                            </button>
                         </div>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">Välj det format som matchar hur ditt skyltfönster är monterat — liggande eller stående.</p>
                     </div>
 
                     {/* Branding Panel */}
                     <div className="pt-6 border-t border-slate-100 dark:border-slate-700/50">
                         <h3 className="font-extrabold text-slate-900 dark:text-white mb-4 flex items-center gap-2.5 text-lg">
                             <SparklesIcon className="w-5 h-5 text-purple-500" />
-                            Skärmdesign & Varumärkesprofil
+                            Logotyp på skylten
                         </h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">Välj om och var din företagslogotyp och företagsnamn ska visas på skärmen.</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">Välj om och var din logotyp och ditt företagsnamn ska visas på skyltfönstret.</p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-700/50 flex items-center">
                                 <ToggleSwitch 
@@ -200,7 +188,7 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Loggans placering</label>
                                 <StyledSelect 
                                     value={brandingPosition} 
-                                    onChange={(e) => setBrandingPosition(e.target.value)}
+                                    onChange={(e) => setBrandingPosition(e.target.value as BrandingOptions['position'])}
                                     className="!text-sm !py-2"
                                 >
                                     <option value="top-left">Övre vänstra hörnet</option>
@@ -216,13 +204,13 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
                     <div className="pt-6 border-t border-slate-100 dark:border-slate-700/50">
                         <h3 className="font-extrabold text-slate-900 dark:text-white mb-2 flex items-center gap-2.5 text-lg">
                             <MonitorIcon className="w-5 h-5 text-teal-500" />
-                            Zonlayout & Smart split-skärm
+                            Zoner
                         </h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">Dela fläckfritt upp din skärm i zoner för att visa en digital klocka, skräddarsydd information eller ett rullande nyhetsband bredvid dina bilder.</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">Dela upp skyltfönstret i zoner — visa klocka, egen information eller ett rullande nyhetsband bredvid dina inlägg.</p>
                         
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                             <div className="md:col-span-1">
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Skärmlayout</label>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">LAYOUT</label>
                                 <StyledSelect 
                                     value={layoutType} 
                                     onChange={(e) => setLayoutType(e.target.value)}
@@ -315,7 +303,7 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
                                         <div className="space-y-2 pt-2">
                                             <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 pb-2">Rullande nyhetsband (Ticker)</h4>
                                             <div>
-                                                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Skriv meddelandet som rullar längst ner på skärmen</label>
+                                                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Skriv meddelandet som rullar längst ner på skyltfönstret</label>
                                                 <StyledInput 
                                                     type="text" 
                                                     placeholder="T.ex. Välkommen! Just nu: 15% rabatt på alla ansiktsbehandlingar vid bokning online med koden VÅR2026..."
@@ -337,7 +325,7 @@ export const ChannelSettingsModal: React.FC<ChannelSettingsModalProps> = ({
                     <SecondaryButton onClick={onClose} disabled={isSaving} className="w-full sm:w-auto">
                         Avbryt
                     </SecondaryButton>
-                    <PrimaryButton onClick={handleSave} disabled={isSaving || !channelName.trim()} className="w-full sm:w-auto">
+                    <PrimaryButton onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto">
                         {isSaving ? 'Sparar...' : 'Spara inställningar'}
                     </PrimaryButton>
                 </div>

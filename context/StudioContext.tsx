@@ -15,7 +15,9 @@ import {
   deleteDisplayScreen as fbDeleteDisplayScreen,
   updateOrganization as fbUpdateOrganization,
   getOrganizationById,
-  isOffline
+  isOffline,
+  sendScreenHeartbeat,
+  findPairedDeviceIdForUid
 } from '../services/firebaseService';
 import { useAuth } from './AuthContext';
 import { 
@@ -26,6 +28,24 @@ import {
   useScreenSessionListener 
 } from '../hooks/useRealtimeData';
 import { getAppMode } from '../utils/appMode';
+import { parseToDate } from '../utils/dateUtils';
+import { APP_VERSION } from '../version';
+
+const collectDeviceInfo = () => {
+    try {
+        return {
+            userAgent: (navigator.userAgent || '').slice(0, 300),
+            screenWidth: window.screen?.width ?? null,
+            screenHeight: window.screen?.height ?? null,
+            viewportWidth: window.innerWidth ?? null,
+            viewportHeight: window.innerHeight ?? null,
+            devicePixelRatio: window.devicePixelRatio ?? null,
+            deviceMemory: (navigator as any).deviceMemory ?? null,
+            appVersion: APP_VERSION,
+            reportedAt: new Date().toISOString(),
+        };
+    } catch { return null; }
+};
 
 type SyncStatus = 'synced' | 'syncing' | 'offline';
 
@@ -47,6 +67,7 @@ interface LocationContextType {
   updateSelectedOrganization: (data: Partial<Organization>) => void;
   clearSelection: () => void;
   locationLoading: boolean;
+  screensReady: boolean;
   syncStatus: SyncStatus;
 }
 
@@ -62,6 +83,11 @@ const readDeviceId = (uid?: string | null) => {
   const a = uid ? localStorage.getItem(getLocalStoragePhysicalScreenKey(uid)) : null;
   const b = localStorage.getItem(GLOBAL_DEVICE_KEY);
   return a || b || null;
+};
+
+const writeDeviceId = (uid: string | undefined | null, deviceId: string) => {
+  if (uid) localStorage.setItem(getLocalStoragePhysicalScreenKey(uid), deviceId);
+  localStorage.setItem(GLOBAL_DEVICE_KEY, deviceId);
 };
 
 const removeDeviceId = (uid?: string | null) => {
@@ -96,7 +122,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [fetchedOrg, immediateOrg, selectedOrgId]);
 
   // 4. Fetch Screens for Selected Organization (Realtime via Hook)
-  const { data: displayScreens = [], isLoading: screensLoading } = useOrganizationScreens(selectedOrgId || undefined);
+  const { data: displayScreens = [], isLoading: screensLoading, hasReceivedSnapshot: screensReady } = useOrganizationScreens(selectedOrgId || undefined);
 
   // 5. Manage Selected Display Screen (Local State)
   const [selectedDisplayScreen, setSelectedDisplayScreen] = useState<DisplayScreen | null>(null);
@@ -186,9 +212,32 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   
   // --- Screen Mode Specific Logic (Moved up to use variables in loading state) ---
   
+  const [recoveredDeviceId, setRecoveredDeviceId] = useState<string | null>(null);
+
   // Pairing Logic
   // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
-  const deviceId = readDeviceId(currentUser?.uid);
+  const deviceId = readDeviceId(currentUser?.uid) || recoveredDeviceId;
+
+  // Självläkning för redan parade skärmar om deviceId saknas i localStorage
+  useEffect(() => {
+    if (!isScreenMode || deviceId || !currentUser?.uid) return;
+
+    let isMounted = true;
+    findPairedDeviceIdForUid(currentUser.uid).then(foundDeviceId => {
+      if (!isMounted) return;
+      if (foundDeviceId) {
+        writeDeviceId(currentUser.uid, foundDeviceId);
+        setRecoveredDeviceId(foundDeviceId);
+        console.log('[Self-healing] Återställde deviceId för skärmen:', foundDeviceId);
+      } else {
+        console.warn('[Self-healing] Kunde inte hitta något pairedDeviceId för skärmens uid:', currentUser.uid);
+      }
+    }).catch(err => {
+      console.warn('[Self-healing] Fel vid uppslag av pairedDeviceId:', err);
+    });
+
+    return () => { isMounted = false; };
+  }, [isScreenMode, deviceId, currentUser?.uid]);
   // Use isDisplayApp (based on domain) so we listen even before auth completes.
   const { data: pairingData, isLoading: pairingLoading } = usePairingCodeListener(deviceId, isDisplayApp);
 
@@ -298,8 +347,8 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       const updatedPosts = screen.posts.map(post => {
         if (post.status !== 'archived' && post.endDate) {
-          const endDate = new Date(post.endDate);
-          if (endDate < now) {
+          const endDate = parseToDate(post.endDate, true);
+          if (endDate && endDate < now) {
             hasUpdates = true;
             return { ...post, status: 'archived' as const };
           }
@@ -320,6 +369,38 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
+
+  // Heartbeat: tala om för admin att skärmen lever, var 60:e sekund samt omedelbart vid wake-up/reconnect
+  useEffect(() => {
+      if (!isScreenMode || !deviceId) return;
+
+      // Heartbeat direkt vid start med enhetsdata
+      sendScreenHeartbeat(deviceId, collectDeviceInfo() || undefined);
+
+      // Regelbunden heartbeat
+      const interval = setInterval(() => sendScreenHeartbeat(deviceId), 60000);
+
+      // Omedelbar heartbeat när sidan blir synlig igen (t.ex. väcks ur viloläge)
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+              sendScreenHeartbeat(deviceId);
+          }
+      };
+
+      // Omedelbar heartbeat när nätverket återvänder
+      const handleOnline = () => {
+          sendScreenHeartbeat(deviceId);
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', handleOnline);
+
+      return () => {
+          clearInterval(interval);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('online', handleOnline);
+      };
+  }, [isScreenMode, deviceId]);
 
 
   // --- CRUD Helpers ---
@@ -359,6 +440,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
     updateSelectedOrganization,
     clearSelection,
     locationLoading,
+    screensReady,
     syncStatus: (isOffline ? 'offline' : 'synced') as SyncStatus // Simplified for now
   };
 

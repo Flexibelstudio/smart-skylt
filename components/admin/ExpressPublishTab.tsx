@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Organization, DisplayScreen, DisplayPost } from '../../types';
+import { Organization, DisplayScreen, DisplayPost, Tag } from '../../types';
 import { useLocation } from '../../context/StudioContext';
 import { useToast } from '../../context/ToastContext';
 import { Card } from '../Card';
@@ -9,6 +9,9 @@ import { LoadingSpinnerIcon, TrashIcon } from '../icons';
 import QRCode from 'qrcode';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ScaledPreviewWrapper } from '../DisplayScreenEditor/PreviewPanes';
+import { DisplayScreenPreviewModal } from '../SuperAdminScreen';
+import { EmojiPicker } from '../EmojiPicker';
+import { resizeImageFile } from '../../utils/imageResize';
 
 interface ExpressPublishTabProps {
     organization: Organization;
@@ -91,6 +94,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
     // Core States
     const [selectedScreenId, setSelectedScreenId] = useState<string>(preselectedScreenId || '');
+    const [showFeedPreview, setShowFeedPreview] = useState(false);
     
     useEffect(() => {
         if (preselectedScreenId) {
@@ -115,6 +119,36 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [isSoldUpdating, setIsSoldUpdating] = useState<string | null>(null);
     const [showActiveList, setShowActiveList] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Emoji picker states and refs
+    const [showHeadlineEmoji, setShowHeadlineEmoji] = useState(false);
+    const [showDescEmoji, setShowDescEmoji] = useState(false);
+    const headlineInputRef = useRef<HTMLInputElement>(null);
+    const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const insertEmojiAtCursor = (
+        ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement>,
+        currentValue: string,
+        emoji: string,
+        onChange: (val: string) => void
+    ) => {
+        const el = ref.current;
+        if (el) {
+            const start = el.selectionStart ?? currentValue.length;
+            const end = el.selectionEnd ?? currentValue.length;
+            const newVal = currentValue.substring(0, start) + emoji + currentValue.substring(end);
+            onChange(newVal);
+            setTimeout(() => {
+                if (ref.current) {
+                    ref.current.focus();
+                    const newPos = start + emoji.length;
+                    ref.current.setSelectionRange(newPos, newPos);
+                }
+            }, 0);
+        } else {
+            onChange(currentValue + emoji);
+        }
+    };
 
     // Auto-select first screen if no screen selected
     const activeScreen = useMemo(() => {
@@ -142,6 +176,14 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         return (activeScreen.posts || []).filter(post => post.isExpressPost === true && post.status !== 'archived');
     }, [activeScreen]);
 
+    // Antal vanliga (icke-express) aktiva inlägg i kanalen
+    const activeRegularPostsCount = useMemo(() => {
+        if (!activeScreen) return 0;
+        return (activeScreen.posts || []).filter(post =>
+            !post.isExpressPost && post.status !== 'archived' && post.status !== 'draft'
+        ).length;
+    }, [activeScreen]);
+
     // Live virtual previewPost object mapping inputs in real-time
     const previewPost = useMemo<DisplayPost>(() => {
         let cleanUrl = webpageUrl.trim();
@@ -155,38 +197,38 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         
         // Dynamic coords reflecting express publish formula exactly
         let hX = 50, hY = 50, hW = 100;
-        let bX = 50, bY = 50, bW = 100;
+        let bX = 50, bY = 48, bW = 100;
         let qrX = 89, qrY = 84, qrW = 15;
 
         if (layout === 'image-fullscreen') {
             hX = 50; hY = 68; hW = 84;
-            bX = 50; bY = 77; bW = 84;
+            bX = 50; bY = 75; bW = 84;
             qrX = isPortraitScreen ? 86 : 89;
             qrY = isPortraitScreen ? 89 : 84;
             qrW = 15;
         } else if (layout === 'image-left') {
             if (isPortraitScreen) {
                 hX = 50; hY = 64; hW = 84;
-                bX = 50; bY = 75; bW = 84;
+                bX = 50; bY = 73; bW = 84;
                 qrX = 86; qrY = 89; qrW = 15;
             } else {
                 hX = 75; hY = 40; hW = 42;
-                bX = 75; bY = 52; bW = 42;
+                bX = 75; bY = 50; bW = 42;
                 qrX = 89; qrY = 84; qrW = 15;
             }
         } else if (layout === 'image-right') {
             if (isPortraitScreen) {
                 hX = 50; hY = 20; hW = 84;
-                bX = 50; bY = 31; bW = 84;
+                bX = 50; bY = 29; bW = 84;
                 qrX = 86; qrY = 89; qrW = 15;
             } else {
                 hX = 25; hY = 40; hW = 42;
-                bX = 25; bY = 52; bW = 42;
+                bX = 25; bY = 50; bW = 42;
                 qrX = 89; qrY = 84; qrW = 15;
             }
         } else if (layout === 'real-estate') {
             hX = 50; hY = 30; hW = 80;
-            bX = 50; bY = 55; bW = 80;
+            bX = 50; bY = 53; bW = 80;
             qrX = 50; qrY = 82; qrW = 15;
         }
 
@@ -222,6 +264,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             bodyPositionX: bX,
             bodyPositionY: bY,
             bodyWidth: bW,
+            bodyAnchor: 'top',
+            bodyMaxLines: 4,
             qrPositionX: qrX,
             qrPositionY: qrY,
             qrWidth: qrW,
@@ -238,12 +282,13 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     }, [headline, description, webpageUrl, layout, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
 
     // Handle Image Upload -> Base64
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
         const maxFiles = 4;
-        const processFile = (file: File): Promise<string> => {
+        const processFile = async (rawFile: File): Promise<string> => {
+            const file = await resizeImageFile(rawFile);
             return new Promise((resolve, reject) => {
                 if (!file.type.startsWith('image/')) {
                     reject(new Error("Inte en bild"));
@@ -311,7 +356,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             let hW = 80;
             
             let bX = 50;
-            let bY = 60;
+            let bY = 58;
             let bW = 80;
 
             let qrX = 92;
@@ -325,7 +370,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 hW = 90;
 
                 bX = 50;
-                bY = 77; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
+                bY = 75; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
                 bW = 90;
 
                 qrX = isPortraitScreen ? 86 : 89;
@@ -339,7 +384,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     hW = 90;
 
                     bX = 50;
-                    bY = 75; // reduced gap to 11%
+                    bY = 73; // reduced gap to 11%
                     bW = 90;
 
                     qrX = 86;
@@ -352,7 +397,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     hW = 42;
 
                     bX = 75;
-                    bY = 52; // reduced gap
+                    bY = 50; // reduced gap
                     bW = 42;
 
                     qrX = 89;
@@ -367,7 +412,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     hW = 90;
 
                     bX = 50;
-                    bY = 31; // snug text gap decreased to 11% (originally 30 - gap 14%)
+                    bY = 29; // snug text gap decreased to 11% (originally 30 - gap 14%)
                     bW = 90;
 
                     qrX = 86;
@@ -380,7 +425,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     hW = 42;
 
                     bX = 25;
-                    bY = 52;
+                    bY = 50;
                     bW = 42;
 
                     qrX = 89;
@@ -393,7 +438,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 hW = 80;
 
                 bX = 50;
-                bY = 55;
+                bY = 53;
                 bW = 80;
 
                 qrX = 50;
@@ -433,6 +478,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 bodyPositionX: bX,
                 bodyPositionY: bY,
                 bodyWidth: bW,
+                bodyAnchor: 'top',
+                bodyMaxLines: 4,
                 qrPositionX: qrX,
                 qrPositionY: qrY,
                 qrWidth: qrW,
@@ -511,17 +558,29 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             showToast({ message: "Skärmen har uppdaterats!", type: 'success' });
         } catch (error) {
             console.error(error);
-            showToast({ message: "Kunde inte spara stämpel/tagg.", type: 'error' });
+            showToast({ message: "Kunde inte spara stämpel.", type: 'error' });
         }
+    };
+
+    const getStarterTagPack = (): { label: string; texts: [string, string, string] } => {
+        const types = (organization.businessType || []).join(' ').toLowerCase();
+        if (/mäklar|fastighet|bostad/.test(types)) {
+            return { label: 'mäklarstämplar', texts: ['NYTT OBJEKT', 'BUDGIVNING PÅGÅR', 'VISNING'] };
+        }
+        if (/bil|fordon|motor|husvagn/.test(types)) {
+            return { label: 'bilstämplar', texts: ['NYINKOMMEN', 'PRISSÄNKT', 'FYNDPRIS'] };
+        }
+        return { label: 'startstämplar', texts: ['NYHET', 'KAMPANJ', 'REA'] };
     };
 
     // Auto-provision broker-oriented default stamps/tags
     const handleCreateBrokerTags = async () => {
-        const defaultBrokerTags = [
+        const pack = getStarterTagPack();
+        const defaultBrokerTags: Tag[] = [
             {
                 id: `tag_nytt_${Date.now()}`,
                 displayType: 'tag',
-                text: 'NYTT OBJEKT',
+                text: pack.texts[0],
                 backgroundColor: '#0ea5e9', // Sky blue
                 textColor: '#FFFFFF',
                 fontSize: 'md',
@@ -534,7 +593,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             {
                 id: `tag_budgivning_${Date.now()}`,
                 displayType: 'tag',
-                text: 'BUDGIVNING PÅGÅR',
+                text: pack.texts[1],
                 backgroundColor: '#f59e0b', // Amber/orange
                 textColor: '#FFFFFF',
                 fontSize: 'md',
@@ -545,17 +604,17 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 opacity: 1
             },
             {
-                id: `tag_sold_${Date.now()}`,
-                displayType: 'stamp',
-                text: 'SÅLD!',
-                backgroundColor: '#ef4444', // Red stamp
+                id: `tag_visning_${Date.now()}`,
+                displayType: 'tag',
+                text: pack.texts[2],
+                backgroundColor: '#ef4444', // Red label
                 textColor: '#FFFFFF',
-                fontSize: 'xl',
+                fontSize: 'md',
                 fontWeight: 'black',
                 animation: 'pulse',
-                shape: 'circle',
-                border: 'dashed',
-                opacity: 0.9
+                shape: 'rectangle',
+                border: 'none',
+                opacity: 1
             }
         ];
 
@@ -566,12 +625,12 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 newTag => !existingTags.some(t => t.text.toLowerCase() === newTag.text.toLowerCase())
             );
             if (cleanNewTags.length === 0) {
-                showToast({ message: "Mäklarstämplar existerar redan i din profil!", type: 'info' });
+                showToast({ message: `Dina ${pack.label} finns redan i din profil!`, type: 'info' });
                 return;
             }
             const mergedTags = [...existingTags, ...cleanNewTags];
             await onUpdateOrganization(organization.id, { tags: mergedTags });
-            showToast({ message: "Mäklarstämplar har installerats! Du kan aktivera dem direkt nu.", type: 'success' });
+            showToast({ message: `Dina ${pack.label} har installerats! Du kan aktivera dem direkt nu.`, type: 'success' });
         } catch (err) {
             console.error(err);
             showToast({ message: "Kunde inte spara stämplar.", type: 'error' });
@@ -590,6 +649,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             showToast({ message: "Kunde inte ta bort inlägget.", type: 'error' });
         }
     };
+
+    const starterPack = getStarterTagPack();
 
     return (
         <div className="space-y-8 animate-fade-in text-slate-900 dark:text-slate-100">
@@ -799,10 +860,30 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                             {/* Headline */}
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                                    Rubrik / Namn
-                                </label>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                        Rubrik / Namn
+                                    </label>
+                                    <div className="relative">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowHeadlineEmoji(!showHeadlineEmoji)}
+                                            className="py-0.5 px-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                            title="Lägg till emoji"
+                                        >
+                                            <span className="text-sm">😀</span>
+                                        </button>
+                                        {showHeadlineEmoji && (
+                                            <EmojiPicker
+                                                onSelect={(emoji) => insertEmojiAtCursor(headlineInputRef, headline, emoji, setHeadline)}
+                                                onClose={() => setShowHeadlineEmoji(false)}
+                                                className="top-full right-0 mt-1"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
                                 <StyledInput
+                                    ref={headlineInputRef}
                                     type="text"
                                     value={headline}
                                     onChange={(e) => setHeadline(e.target.value)}
@@ -818,11 +899,31 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
                                         Kort beskrivning (valfritt)
                                     </label>
-                                    <span className="text-xs text-slate-400 font-medium">
-                                        {description.length}/140 tecken
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-400 font-medium">
+                                            {description.length}/140 tecken
+                                        </span>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowDescEmoji(!showDescEmoji)}
+                                                className="py-0.5 px-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="Lägg till emoji"
+                                            >
+                                                <span className="text-sm">😀</span>
+                                            </button>
+                                            {showDescEmoji && (
+                                                <EmojiPicker
+                                                    onSelect={(emoji) => insertEmojiAtCursor(descriptionTextareaRef, description, emoji, (val) => setDescription(val.slice(0, 140)))}
+                                                    onClose={() => setShowDescEmoji(false)}
+                                                    className="top-full right-0 mt-1"
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                                 <textarea
+                                    ref={descriptionTextareaRef}
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value.slice(0, 140))}
                                     placeholder="t.ex. Nyinkommen pärla! Endast 2400 mil. Kontakta oss för provkörning eller mer information."
@@ -853,19 +954,15 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Begränsa till specifika veckodagar</label>
                                         <span className="text-[11px] text-slate-400 dark:text-slate-500">Om inga väljs visas inlägget alla dagar</span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (scheduleDays.length === 7) {
-                                                setScheduleDays([]);
-                                            } else {
-                                                setScheduleDays([1, 2, 3, 4, 5, 6, 0]);
-                                            }
-                                        }}
-                                        className="text-xs font-bold text-teal-600 hover:text-teal-500 dark:text-teal-400"
-                                    >
-                                        {scheduleDays.length === 7 ? 'Spara ingen' : 'Välj alla'}
-                                    </button>
+                                    {(scheduleDays?.length ?? 0) > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setScheduleDays([])}
+                                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                                        >
+                                            Rensa (visa alla dagar)
+                                        </button>
+                                    )}
                                 </div>
 
                                 <div className="flex flex-wrap gap-2">
@@ -979,7 +1076,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                             <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-1">
                                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                                        Aktivera stämplar / taggar direkt (valfritt)
+                                        Välj stämplar (valfritt)
                                     </label>
                                     {(!organization.tags || organization.tags.length === 0) && (
                                         <button
@@ -987,7 +1084,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                             onClick={handleCreateBrokerTags}
                                             className="text-xs text-teal-600 hover:text-teal-500 font-bold transition-all text-left flex items-center gap-1"
                                         >
-                                            ⚡ Skapa mäklarstämplar
+                                            ⚡ Skapa {starterPack.label}
                                         </button>
                                     )}
                                 </div>
@@ -1012,7 +1109,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                             ? 'border-teal-500 bg-teal-50 text-teal-600 dark:bg-teal-950/20 dark:text-teal-400 font-extrabold shadow-sm ring-1 ring-teal-500'
                                                             : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
                                                     }`}
-                                                    title={`${tag.displayType === 'stamp' ? 'Stämpel' : 'Tagg'}: ${tag.text}`}
+                                                    title={`Stämpel: ${tag.text}`}
                                                 >
                                                     <span className="text-xs">{tag.displayType === 'stamp' ? '💮' : '🏷️'}</span>
                                                     <span>{tag.text}</span>
@@ -1022,13 +1119,13 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     </div>
                                 ) : (
                                     <div className="text-xs text-slate-400 bg-slate-50 dark:bg-slate-900/10 p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 flex flex-col gap-2">
-                                        <span>Inga taggar eller stämplar finns i er profil ännu.</span>
+                                        <span>Inga stämplar finns i er profil ännu.</span>
                                         <button
                                             type="button"
                                             onClick={handleCreateBrokerTags}
                                             className="text-xs font-bold text-teal-600 hover:text-teal-500 flex items-center gap-1 self-start"
                                         >
-                                            ⚡ Installera standardmäklarstämplar ("Nytt objekt", "Budgivning pågår", "SÅLD!")
+                                            ⚡ Installera färdiga stämplar för din bransch ({starterPack.texts.join(', ')})
                                         </button>
                                     </div>
                                 )}
@@ -1081,10 +1178,24 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                     {/* Active posts quick list */}
                     <Card
-                        title={`Aktiva i kanalen (${activeExpressPosts.length})`}
+                        title={`Aktiva snabbinlägg (${activeExpressPosts.length})`}
                         subTitle="Hantera inlägg, markera som sålda eller ta bort från skärmen"
                     >
                         <div className="space-y-4">
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                    + {activeRegularPostsCount} vanliga inlägg i kanalen — totalt {activeExpressPosts.length + activeRegularPostsCount} i flödet
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowFeedPreview(true)}
+                                    disabled={!activeScreen}
+                                    className="text-xs font-bold px-3 py-1.5 rounded-lg bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-950/70 border border-teal-200/60 dark:border-teal-800/60 transition-colors disabled:opacity-40"
+                                >
+                                    ▶ Förhandsgranska hela flödet
+                                </button>
+                            </div>
+
                             <button
                                 type="button"
                                 onClick={() => setShowActiveList(!showActiveList)}
@@ -1198,6 +1309,13 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     </Card>
                 </div>
             </div>
+            {showFeedPreview && activeScreen && (
+                <DisplayScreenPreviewModal
+                    screen={activeScreen}
+                    organization={organization}
+                    onClose={() => setShowFeedPreview(false)}
+                />
+            )}
         </div>
     );
 };

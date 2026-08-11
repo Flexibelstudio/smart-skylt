@@ -103,5 +103,17 @@ export const env = resolvedEnv;
 export const isOffline = env === 'offline';
 export const isFirebaseActive = !!app;
 
+export function getFirebaseProjectId(): string | null {
+    const options = app?.options as { projectId?: string } | undefined;
+    if (options?.projectId) {
+        return options.projectId;
+    }
+    const cfg = (window as any).RUNTIME_CONFIG;
+    if (cfg && cfg.firebaseConfig && cfg.firebaseConfig.projectId) {
+        return cfg.firebaseConfig.projectId;
+    }
+    return null;
+}
+
 // Export the initialized services (or null if offline/failed)
 export { app, auth, db, storage, functions, firebase };

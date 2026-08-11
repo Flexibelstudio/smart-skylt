@@ -2,6 +2,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Organization, MediaItem } from '../../types';
 import { uploadMediaForGallery } from '../../services/firebaseService';
+import { resizeImageFile } from '../../utils/imageResize';
 import { Card } from '../Card';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
 import { useToast } from '../../context/ToastContext';
@@ -84,7 +85,8 @@ export const MediaGalleryTab: React.FC<MediaGalleryTabProps> = ({ organization, 
             const uploadedItems: MediaItem[] = [];
             
             for (let i = 0; i < validFiles.length; i++) {
-                const file = validFiles[i];
+                const rawFile = validFiles[i];
+                const file = await resizeImageFile(rawFile);
                 setUploadProgress({ total: validFiles.length, current: i + 1, percent: 0 });
                 
                 try {

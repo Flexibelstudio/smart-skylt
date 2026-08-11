@@ -2,7 +2,7 @@ import React from 'react';
 import { PrimaryButton } from './Buttons';
 import { ChatBubbleLeftRightIcon } from './icons';
 
-interface SkylieEmptyStateProps {
+export interface SkylieEmptyStateProps {
     title: string;
     message: React.ReactNode;
     action?: {
@@ -10,11 +10,13 @@ interface SkylieEmptyStateProps {
         onClick: () => void;
         disabled?: boolean;
     };
+    bgOpacityClass?: string;
 }
 
-export const SkylieEmptyState: React.FC<SkylieEmptyStateProps> = ({ title, message, action }) => {
+export const SkylieEmptyState: React.FC<SkylieEmptyStateProps> = ({ title, message, action, bgOpacityClass }) => {
+    const bgClass = bgOpacityClass || 'bg-slate-50 dark:bg-slate-800/50';
     return (
-        <div className="text-center p-8 bg-slate-50 dark:bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center gap-4">
+        <div className={`text-center p-8 ${bgClass} rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center gap-4`}>
             <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white flex-shrink-0 ring-4 ring-white dark:ring-slate-800 shadow-lg">
                 <ChatBubbleLeftRightIcon className="h-8 w-8"/>
             </div>

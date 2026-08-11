@@ -89,6 +89,13 @@ const MainContent: React.FC = () => {
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationManager(selectedOrganization, page);
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [isMarketingCoachOpen, setIsMarketingCoachOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenSkylie = () => setIsMarketingCoachOpen(true);
+    window.addEventListener('open-skylie', handleOpenSkylie);
+    return () => window.removeEventListener('open-skylie', handleOpenSkylie);
+  }, []);
+
   const notificationButtonRef = useRef<HTMLButtonElement>(null);
   const notificationCenterRef = useRef<HTMLDivElement>(null);
 
@@ -463,11 +470,11 @@ const MainContent: React.FC = () => {
               />
 
           case Page.DisplayWindow:
-              if (!selectedDisplayScreen) return <div>Välj en skärm.</div>;
+              if (!selectedDisplayScreen) return <div>Ingen kanal vald.</div>;
               return <DisplayWindowScreen onBack={handleReturnToAdminFromDisplay} />;
           
           case Page.DisplayScreenEditor:
-              if (!screenToEdit || !selectedOrganization) return <div>Ingen skärm vald för redigering.</div>
+              if (!screenToEdit || !selectedOrganization) return <div>Ingen kanal vald för redigering.</div>
               // Pass the screen object from state which is kept up-to-date by the context
               const currentScreenData = displayScreens.find(s => s.id === screenToEdit.id);
               if (!currentScreenData) return <div>Kanalen kunde inte hittas. Gå tillbaka och försök igen.</div>

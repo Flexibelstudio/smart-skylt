@@ -1,5 +1,5 @@
 import { db, auth, storage, functions, isOffline, firebase } from './firebaseInit';
-import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, VideoOperation, PostTemplate, Tag, DisplayPost, MediaItem, InstagramStory } from '../types';
+import { Organization, UserData, SystemSettings, ScreenPairingCode, PhysicalScreen, DisplayScreen, AppNotification, SuggestedPost, PostTemplate, Tag, DisplayPost, MediaItem, InstagramStory } from '../types';
 import { MOCK_ORGANIZATIONS, MOCK_SYSTEM_SETTINGS, MOCK_PAIRING_CODES, MOCK_SYSTEM_OWNER, MOCK_ORG_ADMIN } from '../data/mockData';
 
 // Re-export isOffline for use in other components
@@ -403,6 +403,26 @@ export const updateOrganizationPostTemplates = async (orgId: string, templates: 
     await updateOrganization(orgId, { postTemplates: templates });
 };
 
+export const getOrgIcsUrls = async (orgId: string): Promise<Record<string, string>> => {
+    if (isOffline) return {};
+    if (!db) return {};
+    try {
+        const doc = await db.collection('orgPrivateSettings').doc(orgId).get();
+        if (!doc.exists) return {};
+        const data = doc.data();
+        return data?.icsUrls || {};
+    } catch (e) {
+        console.warn(`[getOrgIcsUrls] Error loading icsUrls for org ${orgId}:`, e);
+        return {};
+    }
+};
+
+export const saveOrgIcsUrls = async (orgId: string, icsUrls: Record<string, string>): Promise<void> => {
+    if (isOffline) return offlineWarning('saveOrgIcsUrls');
+    if (!db) return;
+    await db.collection('orgPrivateSettings').doc(orgId).set({ icsUrls }, { merge: true });
+};
+
 // --- DISPLAY SCREENS (SUBCOLLECTION) ---
 
 export const listenToDisplayScreens = (orgId: string, callback: (screens: DisplayScreen[]) => void) => {
@@ -519,7 +539,7 @@ export const updateSystemSettings = async (settings: SystemSettings) => {
 
 // --- PAIRING ---
 
-export const createPairingCode = async (createdByUid?: string): Promise<string> => {
+export const createPairingCode = async (createdByUid?: string, deviceId?: string): Promise<string> => {
     if (isOffline) {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const existingCodes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
@@ -527,7 +547,8 @@ export const createPairingCode = async (createdByUid?: string): Promise<string> 
             code,
             createdAt: new Date().toISOString(),
             status: 'pending',
-            createdByUid
+            createdByUid,
+            deviceId
         });
         localStorage.setItem('mock_pairing_codes', JSON.stringify(existingCodes));
         return code;
@@ -540,9 +561,34 @@ export const createPairingCode = async (createdByUid?: string): Promise<string> 
         code,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         status: 'pending',
-        createdByUid: createdByUid || null
+        createdByUid: createdByUid || null,
+        deviceId: deviceId || null
     });
     return code;
+};
+
+export const findPairedDeviceIdForUid = async (uid: string): Promise<string | null> => {
+    if (isOffline) {
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        const found = codes.find((c: any) => c.createdByUid === uid && c.status === 'paired');
+        return found?.pairedDeviceId || found?.deviceId || null;
+    }
+    if (!db || !uid) return null;
+    try {
+        const snapshot = await db.collection('screenPairingCodes')
+            .where('createdByUid', '==', uid)
+            .where('status', '==', 'paired')
+            .limit(1)
+            .get();
+        if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            return data.pairedDeviceId || data.deviceId || null;
+        }
+        return null;
+    } catch (e) {
+        console.warn('findPairedDeviceIdForUid misslyckades:', e);
+        return null;
+    }
 };
 
 export const getPairingCode = async (code: string): Promise<ScreenPairingCode | null> => {
@@ -595,9 +641,11 @@ export const listenToPairingCodeByDeviceId = (deviceId: string, callback: (data:
 };
 
 export const pairAndActivateScreen = async (code: string, orgId: string, uid: string, screenDetails: { name: string, displayScreenId: string }) => {
-    const deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-
     if (isOffline) {
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        const codeData = codes.find((c: any) => c.code === code);
+        const deviceId = codeData?.deviceId || `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+
         const mockScreen: PhysicalScreen = {
             id: deviceId,
             organizationId: orgId,
@@ -608,7 +656,6 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
         };
         
         // Update Mock Pairing Code in LocalStorage
-        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
         const idx = codes.findIndex((c: any) => c.code === code);
         if (idx > -1) {
             codes[idx] = {
@@ -634,12 +681,13 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
 
     if (!db) throw new Error("DB not initialized");
     
-    // Get the pairing code first to get createdByUid (the screen's anonymous UID)
+    // Get the pairing code first to get createdByUid (the screen's anonymous UID) and deviceId
     const codeRef = db.collection('screenPairingCodes').doc(code);
     const codeDoc = await codeRef.get();
     if (!codeDoc.exists) throw new Error("Pairing code not found");
     
     const codeData = codeDoc.data();
+    const deviceId = codeData?.deviceId || `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
     const screenUid = codeData?.createdByUid;
 
     const batch = db.batch();
@@ -724,6 +772,70 @@ export const unpairPhysicalScreen = async (orgId: string, screenId: string) => {
     });
 };
 
+export const changeScreenChannel = async (
+    orgId: string,
+    physicalScreenId: string,   // = deviceId
+    newChannelId: string
+): Promise<void> => {
+    if (isOffline) {
+        // OFFLINE-grenen: uppdatera mock-orgens physicalScreens +
+        // mock_pairing_codes i localStorage (assignedDisplayScreenId) och
+        // trigga befintliga mock-lyssnare.
+        const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
+        if (org && org.physicalScreens) {
+            const screen = org.physicalScreens.find(s => s.id === physicalScreenId);
+            if (screen) {
+                screen.displayScreenId = newChannelId;
+            }
+        }
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        let updated = false;
+        codes.forEach((c: any) => {
+            if (c.pairedDeviceId === physicalScreenId) {
+                c.assignedDisplayScreenId = newChannelId;
+                updated = true;
+            }
+        });
+        if (updated) {
+            localStorage.setItem('mock_pairing_codes', JSON.stringify(codes));
+        }
+        return;
+    }
+
+    if (!db) return;
+
+    // ONLINE-grenen, atomisk skrivning med WriteBatch:
+    // 1. Läs org-dokumentet och pairing-frågan FÖRST
+    // 2. Utför alla 3 uppdateringar i en enda atomisk batch
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgDoc = await orgRef.get();
+
+    const pairingQuery = await db.collection('screenPairingCodes')
+        .where('pairedDeviceId', '==', physicalScreenId)
+        .get();
+
+    const sessionRef = db.collection('screenSessions').doc(physicalScreenId);
+
+    const batch = db.batch();
+
+    if (orgDoc.exists) {
+        const orgData = orgDoc.data() as Organization;
+        const currentScreens = orgData.physicalScreens || [];
+        const updatedScreens = currentScreens.map(s => 
+            s.id === physicalScreenId ? { ...s, displayScreenId: newChannelId } : s
+        );
+        batch.update(orgRef, { physicalScreens: updatedScreens });
+    }
+
+    pairingQuery.forEach(doc => {
+        batch.update(doc.ref, { assignedDisplayScreenId: newChannelId });
+    });
+
+    batch.set(sessionRef, { displayScreenId: newChannelId }, { merge: true });
+
+    await batch.commit();
+};
+
 export const listenToScreenSession = (deviceId: string, callback: (data: any | null | undefined) => void) => {
     if (isOffline || !db) return () => {};
     return db.collection('screenSessions').doc(deviceId).onSnapshot(
@@ -736,6 +848,58 @@ export const listenToScreenSession = (deviceId: string, callback: (data: any | n
             callback(undefined); 
         }
     );
+};
+
+export const sendScreenHeartbeat = async (
+    deviceId: string,
+    deviceInfo?: Record<string, any>
+): Promise<void> => {
+    if (isOffline || !db || !deviceId) return;
+    try {
+        await db.collection('screenSessions').doc(deviceId).set({
+            lastHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+            status: 'online',
+            ...(deviceInfo ? { deviceInfo } : {}),
+        }, { merge: true });
+    } catch (e) {
+        // Tyst: heartbeat får aldrig störa visningen. Sessionen kan saknas före parning.
+        console.warn('Heartbeat misslyckades:', e);
+    }
+};
+
+export const listenToScreenSessions = (
+    orgId: string,
+    callback: (sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }>) => void
+): (() => void) => {
+    if (isOffline || !db) {
+        callback({
+            'mock-device-1': {
+                lastHeartbeat: new Date(),
+                status: 'online',
+                displayScreenId: 'screen_flexibel_1',
+                deviceInfo: { screenWidth: 1920, screenHeight: 1080, userAgent: 'Chrome 120' },
+            },
+        });
+        return () => {};
+    }
+    return db.collection('screenSessions')
+        .where('organizationId', '==', orgId)
+        .onSnapshot(snapshot => {
+            const sessions: Record<string, { lastHeartbeat?: Date; status?: string; displayScreenId?: string; deviceInfo?: any }> = {};
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                sessions[doc.id] = {
+                    lastHeartbeat: data.lastHeartbeat?.toDate ? data.lastHeartbeat.toDate() : undefined,
+                    status: data.status,
+                    displayScreenId: data.displayScreenId,
+                    deviceInfo: data.deviceInfo,
+                };
+            });
+            callback(sessions);
+        }, (error) => {
+            console.error('Kunde inte lyssna på skärmsessioner:', error);
+            callback({});
+        });
 };
 
 // --- ANNOUNCEMENTS & NOTIFICATIONS ---
@@ -913,7 +1077,13 @@ export const listenToSuggestedPosts = (orgId: string, callback: (posts: Suggeste
     }
     return db.collection('organizations').doc(orgId).collection('suggestedPosts').onSnapshot(
         snap => {
-            const posts = snap.docs.map(d => ({ id: d.id, ...d.data() } as SuggestedPost));
+            const posts = snap.docs.map(doc => {
+                const raw = doc.data();
+                const createdAt = raw.createdAt?.toDate
+                    ? raw.createdAt.toDate().toISOString()   // äldre dokument med Timestamp
+                    : (raw.createdAt || new Date().toISOString());
+                return { ...raw, id: doc.id, createdAt } as SuggestedPost;
+            });
             callback(posts);
         },
         error => {
@@ -943,48 +1113,6 @@ export const updateSuggestedPost = async (orgId: string, suggestionId: string, d
     await db.collection('organizations').doc(orgId).collection('suggestedPosts').doc(suggestionId).update(sanitizeForFirestore(data));
 };
 
-export const listenToVideoOperationForPost = (orgId: string, postId: string, callback: (op: VideoOperation | null) => void) => {
-    if (isOffline || !db) {
-        callback(null);
-        return () => {};
-    }
-    // Updated to listen to subcollection under organization
-    return db.collection('organizations').doc(orgId).collection('videoOperations')
-        .where('postId', '==', postId).orderBy('createdAt', 'desc').limit(1)
-        .onSnapshot(
-            snap => {
-                if (!snap.empty) callback({ id: snap.docs[0].id, ...snap.docs[0].data() } as VideoOperation);
-                else callback(null);
-            },
-            error => {
-                console.error("Error listening to video operation:", error);
-                callback(null);
-            }
-        );
-};
-
-export const createVideoOperation = async (orgId: string, screenId: string, postId: string, prompt: string, operationName: string) => {
-    if (isOffline) return 'mock-op-id';
-    if (!db) throw new Error("DB not initialized");
-    if (!auth?.currentUser) throw new Error("User not authenticated");
-
-    const opId = operationName.split('/').pop(); // Extract clean ID if it's a path
-    // Updated to save under organization subcollection
-    const docRef = db.collection('organizations').doc(orgId).collection('videoOperations').doc(opId || `op-${Date.now()}`);
-    
-    await docRef.set({
-        operationName: operationName,
-        orgId,
-        screenId,
-        postId,
-        userId: auth.currentUser.uid,
-        status: 'processing',
-        model: 'veo-3.1-fast-generate-preview',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    return docRef.id;
-};
-
 export const listenToInstagramStories = (orgId: string, callback: (stories: InstagramStory[]) => void) => {
     if (isOffline || !db) {
         callback([]);
@@ -1003,6 +1131,34 @@ export const listenToInstagramStories = (orgId: string, callback: (stories: Inst
                 callback([]);
             }
         );
+};
+
+export const listenToQrScanCounts = (
+    orgId: string,
+    callback: (counts: Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }>) => void
+): (() => void) => {
+    if (isOffline || !db) {
+        callback({});
+        return () => {};
+    }
+    return db.collection('qrScanCounts')
+        .where('orgId', '==', orgId)
+        .onSnapshot(snapshot => {
+            const counts: Record<string, { count: number; lastScanAt?: Date; daily?: Record<string, number>; screenId?: string }> = {};
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                counts[doc.id] = {
+                    count: data.count || 0,
+                    lastScanAt: data.lastScanAt?.toDate ? data.lastScanAt.toDate() : undefined,
+                    daily: data.daily || {},
+                    screenId: data.screenId,
+                };
+            });
+            callback(counts);
+        }, (error) => {
+            console.error('Kunde inte lyssna på QR-statistik:', error);
+            callback({});
+        });
 };
 
 // --- CLOUD FUNCTIONS ---
@@ -1029,4 +1185,36 @@ export const runOrgCollectionsMigration = async (payload: any) => {
     const fn = functions.httpsCallable('runOrgCollectionsMigration');
     const result = await fn(payload);
     return result.data;
+};
+
+export const testBookingCalendars = async (orgId?: string): Promise<{
+    date: string;
+    results: { staffName: string; slots: string[]; closed?: boolean; error?: string }[];
+    hasCalendars: boolean;
+}> => {
+    if (isOffline) return { date: '', results: [], hasCalendars: false };
+    if (!functions) throw new Error("Functions not initialized");
+    const fn = functions.httpsCallable('testBookingCalendars');
+    const result = await fn({ orgId });
+    return result.data as {
+        date: string;
+        results: { staffName: string; slots: string[]; closed?: boolean; error?: string }[];
+        hasCalendars: boolean;
+    };
+};
+
+export const getAiUsage = async (
+    orgId: string
+): Promise<{ totalCredits: number; counts: Record<string, number> } | null> => {
+    if (isOffline || !db) return null;
+    try {
+        const month = new Date().toISOString().slice(0, 7);
+        const doc = await db.collection('aiUsage').doc(`${orgId}_${month}`).get();
+        if (!doc.exists) return { totalCredits: 0, counts: {} };
+        const data = doc.data() || {};
+        return { totalCredits: data.totalCredits || 0, counts: data.counts || {} };
+    } catch (e) {
+        console.warn('Kunde inte hämta AI-användning:', e);
+        return null;
+    }
 };

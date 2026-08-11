@@ -60,6 +60,27 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
             durationSeconds: initialPostToEdit.durationSeconds || 15
         };
     });
+    const editingPostRef = useRef<DisplayPost | null>(null);
+    useEffect(() => {
+        editingPostRef.current = editingPost;
+    }, [editingPost]);
+
+    const handlePostChangeFromEditor = (updated: DisplayPost) => {
+        const current = editingPostRef.current;
+        if (current && current.id === updated.id) {
+            setEditingPost(updated);
+            return;
+        }
+        // Editorn är stängd eller visar ett annat inlägg — svaret kom för sent.
+        // Kasta inte bort resultatet: skriv in det i det sparade inlägget.
+        const exists = (screen.posts || []).some(p => p.id === updated.id);
+        if (exists) {
+            const updatedPosts = (screen.posts || []).map(p => p.id === updated.id ? { ...p, ...updated } : p);
+            updateDisplayScreen(screen.id, { posts: updatedPosts })
+                .then(() => showToast({ message: 'Det AI:n skapade blev klart och sparades i inlägget.', type: 'success' }))
+                .catch(() => showToast({ message: 'Det AI:n skapade blev klart men kunde inte sparas. Öppna inlägget och försök igen.', type: 'error' }));
+        }
+    };
     const [originalPost, setOriginalPost] = useState<DisplayPost | null>(() => {
         if (!initialPostToEdit) return null;
         return {
@@ -482,7 +503,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             originalPost={originalPost}
                             screen={screen}
                             organization={organization}
-                            onPostChange={setEditingPost}
+                            onPostChange={handlePostChangeFromEditor}
                             onSave={handleSavePost}
                             onCancel={handleCancelEdit}
                             onUpdateOrganization={onUpdateOrganization}

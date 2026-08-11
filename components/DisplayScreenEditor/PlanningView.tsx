@@ -310,7 +310,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({ screen, posts, organ
             </div>
             <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                  <div className="flex justify-between items-center mb-4">
-                     <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Rullande 12-månadersplanering</h3>
+                     <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Rullande 12-månaderstablå</h3>
                      <p className="text-sm text-slate-500 dark:text-slate-400">Dra i inläggen för att ändra deras schemaläggning.</p>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm" ref={timelineRef}>

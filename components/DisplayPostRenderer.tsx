@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride, CollageItem, SubImage, SubImageConfig, AdditionalTextElement } from '../types';
 import QRCode from 'qrcode';
 import { MoveIcon } from './icons';
+import { resolveBookingPlaceholders } from '../utils/bookingPlaceholders';
 
 // --- HELPER FUNCTIONS ---
 
@@ -54,6 +55,26 @@ const mapLegacySize = (size?: string): number => {
 };
 
 const mapLegacyPosition = (position?: string) => ({ x: 90, y: 90 });
+
+const getMotionStyle = (post: DisplayPost): React.CSSProperties => {
+    const motion = post.imageMotion || 'none';
+    if (motion === 'none') return {};
+    const base = (post.mediaZoom && post.mediaZoom > 1) ? post.mediaZoom : 1;
+    const name = motion === 'zoom-in' ? 'smartskylt-kb-zoom-in'
+               : motion === 'zoom-out' ? 'smartskylt-kb-zoom-out'
+               : 'smartskylt-kb-pan';
+    const seconds = Math.max(5, Number(post.durationSeconds) || 15);
+    const strength = post.imageMotionStrength || 'tydlig';
+    const zoomFactor = strength === 'lugn' ? 1.10 : 1.22;
+    const panAmount  = strength === 'lugn' ? '4%' : '9%';
+    return {
+        ['--kb-base' as any]: String(base),
+        ['--kb-zoomed' as any]: String(base * zoomFactor),
+        ['--kb-pan' as any]: panAmount,
+        animation: `${name} ${seconds}s linear forwards`,
+        willChange: 'transform',
+    };
+};
 
 // --- STYLE GENERATORS ---
 
@@ -219,7 +240,7 @@ const QrCodeComponent: React.FC<{ url: string; className?: string }> = ({ url, c
         }
     }, [url]);
     if (!dataUrl) return null;
-    return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', display: 'block' }} />;
+    return <img src={dataUrl} alt="QR" className={className} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />;
 };
 
 const DraggableQrCode: React.FC<any> = ({ url, x, y, width, isDraggable, onUpdatePosition, onUpdateWidth }) => {
@@ -371,7 +392,7 @@ const SubImageCarousel: React.FC<{
                     {/* Render double sets of images for seamless looping */}
                     {[...images, ...images].map((img, i) => (
                         <div key={`${img.id}-${i}`} className="h-full aspect-[4/3] relative flex-shrink-0 bg-black/20 rounded-lg overflow-hidden shadow-xl border-2 border-white/50">
-                            <img src={img.imageUrl} alt="" className="w-full h-full object-cover" />
+                            <img src={img.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" />
                         </div>
                     ))}
                 </div>
@@ -419,21 +440,21 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string; styl
 };
 
 const DraggableTextElement: React.FC<any> = ({ 
-    type, text, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
+    type, text, editText, x, y, width, textAlign, fontSize, fontScale, fontFamily, color, 
     bgEnabled, bgColor, mode, organization, isDraggable, 
     shadowType, shadowColor, outlineWidth, outlineColor,
     onUpdatePosition, onUpdateWidth, onUpdateFontScale, onUpdateText,
-    isExpressStyle
+    isExpressStyle, anchor = 'center', maxLines
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
-    const [tempText, setTempText] = useState(text);
+    const [tempText, setTempText] = useState(editText ?? text);
 
     // Update temp text when prop changes
     useEffect(() => {
-        setTempText(text);
-    }, [text]);
+        setTempText(editText ?? text);
+    }, [editText, text]);
 
     const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggable || !onUpdatePosition || !containerRef.current || isEditing) return;
@@ -564,7 +585,7 @@ const DraggableTextElement: React.FC<any> = ({
 
     const handleBlur = () => {
         setIsEditing(false);
-        if (onUpdateText && tempText !== text) {
+        if (onUpdateText && tempText !== (editText ?? text)) {
             onUpdateText(tempText);
         }
     };
@@ -580,7 +601,7 @@ const DraggableTextElement: React.FC<any> = ({
         }
         if (e.key === 'Escape') {
             setIsEditing(false);
-            setTempText(text); // Revert
+            setTempText(editText ?? text); // Revert
         }
     };
 
@@ -588,7 +609,7 @@ const DraggableTextElement: React.FC<any> = ({
         position: 'absolute',
         top: `${y ?? 50}%`,
         left: `${x ?? 50}%`,
-        transform: 'translate(-50%, -50%)',
+        transform: `translate(-50%, ${anchor === 'top' ? '0' : '-50%'})`,
         width: `${width ?? 80}%`,
         textAlign: textAlign || 'center',
         zIndex: isEditing ? 100 : 40,
@@ -674,14 +695,30 @@ const DraggableTextElement: React.FC<any> = ({
                     {/* Ghost Element: Controls the height. Hidden when editing but present in DOM. */}
                     <div className={`${isEditing ? 'invisible' : ''} col-start-1 row-start-1 min-h-[1.2em]`}>
                         {type === 'headline' ? (
-                            <h1 className={fontClass} style={textEffectStyle}>
+                            <h1 className={fontClass} style={{
+                                ...textEffectStyle,
+                                ...(maxLines ? {
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: maxLines,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden'
+                                } : {})
+                            }}>
                                 {isEditing ? (tempText || ' ') : (text || ' ')}
                             </h1>
                         ) : (
                             <PostMarkdownRenderer 
                                 content={isEditing ? (tempText || ' ') : (text || ' ')} 
                                 className={fontClass} 
-                                style={textEffectStyle} 
+                                style={{
+                                    ...textEffectStyle,
+                                    ...(maxLines ? {
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: maxLines,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden'
+                                    } : {})
+                                }} 
                             />
                         )}
                     </div>
@@ -719,6 +756,61 @@ const getCqwFontSize = (size?: string) => {
         case '5xl': return '6.5cqw';
         default: return '2.2cqw';
     }
+};
+
+const getStampVisual = (tag: Tag): { classes: string; styles: React.CSSProperties } => {
+    const isStamp = tag.displayType === 'stamp';
+    const shape = tag.shape || 'circle';
+
+    const scaleFactor = (() => {
+        switch (tag.fontSize) {
+            case 'sm': return 1.8 / 2.2;
+            case 'md': return 1;
+            case 'lg': return 2.6 / 2.2;
+            case 'xl': return 3.2 / 2.2;
+            case '2xl': return 3.8 / 2.2;
+            case '3xl': return 4.5 / 2.2;
+            case '4xl': return 5.5 / 2.2;
+            case '5xl': return 6.5 / 2.2;
+            default: return 1;
+        }
+    })();
+
+    const baseFont = isStamp ? ((shape === 'circle' || shape === 'square') ? 2.6 : 2.9) : 2.9;
+    const fontCqw = baseFont * scaleFactor;
+
+    let classes = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
+    const styles: React.CSSProperties = {
+        fontSize: `${fontCqw}cqw`,
+        boxShadow: isStamp
+            ? 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)'
+            : '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+    };
+
+    if (isStamp) {
+        classes += ' tracking-[0.1cqw] leading-[1.1] ';
+        if (shape === 'circle' || shape === 'square') {
+            // Formen växer med texten så att den alltid får plats.
+            const lines = String(tag.text || '').split('\n');
+            const longest = Math.max(1, ...lines.map(l => l.trim().length));
+            const needed = longest * fontCqw * 0.62 + 3; // 0.62 ≈ teckenbredd, +3 = luft
+            const size = Math.min(Math.max(16, needed), 42);
+            classes += shape === 'circle' ? ' rounded-full p-[1.5cqw] ' : ' rounded-[1.5cqw] p-[1.5cqw] ';
+            styles.width = `${size}cqw`;
+            styles.height = `${size}cqw`;
+        } else {
+            classes += ' rounded-[1.5cqw] px-[4cqw] py-[2cqw] ';
+        }
+
+        if (tag.border === 'solid') classes += ' border-[0.3cqw] border-current ';
+        else if (tag.border === 'dashed') classes += ' border-[0.3cqw] border-dashed border-current ';
+    } else {
+        classes += ' rounded-full px-[4.5cqw] py-[1.5cqw] tracking-wider ';
+        styles.border = '1px solid rgba(255,255,255,0.15)';
+        styles.backdropFilter = 'blur(8px)';
+    }
+
+    return { classes, styles };
 };
 
 const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, tagIds = [], isPortrait }) => {
@@ -875,70 +967,22 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
     const defaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
     const defaultY = isPortrait ? 5.2 : 8;
 
-    // Bygg klasser och stilar för varje tagg/stämpel - ska matcha static/express 100%!
-    let stampClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
-    let stampStyles: React.CSSProperties = {
-        boxShadow: isStamp ? 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)' : '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
-    };
+    const visual = getStampVisual(tag);
 
-    if (isStamp) {
-        stampClasses += ' tracking-[0.1cqw] leading-[1.1] ';
-        if (shape === 'circle') {
-            stampClasses += ' rounded-full aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
-        } else if (shape === 'square') {
-            stampClasses += ' rounded-[1.5cqw] aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
-        } else { // rectangle
-            stampClasses += ' rounded-[1.5cqw] px-[4cqw] py-[2cqw] ';
-        }
-
-        if (tag.border === 'solid') {
-            stampClasses += ' border-[0.3cqw] border-current ';
-        } else if (tag.border === 'dashed') {
-            stampClasses += ' border-[0.3cqw] border-dashed border-current ';
-        }
-    } else {
-        // Standard pil-formad tagg/badge
-        stampClasses += ' rounded-full px-[4.5cqw] py-[1.5cqw] tracking-wider ';
-        stampStyles.border = '1px solid rgba(255,255,255,0.15)';
-        stampStyles.backdropFilter = 'blur(8px)';
-    }
-
-    // Beräkna en proportionell font-storlek (fluid font scale) som matchar det vanliga flödet helt perfekt och gör text & tagg mer lätläst på avstånd
-    const baseFontSize = isStamp 
-        ? ((shape === 'circle' || shape === 'square') ? '2.6cqw' : '2.9cqw') 
-        : '2.9cqw';
-
-    const getScaleFactor = (size?: string) => {
-        switch (size) {
-            case 'sm': return 1.8 / 2.2;
-            case 'md': return 1;
-            case 'lg': return 2.6 / 2.2;
-            case 'xl': return 3.2 / 2.2;
-            case '2xl': return 3.8 / 2.2;
-            case '3xl': return 4.5 / 2.2;
-            case '4xl': return 5.5 / 2.2;
-            case '5xl': return 6.5 / 2.2;
-            default: return 1;
-        }
-    };
-
-    const finalFontSize = `calc(${baseFontSize} * ${getScaleFactor(tag.fontSize)})`;
-
-     const style: React.CSSProperties = {
+    const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x ?? defaultX}%`,
         top: `${override?.y ?? defaultY}%`,
         // We apply transform here for position centering and rotation
         transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg) scale(${override?.scale || 1})`,
         zIndex: 40,
-        width: override?.width ? `${override.width}%` : (isStamp && (shape === 'circle' || shape === 'square')) ? '16cqw' : 'auto', // Dynamic width
         maxWidth: '90%', // Safety cap
         
         background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
         color: tag.textColor,
-        fontSize: finalFontSize, // FLUID PROPORTIONAL FONT SIZE SCALE
         ...(tag.animation === 'glow' ? { '--glow-color': tag.backgroundColor } : {}),
-        ...stampStyles,
+        ...visual.styles,
+        ...(override?.width ? { width: `${override.width}%` } : {}),
         
         // Multi-line support
         whiteSpace: 'pre-wrap', 
@@ -950,13 +994,13 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         
         // Ensure scale doesn't blur text too much in some browsers
         backfaceVisibility: 'hidden', 
-     };
+    };
 
-     const isShapeVertical = isStamp && (shape === 'circle' || shape === 'square');
+    const isShapeVertical = isStamp && (shape === 'circle' || shape === 'square');
 
-     return (
-          <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
-               className={`group ${getFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType)} ${stampClasses}`}>
+    return (
+        <div ref={containerRef} style={style} onMouseDown={isDraggable ? handleDragStart : undefined} onTouchStart={isDraggable ? handleDragStart : undefined} 
+            className={`group ${getFontFamilyClass(tag.fontFamily)} ${getTagAnimationClass(tag.animation, tag.displayType)} ${visual.classes}`}>
              
              {/* Content */}
              <div className={`flex items-center ${isShapeVertical ? 'flex-col gap-1' : 'gap-2'}`}>
@@ -998,8 +1042,10 @@ const BookingPortalRenderer: React.FC<{
     const isBokadirektUrl = (post.webpageUrl || '').toLowerCase().includes('bokadirekt.se');
     
     // Fallback texts
-    const headline = post.headline || (isBokadirektUrl ? 'Boka din behandling enkelt' : 'Välkommen att boka tid');
-    const body = post.body || (isBokadirektUrl 
+    const resolvedHeadline = resolveBookingPlaceholders(post.headline, organization);
+    const resolvedBody = resolveBookingPlaceholders(post.body, organization);
+    const headline = resolvedHeadline || (isBokadirektUrl ? 'Boka din behandling enkelt' : 'Välkommen att boka tid');
+    const body = resolvedBody || (isBokadirektUrl 
         ? 'Skanna QR-koden till höger med din mobilkamera för att se lediga tider och boka på Bokadirekt.' 
         : 'Skanna QR-koden här intill med din mobilkamera för att öppna vår tidsbokning direkt.');
 
@@ -1028,7 +1074,7 @@ const BookingPortalRenderer: React.FC<{
             <div className="absolute bottom-0 left-0 w-[40cqw] h-[40cqw] bg-emerald-500/10 rounded-full blur-[8cqw] pointer-events-none -ml-[10cqw] -mb-[10cqw]"></div>
 
             {/* Left Content Area (or Top on Portrait) */}
-            <div className={`flex flex-col justify-center h-full ${isPortrait ? 'w-full text-center space-y-[2.5cqw] mt-[2cqw] max-h-[55%]' : 'w-1/2 text-left space-y-[2cqw] pr-[4cqw]'}`}>
+            <div className={`flex flex-col justify-center ${isPortrait ? 'w-full text-center space-y-[2.5cqw] mt-[2cqw] max-h-[55%] min-h-0 overflow-hidden' : 'h-full w-1/2 text-left space-y-[2cqw] pr-[4cqw]'}`}>
                 
                 {/* Brand / Partner Tag */}
                 <div className={`flex ${isPortrait ? 'justify-center' : 'justify-start'}`}>
@@ -1050,35 +1096,37 @@ const BookingPortalRenderer: React.FC<{
                     {body}
                 </p>
 
-                {/* Checklist (Only showed when we have a bit of vertical space) */}
-                <div className={`grid grid-cols-1 gap-[1cqw] pt-[1cqw] ${isPortrait ? 'hidden sm:grid text-left max-w-md mx-auto w-full' : ''}`}>
-                    <div className="flex items-center gap-[1cqw]">
-                        <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
-                            <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Se lediga tider dygnet runt</span>
-                    </div>
-                    <div className="flex items-center gap-[1cqw]">
-                        <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
-                            <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Boka snabbt directly on your phone</span>
-                    </div>
-                    {isBokadirektUrl && (
+                {/* Checklist (Only showed when we have a bit of vertical space in landscape) */}
+                {!isPortrait && (
+                    <div className="grid grid-cols-1 gap-[1cqw] pt-[1cqw]">
                         <div className="flex items-center gap-[1cqw]">
                             <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
                                 <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
                             </span>
-                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Betala enkelt via Bokadirekt</span>
+                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Se lediga tider dygnet runt</span>
                         </div>
-                    )}
-                </div>
+                        <div className="flex items-center gap-[1cqw]">
+                            <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
+                                <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </span>
+                            <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Boka snabbt i din mobil</span>
+                        </div>
+                        {isBokadirektUrl && (
+                            <div className="flex items-center gap-[1cqw]">
+                                <span className="p-[0.4cqw] bg-teal-500/25 border border-teal-400/30 rounded-full flex items-center justify-center">
+                                    <svg className="w-[1.6cqw] h-[1.6cqw] text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </span>
+                                <span style={{ fontSize: isPortrait ? '1.8cqw' : '1.5cqi' }} className="font-semibold text-white/90">Betala enkelt via Bokadirekt</span>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Right QR Area with premium floating glass card representing physical signage reception screen */}
@@ -1271,6 +1319,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         return p;
     }, [initialPost, isPortraitLayout]);
 
+    const displayHeadline = resolveBookingPlaceholders(post?.headline, organization);
+    const displayBody = resolveBookingPlaceholders(post?.body, organization);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
     const primaryColor = useMemo(() => organization?.primaryColor || primaryColorFromProp, [organization, primaryColorFromProp]);
@@ -1318,8 +1369,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
     const splitRatio = post.splitRatio ?? 50;
     const bgImages = [post.imageUrl, ...(post.subImages || []).map(si => si.imageUrl)].filter(Boolean) as string[];
-    const firstTag = (post.tagIds && post.tagIds.length > 0)
-        ? (organization?.tags || allTagsFromProp)?.find(t => t.id === post.tagIds[0])
+    const availableTags = organization?.tags || allTagsFromProp || [];
+    const firstTag = post.tagIds
+        ? post.tagIds.map(id => availableTags.find(t => t.id === id)).find((t): t is NonNullable<typeof t> => !!t && t.displayType !== 'stamp') || null
         : null;
 
     const mediaStyle: React.CSSProperties = {
@@ -1379,8 +1431,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             <img 
                                 src={post.imageUrl} 
                                 alt="" 
+                                decoding="async"
                                 className="absolute inset-0 w-full h-full object-cover" 
-                                style={mediaStyle}
+                                style={{ ...mediaStyle, ...getMotionStyle(post) }}
                                 onLoad={signalReady}
                             />
                         )}
@@ -1422,9 +1475,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                     textShadow: '0 2px 14px rgba(0,0,0,0.98)'
                                 }}
                             >
-                                {post.headline}
+                                {displayHeadline}
                             </h3>
-                            {post.body && (
+                            {displayBody && (
                                 <p 
                                     className={`text-slate-200 leading-relaxed font-semibold line-clamp-4 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                     style={{ 
@@ -1433,7 +1486,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                         textShadow: '0 1px 6px rgba(0,0,0,0.9)'
                                     }}
                                 >
-                                    {post.body}
+                                    {displayBody}
                                 </p>
                             )}
                         </div>
@@ -1446,13 +1499,14 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         {/* Bild eller video i ena halvan */}
                         <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
                             {post.imageUrl ? (
-                                <img src={post.imageUrl} alt="" className="w-full h-full object-cover" onLoad={signalReady} />
+                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" style={getMotionStyle(post)} onLoad={signalReady} />
                             ) : post.videoUrl ? (
                                 <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
                             ) : (
                                 <div className="w-full h-full bg-slate-800" />
                             )}
                         </div>
+
                         {/* Elegant centrerat textyta i andra halvan */}
                         <div className="flex-grow p-[5cqw] flex flex-col justify-center items-center text-center bg-slate-900 border-l border-t border-slate-850">
                             <div className="space-y-[2cqw] max-w-full">
@@ -1463,9 +1517,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                         color: post.headlineTextColor || '#ffffff'
                                     }}
                                 >
-                                    {post.headline}
+                                    {displayHeadline}
                                 </h3>
-                                {post.body && (
+                                {displayBody && (
                                     <p 
                                         className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                         style={{ 
@@ -1473,7 +1527,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                             color: post.bodyTextColor || '#cbd5e1'
                                         }}
                                     >
-                                        {post.body}
+                                        {displayBody}
                                     </p>
                                 )}
                             </div>
@@ -1487,7 +1541,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         {/* Bild eller video i ena halvan */}
                         <div className={`${isPortrait ? 'h-[46%] w-full' : 'w-[46%] h-full'} relative bg-slate-800 flex-shrink-0 overflow-hidden`}>
                             {post.imageUrl ? (
-                                <img src={post.imageUrl} alt="" className="w-full h-full object-cover" onLoad={signalReady} />
+                                <img src={post.imageUrl} alt="" decoding="async" className="w-full h-full object-cover" style={getMotionStyle(post)} onLoad={signalReady} />
                             ) : post.videoUrl ? (
                                 <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-cover" muted playsInline autoPlay loop onLoadedData={signalReady} />
                             ) : (
@@ -1504,9 +1558,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                         color: post.headlineTextColor || '#ffffff'
                                     }}
                                 >
-                                    {post.headline}
+                                    {displayHeadline}
                                 </h3>
-                                {post.body && (
+                                {displayBody && (
                                     <p 
                                         className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
                                         style={{ 
@@ -1514,7 +1568,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                             color: post.bodyTextColor || '#cbd5e1'
                                         }}
                                     >
-                                        {post.body}
+                                        {displayBody}
                                     </p>
                                 )}
                             </div>
@@ -1530,15 +1584,14 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             if (!tag) return null;
                             
                             const isStamp = tag.displayType === 'stamp';
-                            const shape = tag.shape || 'circle';
+                            const visual = getStampVisual(tag);
                             
-                            // Bygg klasser och stilar för varje snabbinläggstagg/stämpel
-                            let expressClasses = 'flex items-center justify-center text-center font-black uppercase shadow-md select-none ';
+                            let expressClasses = visual.classes;
                             let expressStyles: React.CSSProperties = {
                                 color: tag.textColor || '#ffffff',
                                 fontFamily: tag.fontFamily ? getFontFamilyClass(tag.fontFamily) : 'inherit',
                                 background: isStamp ? hexToRgba(tag.backgroundColor, tag.opacity ?? 1) : tag.backgroundColor,
-                                boxShadow: isStamp ? 'inset 0 0 6px rgba(0, 0, 0, 0.15), 0 0 2px rgba(0, 0, 0, 0.1)' : '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+                                ...visual.styles,
                             };
 
                             // Animation
@@ -1550,50 +1603,6 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                     ...expressStyles,
                                     ['--glow-color' as any]: tag.backgroundColor,
                                 };
-                            }
-
-                            // Beräkna fluid fontstorlek med proportionell skala för statiska taggar
-                            const baseFontSize = isStamp 
-                                ? ((shape === 'circle' || shape === 'square') ? '2.6cqw' : '2.9cqw') 
-                                : '2.9cqw';
-
-                            const getScaleFactor = (size?: string) => {
-                                switch (size) {
-                                    case 'sm': return 1.8 / 2.2;
-                                    case 'md': return 1;
-                                    case 'lg': return 2.6 / 2.2;
-                                    case 'xl': return 3.2 / 2.2;
-                                    case '2xl': return 3.8 / 2.2;
-                                    case '3xl': return 4.5 / 2.2;
-                                    case '4xl': return 5.5 / 2.2;
-                                    case '5xl': return 6.5 / 2.2;
-                                    default: return 1;
-                                }
-                            };
-
-                            const finalFontSize = `calc(${baseFontSize} * ${getScaleFactor(tag.fontSize)})`;
-                            expressStyles.fontSize = finalFontSize;
-
-                            if (isStamp) {
-                                expressClasses += ' tracking-[0.1cqw] leading-[1.1] ';
-                                if (shape === 'circle') {
-                                    expressClasses += ' rounded-full aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
-                                } else if (shape === 'square') {
-                                    expressClasses += ' rounded-[1.5cqw] aspect-square w-[16cqw] h-[16cqw] p-[1.5cqw] ';
-                                } else { // rectangle
-                                    expressClasses += ' rounded-[1.5cqw] px-[4cqw] py-[2cqw] ';
-                                }
-
-                                if (tag.border === 'solid') {
-                                    expressClasses += ' border-[0.3cqw] border-current ';
-                                } else if (tag.border === 'dashed') {
-                                    expressClasses += ' border-[0.3cqw] border-dashed border-current ';
-                                }
-                            } else {
-                                // Standard pil-formad tagg/badge
-                                expressClasses += ' rounded-full px-[4.5cqw] py-[1.5cqw] tracking-wider ';
-                                expressStyles.border = '1px solid rgba(255,255,255,0.15)';
-                                expressStyles.backdropFilter = 'blur(8px)';
                             }
 
                             return (
@@ -1686,8 +1695,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         <img 
                             src={post.imageUrl || undefined} 
                             alt="" 
+                            decoding="async"
                             className="absolute z-1 w-full h-full" 
-                            style={mediaStyle}
+                            style={{ ...mediaStyle, ...getMotionStyle(post) }}
                             onLoad={signalReady}
                             onError={() => !post.videoUrl && onLoadError && onLoadError()} 
                         />
@@ -1717,14 +1727,13 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 </>
             )}
 
-
-
             {post.layout === 'real-estate' && (
                 <div className="absolute inset-0 z-1 w-full h-full overflow-hidden">
                     {bgImages.length <= 1 ? (
                         <img 
                             src={bgImages[0] || undefined} 
                             alt="" 
+                            decoding="async"
                             className="w-full h-full object-cover" 
                             style={mediaStyle}
                             onLoad={signalReady}
@@ -1732,21 +1741,21 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     ) : bgImages.length === 2 ? (
                         <div className="w-full h-full grid grid-cols-2 gap-[0.5cqw] bg-slate-950">
                             {bgImages.map((img, index) => (
-                                <img key={index} src={img} alt="" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
+                                <img key={index} src={img} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
                             ))}
                         </div>
                     ) : bgImages.length === 3 ? (
                         <div className="w-full h-full grid grid-cols-2 gap-[0.5cqw] bg-slate-950">
-                            <img src={bgImages[0]} alt="" className="w-full h-full object-cover animate-fade-in" onLoad={signalReady} />
+                            <img src={bgImages[0]} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" onLoad={signalReady} />
                             <div className="grid grid-rows-2 gap-[0.5cqw] overflow-hidden">
-                                <img src={bgImages[1]} alt="" className="w-full h-full object-cover animate-fade-in" />
-                                <img src={bgImages[2]} alt="" className="w-full h-full object-cover animate-fade-in" />
+                                <img src={bgImages[1]} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" />
+                                <img src={bgImages[2]} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" />
                             </div>
                         </div>
                     ) : (
                         <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-[0.5cqw] bg-slate-950">
                             {bgImages.slice(0, 4).map((img, index) => (
-                                <img key={index} src={img} alt="" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
+                                <img key={index} src={img} alt="" decoding="async" className="w-full h-full object-cover animate-fade-in" onLoad={index === 0 ? signalReady : undefined} />
                             ))}
                         </div>
                     )}
@@ -1771,6 +1780,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             ) : item.imageUrl ? (
                                 <img 
                                     src={item.imageUrl} 
+                                    decoding="async"
                                     className="w-full h-full object-cover" 
                                     style={{
                                         objectPosition: `${item.mediaPositionX ?? 50}% ${item.mediaPositionY ?? 50}%`,
@@ -1828,11 +1838,11 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     {/* Header line & Category */}
                     <div className="flex flex-col items-center justify-center pt-[1cqw]">
                         <span className="text-[2.8cqw] font-sans font-bold tracking-[0.25em] text-teal-400 uppercase drop-shadow-sm">
-                            {firstTag ? firstTag.name : (organization?.name || 'ANNONS')}
+                            {firstTag ? firstTag.text : (organization?.name || 'ANNONS')}
                         </span>
                         {/* Title */}
                         <h2 className="text-[5.5cqw] font-extrabold font-sans uppercase tracking-[0.06em] leading-tight text-white mt-2 drop-shadow-md">
-                            {post.headline}
+                            {displayHeadline}
                         </h2>
                     </div>
 
@@ -1842,7 +1852,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     {/* Body description */}
                     <div className="flex-1 flex items-center justify-center py-[2cqw] overflow-hidden">
                         <p className="text-[3.6cqw] leading-relaxed text-slate-50 max-w-xl mx-auto whitespace-pre-wrap font-sans font-medium drop-shadow-sm select-text line-clamp-6">
-                            {post.body}
+                            {displayBody}
                         </p>
                     </div>
 
@@ -1867,7 +1877,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                     <QrCodeComponent url={post.qrCodeUrl} className="w-full h-full" />
                                 </div>
                                 <span className="text-[1.8cqw] text-teal-400 font-mono tracking-wider max-w-[28cqw] truncate font-semibold mt-1">
-                                    {post.qrCodeUrl.replace('https://', '').replace('http://', '').replace('www.', '')}
+                                    {(post.qrCodeDisplayUrl || post.qrCodeUrl).replace('https://', '').replace('http://', '').replace('www.', '')}
                                 </span>
                             </div>
                         ) : (
@@ -1883,7 +1893,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {post.headline && post.layout !== 'ai-ad' && post.layout !== 'real-estate' && (
                 <DraggableTextElement
                     type="headline"
-                    text={post.headline}
+                    text={displayHeadline}
+                    editText={post.headline}
                     x={hX} y={hY} width={hW}
                     textAlign={hAlign}
                     fontSize={post.headlineFontSize}
@@ -1913,7 +1924,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {post.body && post.layout !== 'ai-ad' && post.layout !== 'real-estate' && (
                 <DraggableTextElement
                     type="body"
-                    text={post.body}
+                    text={displayBody}
+                    editText={post.body}
                     x={bX} y={bY} width={bW}
                     textAlign={bAlign}
                     fontSize={post.bodyFontSize}
@@ -1922,6 +1934,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                     color={post.bodyTextColor || post.textColor}
                     bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
                     bgColor={post.bodyBackgroundColor || post.textBackgroundColor}
+                    anchor={post.bodyAnchor || 'center'}
+                    maxLines={post.bodyMaxLines}
                     // NEW: Effects props
                     shadowType={post.bodyShadowType}
                     shadowColor={post.bodyShadowColor}
@@ -1968,9 +1982,10 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 />
             ))}
             
-            {showTags && post.layout !== 'real-estate' && post.tagIds?.map(tagId => {
+            {showTags && post.tagIds?.map(tagId => {
                 const tag = (organization?.tags || allTagsFromProp)?.find(t => t.id === tagId);
                 if (!tag) return null;
+                if (post.layout === 'real-estate' && tag.displayType !== 'stamp') return null;
                 const override = post.tagPositionOverrides?.find(o => o.tagId === tagId);
                 return <DraggableTag key={tagId} tag={tag} override={override} mode={mode} onUpdatePosition={onUpdateTagPosition} tagIds={post.tagIds} isPortrait={isPortrait} />;
             })}
@@ -2001,8 +2016,8 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         zIndex: 99
                     }}
                 >
-                    <div className="border-[6px] md:border-[10px] border-double border-red-600 rounded-3xl px-6 py-3 md:px-10 md:py-5 flex flex-col items-center justify-center bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
-                        <span className="text-3xl md:text-6xl font-black uppercase tracking-[0.2em] text-red-600 font-sans select-none pointer-events-none drop-shadow-md">
+                    <div className="border-[0.9cqw] border-double border-red-600 rounded-[3cqw] px-[5cqw] py-[2.5cqw] flex flex-col items-center justify-center bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                        <span className="text-[9cqw] font-black uppercase tracking-[0.2em] text-red-600 font-sans select-none pointer-events-none drop-shadow-md">
                             SÅLD!
                         </span>
                     </div>

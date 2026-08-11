@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Organization, DisplayScreen, ScreenPairingCode } from '../types';
 import { 
@@ -61,27 +61,26 @@ export function useOrganizationDetails(orgId: string | undefined) {
 
 export function useOrganizationScreens(orgId: string | undefined) {
   const queryClient = useQueryClient();
+  const [hasReceivedSnapshot, setHasReceivedSnapshot] = useState(false);
 
-  // We use a query to manage the state, but the initial fetch is handled by the listener mostly,
-  // or we could fetch once. For simplicity in this hybrid model, we rely on the listener to populate this.
-  // But providing a queryFn makes it robust if the listener takes time or fails.
   const queryResult = useQuery({
     queryKey: ['screens', orgId],
-    queryFn: () => Promise.resolve([] as DisplayScreen[]), // Initial empty state or could call getDisplayScreens if we had it
+    queryFn: () => Promise.resolve([] as DisplayScreen[]),
     enabled: !!orgId,
   });
 
   useEffect(() => {
     if (!orgId) return;
-
+    setHasReceivedSnapshot(false);
     const unsubscribe = listenToDisplayScreens(orgId, (screens) => {
       queryClient.setQueryData(['screens', orgId], screens);
+      setHasReceivedSnapshot(true);
     });
 
     return () => unsubscribe();
   }, [orgId, queryClient]);
 
-  return queryResult;
+  return { ...queryResult, hasReceivedSnapshot };
 }
 
 // --- Pairing ---
@@ -115,8 +114,12 @@ export function usePairingCodeListener(deviceId: string | null, isScreenMode: bo
 // --- Session ---
 
 export function useScreenSessionListener(deviceId: string | null, isScreenMode: boolean, onForceDisconnect: () => void) {
+    const hasSeenSessionRef = useRef(false);
+
     useEffect(() => {
         if (!isScreenMode || !deviceId) return;
+
+        hasSeenSessionRef.current = false;
 
         // Note: We deliberately removed the "connection timeout" kill switch that was here previously.
         // A screen should NEVER disconnect itself just because the network is flaky.
@@ -128,13 +131,18 @@ export function useScreenSessionListener(deviceId: string | null, isScreenMode: 
                 return;
             }
 
-            // If doc is null, it means the session document was DELETED from the database.
-            // This happens when the admin clicks "Koppla från". This is the only time we reset.
+            // If doc is null, it means the session document was DELETED from the database or does not exist yet.
             if (doc === null) {
-                console.log('[Session] Session document deleted by admin. Resetting.');
-                onForceDisconnect();
+                if (hasSeenSessionRef.current) {
+                    console.log('[Session] Session document deleted by admin. Resetting.');
+                    onForceDisconnect();
+                } else {
+                    console.log('[Session] Session document does not exist yet (waiting for pairing).');
+                }
                 return;
             }
+
+            hasSeenSessionRef.current = true;
 
             // Check for explicit kill command inside the document
             if (doc.forceDisconnect) {

@@ -171,6 +171,8 @@ export interface DisplayPost {
   mediaPositionX?: number; // 0-100%
   mediaPositionY?: number; // 0-100%
   mediaZoom?: number; // 1.0 - 3.0
+  imageMotion?: 'none' | 'zoom-in' | 'zoom-out' | 'pan-right';
+  imageMotionStrength?: 'lugn' | 'tydlig';
   
   webpageUrl?: string;
   webpageUseSmartPortal?: boolean;
@@ -194,6 +196,7 @@ export interface DisplayPost {
   aiImageVariants?: AiImageVariant[]; 
   transitionToNext?: 'fade' | 'slide' | 'dissolve';
   qrCodeUrl?: string;
+  qrCodeDisplayUrl?: string; // Ursprunglig URL för läsbar visning när qrCodeUrl ersatts av spårningslänk
   // FIX: qrCodePosition och qrCodeSize har lagts till för att stödja legacy-beräkningar i DisplayPostRenderer.
   qrCodePosition?: string;
   qrCodeSize?: string;
@@ -206,11 +209,13 @@ export interface DisplayPost {
   sharedAt?: string; 
   suggestionOriginId?: string; 
   automationId?: string; 
-  status?: 'active' | 'archived'; 
+  status?: 'active' | 'archived' | 'draft'; 
   isExpressPost?: boolean;
   isExpressSold?: boolean;
   scheduleDays?: number[]; // List of JS day indexes: 0 = Sunday, 1 = Monday, etc.
   scheduleTimeRanges?: { startTime: string; endTime: string }[]; // Specific high-precision time blocks
+  bodyAnchor?: 'center' | 'top';   // 'top' = y är blockets ÖVERKANT, växer nedåt
+  bodyMaxLines?: number;           // radklampning med ellips
 }
 
 // A PostTemplate for creating reusable post layouts

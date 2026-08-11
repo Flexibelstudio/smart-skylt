@@ -119,10 +119,14 @@ const OrganizationCard: React.FC<{
     const [isExpanded, setIsExpanded] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [discountScreen, setDiscountScreen] = useState(org.discountScreen || 0);
+    const [maxScreens, setMaxScreens] = useState(org.maxScreens ?? 1);
+    const [aiMonthlyCreditLimit, setAiMonthlyCreditLimit] = useState(org.aiMonthlyCreditLimit ?? 4000);
     const { showToast } = useToast();
 
     useEffect(() => {
         setDiscountScreen(org.discountScreen || 0);
+        setMaxScreens(org.maxScreens ?? 1);
+        setAiMonthlyCreditLimit(org.aiMonthlyCreditLimit ?? 4000);
     }, [org]);
     
     const { grandTotal, periodText, invoiceItems } = useMemo(() => {
@@ -204,22 +208,27 @@ const OrganizationCard: React.FC<{
         return { grandTotal: finalTotal, periodText: Array.from(periodTexts).join('; '), invoiceItems: items };
     }, [org, settings]);
 
-    const handleSaveDiscounts = async () => {
+    const handleSaveOrgSettings = async () => {
         setIsSaving(true);
         try {
             await onUpdateOrganization(org.id, {
                 discountScreen: Number(discountScreen),
+                maxScreens: Number(maxScreens),
+                aiMonthlyCreditLimit: Number(aiMonthlyCreditLimit),
             });
-            showToast({ message: "Rabatter sparade.", type: 'success' });
+            showToast({ message: "Abonnemangsinställningar sparade.", type: 'success' });
         } catch (error) {
             console.error(error);
-            showToast({ message: "Kunde inte spara rabatter.", type: 'error' });
+            showToast({ message: "Kunde inte spara inställningar.", type: 'error' });
         } finally {
             setIsSaving(false);
         }
     };
     
-    const discountsDirty = Number(discountScreen) !== (org.discountScreen || 0);
+    const settingsDirty = 
+        Number(discountScreen) !== (org.discountScreen || 0) ||
+        Number(maxScreens) !== (org.maxScreens ?? 1) ||
+        Number(aiMonthlyCreditLimit) !== (org.aiMonthlyCreditLimit ?? 4000);
 
     return (
         <div className="bg-white dark:bg-gray-900/50 rounded-lg border border-slate-200 dark:border-gray-700 overflow-hidden shadow-sm transition-all duration-300">
@@ -275,13 +284,36 @@ const OrganizationCard: React.FC<{
                         </div>
                      </div>
                      <div className="bg-slate-100 dark:bg-gray-800 p-4 rounded-lg mt-4 space-y-4 border border-slate-200 dark:border-slate-700">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200">Ange rabatter</h4>
-                        <div className="w-full sm:w-1/2 lg:w-1/4">
-                            <DiscountInput label="Skyltfönster" value={discountScreen} onChange={setDiscountScreen} disabled={isSaving} />
+                        <h4 className="font-bold text-gray-800 dark:text-gray-200">Abonnemangsinställningar & rabatter</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Antal skärmar i abonnemang</label>
+                                <input 
+                                    type="number" 
+                                    value={maxScreens} 
+                                    onChange={(e) => setMaxScreens(Math.max(1, Number(e.target.value)))} 
+                                    className="w-full bg-white dark:bg-gray-700 p-2 rounded-md border border-slate-300 dark:border-gray-600"
+                                    min="1"
+                                    disabled={isSaving}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI-krediter per månad</label>
+                                <input 
+                                    type="number" 
+                                    value={aiMonthlyCreditLimit} 
+                                    onChange={(e) => setAiMonthlyCreditLimit(Number(e.target.value))} 
+                                    className="w-full bg-white dark:bg-gray-700 p-2 rounded-md border border-slate-300 dark:border-gray-600"
+                                    min="500"
+                                    step="500"
+                                    disabled={isSaving}
+                                />
+                            </div>
+                            <DiscountInput label="Skyltfönsterrabatt" value={discountScreen} onChange={setDiscountScreen} disabled={isSaving} />
                         </div>
                         <div className="flex justify-end">
-                            <PrimaryButton onClick={handleSaveDiscounts} disabled={!discountsDirty || isSaving} loading={isSaving}>
-                                Spara rabatter
+                            <PrimaryButton onClick={handleSaveOrgSettings} disabled={!settingsDirty || isSaving} loading={isSaving}>
+                                Spara inställningar
                             </PrimaryButton>
                         </div>
                     </div>

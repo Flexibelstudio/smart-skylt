@@ -36,14 +36,14 @@ export const AIGuideModal: React.FC<AIGuideModalProps> = ({ isOpen, onClose }) =
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-2xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in" onClick={e => e.stopPropagation()}>
                 <h2 className="text-2xl font-bold mb-2">Så här fungerar AI-assistenten</h2>
                 <p className="text-slate-600 dark:text-slate-300 mb-6">
-                    Smart Skylt är din personliga kreativa partner – en AI som lär sig av dina val och hjälper dig skapa engagerande innehåll på ett sätt som passar just ditt varumärke.
+                    Plattformen är din personliga kreativa partner – en AI som lär sig av dina val och hjälper dig skapa engagerande innehåll på ett sätt som passar just ditt varumärke.
                 </p>
 
                 <div className="space-y-6">
                     <GuideSection icon={<StarIcon className="w-6 h-6" filled />} title="Bygg din AI-profil">
                         I fliken Varumärke kan du ladda upp referensbilder, skriva exempeltexter och beskriva din verksamhet. AI:n använder detta som inspiration för att förstå din ton, färgskala och visuella stil.
                     </GuideSection>
-                    <GuideSection icon={<Cog6ToothIcon className="w-6 h-6" />} title="Planera och automatisera">
+                    <GuideSection icon={<Cog6ToothIcon className="w-6 h-6" />} title="Schemalägg och automatisera">
                         Under fliken Automation kan du låta AI:n skapa nya inlägg automatiskt utifrån dina scheman. Ju mer du använder den, desto bättre lär den känna din stil och dina preferenser.
                     </GuideSection>
                     <GuideSection icon={<PencilIcon className="w-6 h-6" />} title="AI:n lär sig av dina val">

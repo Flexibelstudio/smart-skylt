@@ -122,20 +122,15 @@ export const Step4_Publishing: React.FC<{
                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Begränsa till specifika veckodagar</label>
                             <span className="text-xs text-slate-400 dark:text-slate-500">Om inga väljs visas inlägget alla dagar</span>
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const currentDays = post.scheduleDays || [];
-                                if (currentDays.length === 7) {
-                                    handleFieldChange('scheduleDays', []);
-                                } else {
-                                    handleFieldChange('scheduleDays', [1, 2, 3, 4, 5, 6, 0]);
-                                }
-                            }}
-                            className="text-xs font-bold text-indigo-650 hover:text-indigo-500 dark:text-indigo-400"
-                        >
-                            {(post.scheduleDays || []).length === 7 ? 'Spara ingen' : 'Välj alla'}
-                        </button>
+                        {(post.scheduleDays?.length ?? 0) > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => handleFieldChange('scheduleDays', [])}
+                                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                                Rensa (visa alla dagar)
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -252,7 +247,7 @@ export const Step4_Publishing: React.FC<{
                 <h4 className="font-bold text-slate-800 dark:text-slate-200">Extrafunktioner</h4>
                 
                 <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Taggar & Stämplar</label>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Stämplar</label>
                     {organization.tags && organization.tags.length > 0 ? (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {organization.tags.map(tag => (
@@ -263,7 +258,7 @@ export const Step4_Publishing: React.FC<{
                             ))}
                         </div>
                     ) : (
-                        <p className="text-sm text-slate-400 italic">Inga taggar skapade än.</p>
+                        <p className="text-sm text-slate-400 italic">Inga stämplar skapade än.</p>
                     )}
                 </div>
 

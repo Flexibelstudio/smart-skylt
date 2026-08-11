@@ -59,6 +59,7 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     const [isSaving, setIsSaving] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
     const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false);
+    const [isNoDateConfirmOpen, setIsNoDateConfirmOpen] = useState(false);
     const { showToast } = useToast();
 
     const allSteps: EditorStep[] = ['layout', 'content', 'atmosphere', 'publishing'];
@@ -104,10 +105,11 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     const handleSaveTemplate = async (templateName: string) => {
         setIsSaveTemplateModalOpen(false);
         try {
+            const { id, startDate, endDate, internalTitle, ...postDataWithoutId } = post;
             const newTemplate: PostTemplate = {
                 id: `template-${Date.now()}`,
                 templateName,
-                postData: { ...post, id: `template-post-${Date.now()}` }
+                postData: postDataWithoutId
             };
             const updatedTemplates = [...(organization.postTemplates || []), newTemplate];
             await onUpdateOrganization(organization.id, { postTemplates: updatedTemplates });
@@ -122,14 +124,39 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
         setIsCancelConfirmOpen(false);
     };
 
-    const handleSaveWrapper = async () => {
+    const doSave = async (postToSave: typeof post): Promise<boolean> => {
         setIsSaving(true);
         try {
-            await onSave(post);
+            await onSave(postToSave);
+            return true;
         } catch (e) {
             showToast({ message: `Kunde inte spara: ${e instanceof Error ? e.message : "Okänt fel"}`, type: 'error' });
+            return false;
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleSaveWrapper = async () => {
+        if (!post.startDate) {
+            setIsNoDateConfirmOpen(true);
+            return;
+        }
+        await doSave(post);
+    };
+
+    const handlePublishNow = async () => {
+        setIsNoDateConfirmOpen(false);
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        await doSave({ ...post, startDate: today, ...(post.status === 'draft' ? { status: 'active' as const } : {}) });
+    };
+
+    const handleSaveAsDraft = async () => {
+        setIsNoDateConfirmOpen(false);
+        const ok = await doSave(post);
+        if (ok) {
+            showToast({ message: "Sparat som utkast — inlägget visas inte på skyltfönstret förrän det får ett startdatum.", type: 'info' });
         }
     };
     
@@ -250,6 +277,22 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
             >
                 Är du säker på att du vill avbryta? Dina ändringar kommer inte att sparas.
             </ConfirmDialog>
+
+            {isNoDateConfirmOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={() => setIsNoDateConfirmOpen(false)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">Inget startdatum valt</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
+                            Utan startdatum sparas inlägget som ett utkast och <strong>visas inte</strong> på skyltfönstret. Vill du publicera det från och med idag istället?
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                            <button type="button" onClick={() => setIsNoDateConfirmOpen(false)} className="px-4 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">Fortsätt redigera</button>
+                            <button type="button" onClick={handleSaveAsDraft} className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">Spara som utkast</button>
+                            <button type="button" onClick={handlePublishNow} className="px-4 py-2 rounded-lg text-sm font-bold bg-teal-600 text-white hover:bg-teal-500 transition-colors">Publicera från idag</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };

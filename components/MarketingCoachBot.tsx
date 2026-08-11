@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Chat, GenerateContentResponse, FunctionDeclaration, Type } from '@google/genai';
 import { ChatMessage, Organization, DisplayPost, DisplayScreen } from '../types';
 import { initializeMarketingCoachChat, fileToBase64, generateCompletePost, createDisplayPostFunctionDeclaration } from '../services/geminiService';
+import { resizeImageFile } from '../utils/imageResize';
 import { getVoiceServerConfig, uploadPostAsset } from '../services/firebaseService';
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinnerIcon, PaperAirplaneIcon, MicrophoneIcon, DuplicateIcon, PaperclipIcon, XCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon } from './icons';
@@ -243,13 +244,14 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFile = e.target.files?.[0];
+    if (rawFile) {
+      if (rawFile.size > 10 * 1024 * 1024) {
         showToast({ message: 'Filen är för stor. Max 10MB.', type: 'error' });
         return;
       }
+      const file = await resizeImageFile(rawFile);
       setAttachment(file);
       setAttachmentPreview(URL.createObjectURL(file));
     }
@@ -692,9 +694,10 @@ export const MarketingCoachBot: React.FC<MarketingCoachBotProps> = ({ onClose, o
   const isVoiceActive = connectionState === 'connected' || connectionState === 'connecting';
   
   const conversationStarters = [
-    { label: "Annonsera ett erbjudande", prompt: "Jag want to advertise an offer." },
-    { label: "Skapa ett 'nyhet'-inlägg", prompt: "Jag want to create a post about a news." },
-    { label: "Ge mig en kreativ idé", prompt: "Give me a creative idea for a post that fits my business." },
+    { label: "Annonsera ett erbjudande", prompt: "Jag vill annonsera ett erbjudande." },
+    { label: "Skapa ett 'nyhet'-inlägg", prompt: "Jag vill skapa ett inlägg om en nyhet." },
+    { label: "Ge mig en kreativ idé", prompt: "Ge mig en kreativ idé på ett inlägg som passar min verksamhet." },
+    { label: "Hur fungerar systemet?", prompt: "Förklara kort hur jag kommer igång: hur lägger jag upp ett inlägg och hur ser jag att det visas på skärmen?" },
   ];
 
   /* ------------------------------ render --------------------------- */

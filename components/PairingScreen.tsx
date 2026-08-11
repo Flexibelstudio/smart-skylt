@@ -9,6 +9,13 @@ import { ScreenPairingCode, Organization, DisplayScreen } from '../types';
 const GLOBAL_DEVICE_KEY = 'smart-skylt-physical-screen-id';
 const getLocalStoragePhysicalScreenKey = (uid: string) => `smart-skylt-physical-screen-id_${uid}`;
 
+// Hjälpare: läs deviceId från localStorage
+const readDeviceId = (uid?: string | null) => {
+  const a = uid ? localStorage.getItem(getLocalStoragePhysicalScreenKey(uid)) : null;
+  const b = localStorage.getItem(GLOBAL_DEVICE_KEY);
+  return a || b || null;
+};
+
 // Hjälpare: skriv deviceId till både global och UID-scopad nyckel
 const writeDeviceId = (uid: string | undefined | null, deviceId: string) => {
   if (uid) localStorage.setItem(getLocalStoragePhysicalScreenKey(uid), deviceId);
@@ -50,7 +57,12 @@ export const PairingScreen: React.FC = () => {
 
     const setupPairing = async () => {
       try {
-        const newCode = await createPairingCode();
+        let devId = readDeviceId(currentUser?.uid);
+        if (!devId) {
+          devId = `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+          writeDeviceId(currentUser?.uid, devId);
+        }
+        const newCode = await createPairingCode(currentUser?.uid, devId);
         if (!mountedRef.current) return;
         setCode(newCode);
 
