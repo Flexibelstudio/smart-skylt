@@ -397,7 +397,8 @@ const PreferenceProfileManager: React.FC<{
 const DnaAnalysisManager: React.FC<{
     organization: Organization;
     onUpdateOrganization: (orgId: string, data: Partial<Organization>) => Promise<void>;
-}> = ({ organization, onUpdateOrganization }) => {
+    onDnaGenerated?: () => void;
+}> = ({ organization, onUpdateOrganization, onDnaGenerated }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editedProfile, setEditedProfile] = useState<Partial<StyleProfile>>({});
@@ -409,8 +410,9 @@ const DnaAnalysisManager: React.FC<{
         setIsGenerating(true);
         try {
             const newAnalysis = await generateDnaAnalysis(organization);
-            await onUpdateOrganization(organization.id, { styleProfile: { ...analysis, ...newAnalysis } });
+            await onUpdateOrganization(organization.id, { styleProfile: { ...analysis, ...newAnalysis, lastUpdatedAt: new Date().toISOString() } });
             showToast({ message: "DNA-analys har genererat en helt ny profil!", type: 'success' });
+            if (onDnaGenerated) onDnaGenerated();
         } catch (error) {
             showToast({ message: `Kunde inte generera analys: ${error instanceof Error ? error.message : 'Okänt fel'}`, type: 'error' });
         } finally {
@@ -595,7 +597,6 @@ const WebsiteImporter: React.FC<{
         try {
             const result = await analyzeWebsiteContent(validUrl);
             onImportSuccess(result, validUrl);
-            showToast({ message: "Analys klar! Profilen har uppdaterats.", type: 'success' });
         } catch (error) {
             console.error("Website analysis failed:", error);
             showToast({ message: `Analysen misslyckades: ${error instanceof Error ? error.message : "Okänt fel"}`, type: 'error' });
@@ -795,6 +796,8 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
     
     const [isSaving, setIsSaving] = useState(false);
     const [isReferenceUploading, setIsReferenceUploading] = useState(false);
+    const [justImported, setJustImported] = useState(false);
+    const [isGeneratingDnaFromImport, setIsGeneratingDnaFromImport] = useState(false);
     
     const { showToast } = useToast();
     const [tagToDelete, setTagToDelete] = useState<Tag | null>(null);
@@ -878,6 +881,16 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
             }
         }
 
+        const hasColors = Boolean((data.primaryColor && data.primaryColor.trim()) || (data.secondaryColor && data.secondaryColor.trim()));
+        if (hasColors) {
+            showToast({ message: "Analys klar! Profilen har uppdaterats.", type: 'success' });
+        } else {
+            showToast({
+                message: "Vi kunde läsa texten men inte färgerna från sajten. Dina nuvarande färger är oförändrade — fyll i dem manuellt om du vill.",
+                type: 'warning'
+            });
+        }
+
         const updatedPreferenceProfile = { 
             ...(organization.preferenceProfile || {}),
             textSnippets: data.textSnippets || organization.preferenceProfile?.textSnippets || [],
@@ -892,28 +905,54 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
 
         await onUpdateOrganization(organization.id, partialUpdate);
 
+        if (!organization.styleProfile?.summary) {
+            try {
+                const orgForAnalysis = { 
+                    ...organization, 
+                    ...partialUpdate, 
+                    primaryColor: data.primaryColor || organization.primaryColor,
+                };
+                
+                showToast({ message: "Skapar DNA-profil...", type: 'info' });
+                const dnaResult = await generateDnaAnalysis(orgForAnalysis);
+                
+                await onUpdateOrganization(organization.id, { 
+                    styleProfile: { 
+                        ...(organization.styleProfile || {}), 
+                        ...dnaResult, 
+                        lastUpdatedAt: new Date().toISOString() 
+                    } 
+                });
+                showToast({ message: "DNA-profil skapad!", type: 'success' });
+
+            } catch (e) {
+                console.error("Auto DNA generation failed", e);
+                showToast({ message: "Kunde inte skapa DNA-profil automatiskt.", type: 'error' });
+            }
+        } else {
+            setJustImported(true);
+        }
+    };
+
+    const handleRunDnaAnalysis = async () => {
+        setIsGeneratingDnaFromImport(true);
+        showToast({ message: "Skapar DNA-profil...", type: 'info' });
         try {
-            const orgForAnalysis = { 
-                ...organization, 
-                ...partialUpdate, 
-                primaryColor: data.primaryColor || organization.primaryColor,
-            };
-            
-            showToast({ message: "Skapar DNA-profil...", type: 'info' });
-            const dnaResult = await generateDnaAnalysis(orgForAnalysis);
-            
-            await onUpdateOrganization(organization.id, { 
-                styleProfile: { 
-                    ...(organization.styleProfile || {}), 
-                    ...dnaResult, 
-                    lastUpdatedAt: new Date().toISOString() 
-                } 
+            const dnaResult = await generateDnaAnalysis(organization);
+            await onUpdateOrganization(organization.id, {
+                styleProfile: {
+                    ...(organization.styleProfile || {}),
+                    ...dnaResult,
+                    lastUpdatedAt: new Date().toISOString()
+                }
             });
             showToast({ message: "DNA-profil skapad!", type: 'success' });
-
-        } catch (e) {
-            console.error("Auto DNA generation failed", e);
-            showToast({ message: "Kunde inte skapa DNA-profil automatiskt.", type: 'error' });
+            setJustImported(false);
+        } catch (error) {
+            console.error("DNA generation failed", error);
+            showToast({ message: `Kunde inte generera analys: ${error instanceof Error ? error.message : 'Okänt fel'}`, type: 'error' });
+        } finally {
+            setIsGeneratingDnaFromImport(false);
         }
     };
 
@@ -1184,6 +1223,23 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                     
                     {/* Magical website importer card */}
                     <WebsiteImporter onImportSuccess={handleImportFromWebsite} organization={organization} />
+
+                    {justImported && (
+                        <Card 
+                            title="Nästa steg: bygg ditt varumärkes-DNA"
+                            subTitle="Vi har hämtat text och känsla från din sajt. Låt Skylie omvandla det till en DNA-profil — då låter allt AI:n skriver som just din verksamhet."
+                        >
+                            <div className="flex justify-end pt-2">
+                                <PrimaryButton 
+                                    onClick={handleRunDnaAnalysis} 
+                                    loading={isGeneratingDnaFromImport}
+                                    className="shadow-md bg-teal-600 hover:bg-teal-500 transition-all font-semibold"
+                                >
+                                    {organization.styleProfile?.summary ? 'Uppdatera DNA-profil' : 'Bygg DNA-profil'}
+                                </PrimaryButton>
+                            </div>
+                        </Card>
+                    )}
 
                     <Card title="Varumärkesberättelse & Verksamhet" subTitle="Berätta vem ditt företag är, vad er specialitet är och vilka ni vill kommunicera till. AI:n använder denna kontext som grundpelare för alla förslag." saving={isSaving}>
                         <div className="space-y-6">
@@ -1459,7 +1515,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                 <div className="space-y-6 animate-fade-in">
                     
                     {/* Brand DNA Section (Bento Grid Profile) */}
-                    <DnaAnalysisManager organization={organization} onUpdateOrganization={onUpdateOrganization} />
+                    <DnaAnalysisManager organization={organization} onUpdateOrganization={onUpdateOrganization} onDnaGenerated={() => setJustImported(false)} />
 
                     <hr className="border-slate-200 dark:border-slate-800 my-4" />
 

@@ -114,7 +114,7 @@ async function fetchSiteBrandData(url) {
 
     const cssTexts = [html];
     const linkHrefs = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi)]
-        .map(m => m[1]).slice(0, 3);
+        .map(m => m[1]).slice(0, 5);
     for (const href of linkHrefs) {
         try {
             const cssUrl = new URL(href, url).toString();
@@ -123,25 +123,52 @@ async function fetchSiteBrandData(url) {
         } catch { /* ignorera trasiga href */ }
     }
 
-    // Räkna hexfärger, filtrera bort gråskala/nära vitt/svart
+    // Räkna hexfärger och rgb/rgba-färger, filtrera bort gråskala/nära vitt/svart
     const counts = new Map();
+
+    const addColorCandidate = (hex) => {
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const spread = max - min;
+        const sum = r + g + b;
+        if (spread < 10 || sum > 750 || sum < 60) return;
+        counts.set(hex, (counts.get(hex) || 0) + 1);
+    };
+
     for (const text of cssTexts) {
+        // 1. #rrggbb
         for (const m of text.matchAll(/#([0-9a-fA-F]{6})\b/g)) {
-            const hex = m[1].toLowerCase();
-            const r = parseInt(hex.slice(0, 2), 16);
-            const g = parseInt(hex.slice(2, 4), 16);
-            const b = parseInt(hex.slice(4, 6), 16);
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            const spread = max - min;
-            const sum = r + g + b;
-            if (spread < 25 || sum > 720 || sum < 60) continue;
-            counts.set(hex, (counts.get(hex) || 0) + 1);
+            addColorCandidate(m[1].toLowerCase());
+        }
+
+        // 2. #rgb -> #rrggbb
+        for (const m of text.matchAll(/#([0-9a-fA-F]{3})\b/g)) {
+            const s = m[1].toLowerCase();
+            const hex = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+            addColorCandidate(hex);
+        }
+
+        // 3. rgb() / rgba() kommaform & mellanslagsform
+        for (const m of text.matchAll(/rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})(?:[\s,/]+[0-9.]+%?)?\s*\)/gi)) {
+            const r = parseInt(m[1], 10);
+            const g = parseInt(m[2], 10);
+            const b = parseInt(m[3], 10);
+            if (r <= 255 && g <= 255 && b <= 255) {
+                const hex = [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+                addColorCandidate(hex);
+            }
         }
     }
+
     const colorCandidates = [...counts.entries()]
         .sort((a, b) => b[1] - a[1]).slice(0, 15)
         .map(([hex, n]) => `#${hex} (${n} förekomster)`);
+
+    const hasUnparsedFormats = cssTexts.some(t => /oklch\(|hsl\(/i.test(t));
+    console.log(`[fetchSiteBrandData] Antal färgkandidater: ${counts.size}. Top 10:`, colorCandidates.slice(0, 10), `Innehåller oklch/hsl: ${hasUnparsedFormats}`);
 
     const themeColor = (html.match(/<meta[^>]+name=["']theme-color["'][^>]+content=["'](#[0-9a-fA-F]{3,6})["']/i) || [])[1] || null;
 
@@ -155,7 +182,53 @@ async function fetchSiteBrandData(url) {
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ').slice(0, 5000);
 
-    return { colorCandidates, themeColor, logoCandidates, visibleText };
+    const extractMeta = (htmlText) => {
+        const meta = {};
+
+        const titleMatch = htmlText.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (titleMatch && titleMatch[1]) {
+            const t = titleMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+            if (t) meta.title = t;
+        }
+
+        const getMetaContent = (keyName) => {
+            const escapedKey = keyName.replace(':', '\\:');
+            const regex = new RegExp(
+                `<meta\\s+[^>]*(?:(?:name|property)=["']${escapedKey}["']\\s+[^>]*content=["']([^"']+)["']|content=["']([^"']+)["']\\s+[^>]*(?:name|property)=["']${escapedKey}["'])`,
+                'i'
+            );
+            const m = htmlText.match(regex);
+            if (m) return (m[1] || m[2] || '').trim();
+            return null;
+        };
+
+        const desc = getMetaContent('description');
+        if (desc) meta.description = desc;
+
+        const ogTitle = getMetaContent('og:title');
+        if (ogTitle) meta.ogTitle = ogTitle;
+
+        const ogDesc = getMetaContent('og:description');
+        if (ogDesc) meta.ogDescription = ogDesc;
+
+        const ogSiteName = getMetaContent('og:site_name');
+        if (ogSiteName) meta.ogSiteName = ogSiteName;
+
+        const h1Matches = [...htmlText.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)];
+        if (h1Matches.length > 0) {
+            const h1s = h1Matches
+                .map(m => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+                .filter(Boolean)
+                .slice(0, 3);
+            if (h1s.length > 0) meta.h1 = h1s;
+        }
+
+        return meta;
+    };
+
+    const meta = extractMeta(html);
+
+    return { colorCandidates, themeColor, logoCandidates, visibleText, meta };
 }
 
 // Central förteckning över AI-modeller. Byt modell HÄR — aldrig i anropen.
@@ -1235,14 +1308,39 @@ export const gemini = onCall(
                 const siteData = await fetchSiteBrandData(params.url);
 
                 if (siteData) {
+                    const hasColors = siteData.colorCandidates.length > 0;
                     const themeColorInfo = siteData.themeColor ? `Meta theme-color: ${siteData.themeColor}` : '';
-                    const colorsList = siteData.colorCandidates.length > 0
+                    const colorsList = hasColors
                         ? siteData.colorCandidates.join(', ')
                         : 'Inga specifika hexfärger hittades i CSS';
+
+                    const metaObj = siteData.meta || {};
+                    const metaLines = [];
+                    if (metaObj.title) metaLines.push(`Titel: ${metaObj.title}`);
+                    if (metaObj.description) metaLines.push(`Beskrivning: ${metaObj.description}`);
+                    if (metaObj.ogTitle) metaLines.push(`OG-Titel: ${metaObj.ogTitle}`);
+                    if (metaObj.ogDescription) metaLines.push(`OG-Beskrivning: ${metaObj.ogDescription}`);
+                    if (metaObj.ogSiteName) metaLines.push(`OG-Sajtnamn: ${metaObj.ogSiteName}`);
+                    if (metaObj.h1 && metaObj.h1.length > 0) metaLines.push(`Rubriker (H1): ${metaObj.h1.join(' | ')}`);
+
+                    const metaBlockInfo = metaLines.length > 0
+                        ? metaLines.join('\n')
+                        : 'Ingen specifik metadata hittades';
+
+                    const colorInstruction = hasColors
+                        ? `1. primaryColor och secondaryColor MÅSTE väljas ur färglistan ovan — hitta ALDRIG på egna hexkoder. Välj de två mättade färger som tydligast bär sajtens identitet (primär = den mest framträdande profilfärgen, sekundär = komplementet, t.ex. bakgrunds-/jordton om sådan finns i listan). Anges som hexkod (t.ex. #ff6600).`
+                        : `1. Inga hexfärger hittades på sajten. Utlämna primaryColor och secondaryColor HELT ur JSON-svaret (inkludera inte dessa nycklar). Hitta ALDRIG på egna hexkoder.`;
+
+                    const jsonKeysInstruction = hasColors
+                        ? `{ "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }`
+                        : `{ "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }`;
 
                     const prompt = `
                         Analyze the brand identity of this website (${params.url}).
                         Extract the following information based on the actual scraped site data provided below:
+
+                        Sidans metadata (ofta varumärkets mest genomarbetade formuleringar):
+                        ${metaBlockInfo}
 
                         Sidans text (utdrag):
                         ${siteData.visibleText}
@@ -1255,16 +1353,16 @@ export const gemini = onCall(
                         ${siteData.logoCandidates.join(', ') || 'Inga tydliga logobilder hittades'}
 
                         Instruktion:
-                        1. primaryColor och secondaryColor MÅSTE väljas ur färglistan ovan — hitta ALDRIG på egna hexkoder. Välj de två mättade färger som tydligast bär sajtens identitet (primär = den mest framträdande profilfärgen, sekundär = komplementet, t.ex. bakgrunds-/jordton om sådan finns i listan). Anges som hexkod (t.ex. #ff6600).
+                        ${colorInstruction}
                         2. Font style for headlines (categorize as 'sans', 'serif', 'display', or 'script').
                         3. Font style for body text (categorize as 'sans' or 'serif').
-                        4. A concise business description (max 2 sentences) in Swedish.
+                        4. A concise business description (max 2 sentences) in Swedish. Skapa businessDescription och textSnippets i första hand utifrån sidans metadata och text — aldrig utifrån allmän kunskap om branschen.
                         5. 3-5 short phrases or keywords from the site that capture the tone of voice (in Swedish).
                         6. A list of 1-3 business type keywords (e.g. Café, Butik, Frisör, Konsult) in Swedish.
                         7. The URL of the main logo image found on the website. Prefer a direct image link from the candidates or site.
 
                         Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
-                        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
+                        ${jsonKeysInstruction}
                     `;
 
                     const response = await ai.models.generateContent({
@@ -1283,8 +1381,8 @@ export const gemini = onCall(
                     contents: `
                         Analyze the brand identity of this website: ${params.url}.
                         Extract the following information:
-                        1. Primary brand color (Hex code). If multiple, choose the most dominant.
-                        2. Secondary brand color (Hex code).
+                        1. Primary brand color (Hex code). Utlämna helt om den inte går att fastställa säkert från sajten — hitta ALDRIG på egna hexkoder.
+                        2. Secondary brand color (Hex code). Utlämna helt om den inte går att fastställa säkert från sajten — hitta ALDRIG på egna hexkoder.
                         3. Font style for headlines (categorize as 'sans', 'serif', 'display', or 'script').
                         4. Font style for body text (categorize as 'sans' or 'serif').
                         5. A concise business description (max 2 sentences) in Swedish.
@@ -1292,9 +1390,11 @@ export const gemini = onCall(
                         7. A list of 1-3 business type keywords (e.g. Café, Butik, Frisör, Konsult) in Swedish.
                         8. The URL of the main logo image found on the website. Prefer a direct image link (png/jpg/svg).
 
+                        Viktigt: Du får ALDRIG gissa eller hitta på hexkoder. Om färger inte kan fastställas säkert från sajten, utlämna primaryColor och secondaryColor helt ur JSON-svaret.
+
                         Use Google Search to visit the site and analyze its visual style and content.
-                        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
-                        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
+                        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar (utelämna primaryColor och secondaryColor om färg inte kan fastställas):
+                        { "primaryColor": "#hex (om känd)", "secondaryColor": "#hex (om känd)", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
                     `,
                     config: {
                         tools: [{googleSearch: {}}]

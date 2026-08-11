@@ -563,10 +563,10 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const getStarterTagPack = (): { label: string; texts: [string, string, string] } => {
         const types = (organization.businessType || []).join(' ').toLowerCase();
         if (/mäklar|fastighet|bostad/.test(types)) {
-            return { label: 'mäklarstämplar', texts: ['NYTT OBJEKT', 'BUDGIVNING PÅGÅR', 'SÅLD!'] };
+            return { label: 'mäklarstämplar', texts: ['NYTT OBJEKT', 'BUDGIVNING PÅGÅR', 'VISNING'] };
         }
         if (/bil|fordon|motor|husvagn/.test(types)) {
-            return { label: 'bilstämplar', texts: ['NYINKOMMEN', 'PRISSÄNKT', 'SÅLD!'] };
+            return { label: 'bilstämplar', texts: ['NYINKOMMEN', 'PRISSÄNKT', 'FYNDPRIS'] };
         }
         return { label: 'startstämplar', texts: ['NYHET', 'KAMPANJ', 'REA'] };
     };
@@ -602,17 +602,17 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 opacity: 1
             },
             {
-                id: `tag_sold_${Date.now()}`,
-                displayType: 'stamp',
+                id: `tag_visning_${Date.now()}`,
+                displayType: 'tag',
                 text: pack.texts[2],
-                backgroundColor: '#ef4444', // Red stamp
+                backgroundColor: '#ef4444', // Red label
                 textColor: '#FFFFFF',
-                fontSize: 'xl',
+                fontSize: 'md',
                 fontWeight: 'black',
                 animation: 'pulse',
-                shape: 'circle',
-                border: 'dashed',
-                opacity: 0.9
+                shape: 'rectangle',
+                border: 'none',
+                opacity: 1
             }
         ];
 
