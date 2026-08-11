@@ -103,14 +103,24 @@ async function fetchSiteBrandData(url) {
                 signal: controller.signal,
                 headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SmartskyltBot/1.0)' },
             });
-            if (!res.ok) return null;
+            if (!res.ok) {
+                console.warn(`[fetchSiteBrandData] Hämtning gav status ${res.status} ${res.statusText} för ${u}`);
+                return null;
+            }
             const text = await res.text();
+            console.log(`[fetchSiteBrandData] Hämtade ${text.length} tecken från ${u} (status ${res.status})`);
             return text.slice(0, maxBytes);
-        } catch { return null; } finally { clearTimeout(timer); }
+        } catch (err) {
+            console.warn(`[fetchSiteBrandData] Hämtning misslyckades för ${u}:`, err?.name || '', err?.message || err);
+            return null;
+        } finally { clearTimeout(timer); }
     };
 
     const html = await fetchText(url, 400_000);
-    if (!html) return null;
+    if (!html) {
+        console.warn(`[fetchSiteBrandData] Ingen HTML kunde hämtas för ${url} — faller tillbaka på Google-sökning.`);
+        return null;
+    }
 
     const cssTexts = [html];
     const linkHrefs = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi)]
