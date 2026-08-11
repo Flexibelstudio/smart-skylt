@@ -539,7 +539,7 @@ export const updateSystemSettings = async (settings: SystemSettings) => {
 
 // --- PAIRING ---
 
-export const createPairingCode = async (createdByUid?: string): Promise<string> => {
+export const createPairingCode = async (createdByUid?: string, deviceId?: string): Promise<string> => {
     if (isOffline) {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const existingCodes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
@@ -547,7 +547,8 @@ export const createPairingCode = async (createdByUid?: string): Promise<string> 
             code,
             createdAt: new Date().toISOString(),
             status: 'pending',
-            createdByUid
+            createdByUid,
+            deviceId
         });
         localStorage.setItem('mock_pairing_codes', JSON.stringify(existingCodes));
         return code;
@@ -560,9 +561,34 @@ export const createPairingCode = async (createdByUid?: string): Promise<string> 
         code,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         status: 'pending',
-        createdByUid: createdByUid || null
+        createdByUid: createdByUid || null,
+        deviceId: deviceId || null
     });
     return code;
+};
+
+export const findPairedDeviceIdForUid = async (uid: string): Promise<string | null> => {
+    if (isOffline) {
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        const found = codes.find((c: any) => c.createdByUid === uid && c.status === 'paired');
+        return found?.pairedDeviceId || found?.deviceId || null;
+    }
+    if (!db || !uid) return null;
+    try {
+        const snapshot = await db.collection('screenPairingCodes')
+            .where('createdByUid', '==', uid)
+            .where('status', '==', 'paired')
+            .limit(1)
+            .get();
+        if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            return data.pairedDeviceId || data.deviceId || null;
+        }
+        return null;
+    } catch (e) {
+        console.warn('findPairedDeviceIdForUid misslyckades:', e);
+        return null;
+    }
 };
 
 export const getPairingCode = async (code: string): Promise<ScreenPairingCode | null> => {
@@ -615,9 +641,11 @@ export const listenToPairingCodeByDeviceId = (deviceId: string, callback: (data:
 };
 
 export const pairAndActivateScreen = async (code: string, orgId: string, uid: string, screenDetails: { name: string, displayScreenId: string }) => {
-    const deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-
     if (isOffline) {
+        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
+        const codeData = codes.find((c: any) => c.code === code);
+        const deviceId = codeData?.deviceId || `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+
         const mockScreen: PhysicalScreen = {
             id: deviceId,
             organizationId: orgId,
@@ -628,7 +656,6 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
         };
         
         // Update Mock Pairing Code in LocalStorage
-        const codes = JSON.parse(localStorage.getItem('mock_pairing_codes') || '[]');
         const idx = codes.findIndex((c: any) => c.code === code);
         if (idx > -1) {
             codes[idx] = {
@@ -654,12 +681,13 @@ export const pairAndActivateScreen = async (code: string, orgId: string, uid: st
 
     if (!db) throw new Error("DB not initialized");
     
-    // Get the pairing code first to get createdByUid (the screen's anonymous UID)
+    // Get the pairing code first to get createdByUid (the screen's anonymous UID) and deviceId
     const codeRef = db.collection('screenPairingCodes').doc(code);
     const codeDoc = await codeRef.get();
     if (!codeDoc.exists) throw new Error("Pairing code not found");
     
     const codeData = codeDoc.data();
+    const deviceId = codeData?.deviceId || `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
     const screenUid = codeData?.createdByUid;
 
     const batch = db.batch();

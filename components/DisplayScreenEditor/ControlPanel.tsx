@@ -515,33 +515,35 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             </div>
                                         </div>
 
-                                        {/* Action tags/stamps toggle on Express posts */}
-                                        {isExpress && (
+                                        {/* Action tags/stamps toggle on posts */}
+                                        {(isExpress || (organization.tags && organization.tags.length > 0)) && (
                                             <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 w-full">
                                                 <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
                                                     <span>Stämplar:</span>
                                                 </div>
                                                 <div className="flex flex-wrap items-center gap-1.5">
-                                                    {/* SÅLD Stamp */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleToggleSold(post);
-                                                        }}
-                                                        className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer select-none active:scale-95 ${
-                                                            post.isExpressSold
-                                                                ? 'bg-[#ef4444] text-white border-[#ef4444]'
-                                                                : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
-                                                        }`}
-                                                        title={post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld'}
-                                                    >
-                                                        <span>🔴</span>
-                                                        <span>SÅLD</span>
-                                                        {post.isExpressSold && (
-                                                            <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
-                                                        )}
-                                                    </button>
+                                                    {/* SÅLD Stamp - Express posts only */}
+                                                    {isExpress && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleToggleSold(post);
+                                                            }}
+                                                            className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer select-none active:scale-95 ${
+                                                                post.isExpressSold
+                                                                    ? 'bg-[#ef4444] text-white border-[#ef4444]'
+                                                                    : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
+                                                            }`}
+                                                            title={post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld'}
+                                                        >
+                                                            <span>🔴</span>
+                                                            <span>SÅLD</span>
+                                                            {post.isExpressSold && (
+                                                                <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
+                                                            )}
+                                                        </button>
+                                                    )}
 
                                                     {organization.tags && organization.tags.length > 0 ? (
                                                         organization.tags.map(tag => {
@@ -566,11 +568,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                                 </button>
                                                             );
                                                         })
-                                                    ) : (
+                                                    ) : isExpress ? (
                                                         <span className="text-[11px] text-slate-400 dark:text-slate-500 italic select-none ml-1">
                                                             Mallen har inga övriga stämplar definierade.
                                                         </span>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             </div>
                                         )}

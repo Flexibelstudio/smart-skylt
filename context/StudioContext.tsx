@@ -16,7 +16,8 @@ import {
   updateOrganization as fbUpdateOrganization,
   getOrganizationById,
   isOffline,
-  sendScreenHeartbeat
+  sendScreenHeartbeat,
+  findPairedDeviceIdForUid
 } from '../services/firebaseService';
 import { useAuth } from './AuthContext';
 import { 
@@ -82,6 +83,11 @@ const readDeviceId = (uid?: string | null) => {
   const a = uid ? localStorage.getItem(getLocalStoragePhysicalScreenKey(uid)) : null;
   const b = localStorage.getItem(GLOBAL_DEVICE_KEY);
   return a || b || null;
+};
+
+const writeDeviceId = (uid: string | undefined | null, deviceId: string) => {
+  if (uid) localStorage.setItem(getLocalStoragePhysicalScreenKey(uid), deviceId);
+  localStorage.setItem(GLOBAL_DEVICE_KEY, deviceId);
 };
 
 const removeDeviceId = (uid?: string | null) => {
@@ -206,9 +212,32 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   
   // --- Screen Mode Specific Logic (Moved up to use variables in loading state) ---
   
+  const [recoveredDeviceId, setRecoveredDeviceId] = useState<string | null>(null);
+
   // Pairing Logic
   // Use readDeviceId immediately to get ID from localStorage even if auth isn't ready.
-  const deviceId = readDeviceId(currentUser?.uid);
+  const deviceId = readDeviceId(currentUser?.uid) || recoveredDeviceId;
+
+  // Självläkning för redan parade skärmar om deviceId saknas i localStorage
+  useEffect(() => {
+    if (!isScreenMode || deviceId || !currentUser?.uid) return;
+
+    let isMounted = true;
+    findPairedDeviceIdForUid(currentUser.uid).then(foundDeviceId => {
+      if (!isMounted) return;
+      if (foundDeviceId) {
+        writeDeviceId(currentUser.uid, foundDeviceId);
+        setRecoveredDeviceId(foundDeviceId);
+        console.log('[Self-healing] Återställde deviceId för skärmen:', foundDeviceId);
+      } else {
+        console.warn('[Self-healing] Kunde inte hitta något pairedDeviceId för skärmens uid:', currentUser.uid);
+      }
+    }).catch(err => {
+      console.warn('[Self-healing] Fel vid uppslag av pairedDeviceId:', err);
+    });
+
+    return () => { isMounted = false; };
+  }, [isScreenMode, deviceId, currentUser?.uid]);
   // Use isDisplayApp (based on domain) so we listen even before auth completes.
   const { data: pairingData, isLoading: pairingLoading } = usePairingCodeListener(deviceId, isDisplayApp);
 
