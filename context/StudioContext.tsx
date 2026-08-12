@@ -338,6 +338,9 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // 2. Auto-archive expired posts dynamically
   useEffect(() => {
+    // Skyltfönster är enbart läs-enheter. En skärm med inaktuell cache får
+    // aldrig kunna skriva över serverns inläggslista vid automatisk arkivering.
+    if (isScreenMode || isDisplayApp) return;
     if (authLoading || !selectedOrgId || displayScreens.length === 0) return;
     const now = new Date();
 
@@ -365,7 +368,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
       }
     });
-  }, [displayScreens, selectedOrgId, authLoading]);
+  }, [displayScreens, selectedOrgId, authLoading, isScreenMode, isDisplayApp]);
 
   // 3. Session Listener (Kill Switch)
   useScreenSessionListener(deviceId, isScreenMode, hardReset);
