@@ -10,23 +10,34 @@ const offlineWarning = (action: string) => {
     return Promise.resolve();
 };
 
+// OBS: JSON-rundturen förstör FieldValue-sentinels. Sätt sådana fält EFTER sanitiseringen.
 const sanitizeForFirestore = <T>(data: T): T => {
     return JSON.parse(JSON.stringify(data));
 };
+
+const unreadableScreens = new Set<string>();
+const lastSeenPostsVersion = new Map<string, number>();
+const lastGoodPosts = new Map<string, DisplayPost[]>();
 
 const serializePostsArray = (posts: DisplayPost[] | undefined): string | undefined => {
     if (!posts) return undefined;
     return JSON.stringify(posts);
 };
 
-const deserializePostsArray = (postsSource: any): DisplayPost[] | undefined => {
+const deserializePostsArray = (postsSource: any): DisplayPost[] | null | undefined => {
+    // En tom eller enbart blank sträng kan inte komma från vår kod och
+    // betraktas därför som korrupt data, inte som en tom kanal.
+    if (typeof postsSource === 'string' && postsSource.trim() === '') {
+        console.error('Tomt _serialized_posts-fält — behandlas som oläsbart.');
+        return null;
+    }
     if (!postsSource) return undefined;
     if (typeof postsSource === 'string') {
         try {
             return JSON.parse(postsSource);
         } catch (e) {
             console.error("Failed to parse serialized posts:", e);
-            return [];
+            return null;
         }
     }
     // Fallback if it is stored as an array of objects (existing / fallback data)
@@ -448,7 +459,33 @@ export const listenToDisplayScreens = (orgId: string, callback: (screens: Displa
             const s = { id: doc.id, ...data } as DisplayScreen;
             // Support both old posts array and new _serialized_posts string if present
             const postsSource = (data as any)._serialized_posts !== undefined ? (data as any)._serialized_posts : data.posts;
-            s.posts = deserializePostsArray(postsSource) || [];
+            const parsed = deserializePostsArray(postsSource);
+            const unreadable = parsed === null;
+
+            // En skärm i ett skyltfönster ska hellre visa senast kända fungerande inlägg
+            // än ingenting alls om inläggs-JSON blir korrupt.
+            if (!unreadable && Array.isArray(parsed)) {
+                lastGoodPosts.set(s.id, parsed);
+                s.posts = parsed;
+            } else if (unreadable) {
+                s.posts = lastGoodPosts.get(s.id) || [];
+            } else {
+                s.posts = parsed || [];
+            }
+            s.postsUnreadable = unreadable;
+
+            const postsUpdatedAtMillis = (data as any).postsUpdatedAt?.toMillis?.() ?? 0;
+            lastSeenPostsVersion.set(s.id, postsUpdatedAtMillis);
+            s.postsUpdatedAtMillis = postsUpdatedAtMillis;
+
+            delete (s as any)._serialized_posts;
+
+            if (unreadable) {
+                unreadableScreens.add(s.id);
+            } else {
+                unreadableScreens.delete(s.id);
+            }
+
             return s;
         });
         callback(screens);
@@ -460,27 +497,43 @@ export const addDisplayScreen = async (orgId: string, screen: DisplayScreen) => 
         const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
         if (org) {
              if (!org.displayScreens) org.displayScreens = [];
-             org.displayScreens.push(screen);
+             const cleanScreen = { ...screen };
+             delete cleanScreen.postsUnreadable;
+             delete cleanScreen.postsUpdatedAtMillis;
+             delete (cleanScreen as any)._serialized_posts;
+             org.displayScreens.push(cleanScreen);
              triggerMockScreenListener(orgId);
         }
         return offlineWarning('addDisplayScreen');
     }
     if (!db) return;
     const dbScreen: any = { ...screen };
+    delete dbScreen.postsUnreadable;
+    delete dbScreen.postsUpdatedAtMillis;
+    delete dbScreen._serialized_posts;
     if (dbScreen.posts) {
         dbScreen.posts = await processPostsForUploads(orgId, dbScreen.posts);
         dbScreen._serialized_posts = serializePostsArray(dbScreen.posts);
         delete dbScreen.posts;
     }
-    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(sanitizeForFirestore(dbScreen));
+    const payload = sanitizeForFirestore(dbScreen);
+    payload.postsUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screen.id).set(payload);
 };
 
 export const updateDisplayScreen = async (orgId: string, screenId: string, data: Partial<DisplayScreen>) => {
+    if (data.posts !== undefined && unreadableScreens.has(screenId)) {
+        throw new Error("Inläggen för den här kanalen kunde inte läsas. Ladda om sidan innan du sparar.");
+    }
     if (isOffline) {
         const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
         if (org && org.displayScreens) {
+            const cleanData = { ...data };
+            delete cleanData.postsUnreadable;
+            delete cleanData.postsUpdatedAtMillis;
+            delete (cleanData as any)._serialized_posts;
             org.displayScreens = org.displayScreens.map(s => 
-                s.id === screenId ? { ...s, ...data } : s
+                s.id === screenId ? { ...s, ...cleanData } : s
             );
             triggerMockScreenListener(orgId);
         }
@@ -488,15 +541,53 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
     }
     if (!db) return;
     const dbData: any = { ...data };
-    if (dbData.posts) {
-        dbData.posts = await processPostsForUploads(orgId, dbData.posts);
-        dbData._serialized_posts = serializePostsArray(dbData.posts);
-        delete dbData.posts;
+    delete dbData.postsUnreadable;
+    delete dbData.postsUpdatedAtMillis;
+    delete dbData._serialized_posts;
+
+    const docRef = db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId);
+
+    if (data.posts !== undefined) {
+        if (dbData.posts) {
+            dbData.posts = await processPostsForUploads(orgId, dbData.posts);
+            dbData._serialized_posts = serializePostsArray(dbData.posts);
+            delete dbData.posts;
+        }
+
+        // Firestore-transaktioner körs inte mot lokal cache och kräver uppkoppling.
+        // Det är avsiktligt — en offline-flik ska inte kunna köa en sparning och
+        // applicera gammal data när den kommer online. Sparning av inlägg kräver
+        // alltså nätverk, och felmeddelandet vid utebliven anslutning ska vara begripligt.
+        await db.runTransaction(async (tx) => {
+            const snapshot = await tx.get(docRef);
+            if (!snapshot.exists) {
+                throw new Error("Kanalen hittades inte.");
+            }
+            const serverData = snapshot.data() || {};
+            const serverTimestamp = serverData.postsUpdatedAt?.toMillis?.() ?? 0;
+            const expectedTimestamp = lastSeenPostsVersion.get(screenId);
+
+            if (expectedTimestamp !== undefined && serverTimestamp > expectedTimestamp) {
+                throw new Error("Kanalen har ändrats i ett annat fönster. Ladda om sidan och försök igen — dina ändringar har inte sparats.");
+            }
+
+            if (expectedTimestamp === undefined) {
+                console.warn(`[updateDisplayScreen] Inget tidigare timestamp fanns i cachen för skärm ${screenId}. Tillåter skrivning.`);
+            }
+
+            const payload = sanitizeForFirestore(dbData);
+            payload.postsUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+            tx.update(docRef, payload);
+        });
+    } else {
+        await docRef.update(sanitizeForFirestore(dbData));
     }
-    await db.collection('organizations').doc(orgId).collection('displayScreens').doc(screenId).update(sanitizeForFirestore(dbData));
 };
 
 export const deleteDisplayScreen = async (orgId: string, screenId: string) => {
+    unreadableScreens.delete(screenId);
+    lastSeenPostsVersion.delete(screenId);
+    lastGoodPosts.delete(screenId);
     if (isOffline) {
         const org = MOCK_ORGANIZATIONS.find(o => o.id === orgId);
         if (org && org.displayScreens) {

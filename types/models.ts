@@ -50,6 +50,16 @@ export interface DisplayScreen {
   aspectRatio: '16:9' | '9:16' | '4:3' | '3:4';
   branding?: BrandingOptions;
   zones?: ScreenZoneConfig;
+  /**
+   * Klient-sidigt fält: indikerar om inläggs-JSON misslyckades att tolkas vid inläsning.
+   * Får ALDRIG skrivas till Firestore.
+   */
+  postsUnreadable?: boolean;
+  /**
+   * Klient-sidigt fält: timestamp i millisekunder för när inläggen senast uppdaterades.
+   * Får ALDRIG skrivas till Firestore.
+   */
+  postsUpdatedAtMillis?: number;
 }
 
 // Represents a physical screen that has been connected. This is now the billable entity.
