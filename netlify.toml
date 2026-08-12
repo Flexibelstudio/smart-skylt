@@ -1,5 +1,5 @@
 [build]
-  command = "npm install && npx vite build"
+  command = "npm install && npx vite build && if [ \"$BRANCH\" = \"staging\" ]; then printf '/*\\n  X-Robots-Tag: noindex\\n' > dist/_headers; fi"
   publish = "dist"
 
 [build.environment]
