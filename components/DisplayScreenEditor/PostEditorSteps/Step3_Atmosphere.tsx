@@ -1348,10 +1348,41 @@ export const Step3_Atmosphere: React.FC<{
                 />
 
                 {post.layout === 'real-estate' && (
-                    <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                Förval för centrerad ruta
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { id: 'dark', label: 'Mörk' },
+                                    { id: 'light', label: 'Ljus' },
+                                    { id: 'subtle', label: 'Diskret' }
+                                ].map((chip) => {
+                                    const isSelected = (post.cardStyle || 'dark') === chip.id;
+                                    return (
+                                        <button
+                                            key={chip.id}
+                                            type="button"
+                                            onClick={() => onPostChange({ ...post, cardStyle: chip.id as 'dark' | 'light' | 'subtle' })}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                                                isSelected
+                                                    ? 'bg-primary text-white border-primary shadow-sm'
+                                                    : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                                            }`}
+                                        >
+                                            {chip.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                                Väljer du en egen färg används den i stället för förvalet.
+                            </p>
+                        </div>
                         <ColorPaletteInput
-                            label="Kortets bakgrundsfärg"
-                            value={post.cardBackgroundColor || 'rgba(2, 6, 23, 0.85)'}
+                            label="Kortets bakgrundsfärg (Egen färg)"
+                            value={post.cardBackgroundColor || ''}
                             onChange={(color) => onPostChange({ ...post, cardBackgroundColor: color })}
                             organization={organization}
                         />

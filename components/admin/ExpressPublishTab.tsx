@@ -108,6 +108,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [galleryImages, setGalleryImages] = useState<string[]>([]);
     const imageBase64 = galleryImages[0] || null;
     const [layout, setLayout] = useState<'image-left' | 'image-right' | 'image-fullscreen' | 'real-estate'>('image-left');
+    const [cardStyle, setCardStyle] = useState<'dark' | 'light' | 'subtle'>('dark');
     const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
     
     // Schemaläggnings-states för express-inlägg
@@ -236,6 +237,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             id: 'express_preview_temp',
             internalTitle: `⚡ Express Förhandsvisning`,
             layout: layout,
+            cardStyle: cardStyle,
             headline: headline.trim() || 'Rubrik skrivs här',
             body: defaultBody,
             imageUrl: imageBase64,
@@ -279,7 +281,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             bodyShadowType: 'soft',
             bodyShadowColor: 'rgba(0, 0, 0, 0.95)'
         };
-    }, [headline, description, webpageUrl, layout, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
+    }, [headline, description, webpageUrl, layout, cardStyle, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
 
     // Handle Image Upload -> Base64
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -450,6 +452,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 id: `express_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 internalTitle: `⚡ Express: ${headline.trim()}`,
                 layout: layout,
+                cardStyle: cardStyle,
                 headline: headline.trim(),
                 body: defaultBody,
                 imageUrl: imageBase64,
@@ -504,6 +507,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             setHeadline('');
             setDescription('');
             setWebpageUrl('');
+            setCardStyle('dark');
             setSelectedTagIds([]);
             setScheduleDays([]);
             setScheduleTimeRanges([]);
@@ -856,6 +860,36 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         Centrerad ruta
                                     </button>
                                 </div>
+                                {layout === 'real-estate' && (
+                                    <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                            Kortstil för centrerad ruta
+                                        </label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {[
+                                                { id: 'dark', label: 'Mörk' },
+                                                { id: 'light', label: 'Ljus' },
+                                                { id: 'subtle', label: 'Diskret' }
+                                            ].map((chip) => {
+                                                const isSelected = cardStyle === chip.id;
+                                                return (
+                                                    <button
+                                                        key={chip.id}
+                                                        type="button"
+                                                        onClick={() => setCardStyle(chip.id as 'dark' | 'light' | 'subtle')}
+                                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                                                            isSelected
+                                                                ? 'bg-teal-500 text-white border-teal-500 shadow-sm'
+                                                                : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                                                        }`}
+                                                    >
+                                                        {chip.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Headline */}

@@ -1829,16 +1829,26 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {/* Real Estate / Centered Skyltfönster Overlay Card */}
             {post.layout === 'real-estate' && (() => {
                 const accentColor = resolveColor('primary', '#2dd4bf', organization);
-                const rawCardBg = resolveColor(post.cardBackgroundColor, 'rgba(2, 6, 23, 0.85)', organization);
-                const cardBg = hexToRgba(rawCardBg, 0.85);
+                const cardStyle = post.cardStyle || 'dark';
+                const cardPreset = cardStyle === 'light'
+                    ? { bg: 'rgba(255, 255, 255, 0.92)', text: '#0f172a', body: '#334155' }
+                    : cardStyle === 'subtle'
+                    ? { bg: 'rgba(2, 6, 23, 0.55)', text: '#ffffff', body: '#e2e8f0' }
+                    : { bg: 'rgba(2, 6, 23, 0.85)', text: '#ffffff', body: '#e2e8f0' };
+
+                const rawCardBg = post.cardBackgroundColor 
+                    ? resolveColor(post.cardBackgroundColor, cardPreset.bg, organization)
+                    : cardPreset.bg;
+                const cardBg = post.cardBackgroundColor ? hexToRgba(rawCardBg, 0.85) : cardPreset.bg;
                 const headlineFontClass = getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily);
                 const bodyFontClass = getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily);
 
                 return (
                     <div 
-                        className="absolute z-10 flex flex-col justify-between border border-white/20 backdrop-blur-xl rounded-[4cqw] text-white p-[5cqw] text-center"
+                        className="absolute z-10 flex flex-col justify-between border backdrop-blur-xl rounded-[4cqw] p-[5cqw] text-center"
                         style={{
                             backgroundColor: cardBg,
+                            borderColor: cardStyle === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.2)',
                             top: '50%',
                             left: '50%',
                             transform: 'translate(-50%, -50%)',
@@ -1856,36 +1866,36 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
                         {/* Header line & Category */}
                         <div className="flex flex-col items-center justify-center pt-[1cqw]">
-                            <span className={`text-[2.8cqw] font-bold tracking-[0.25em] uppercase drop-shadow-sm ${headlineFontClass}`} style={{ color: accentColor }}>
+                            <span className={`text-[2.8cqw] font-bold tracking-[0.25em] uppercase drop-shadow-sm ${headlineFontClass}`} style={{ color: cardPreset.text }}>
                                 {firstTag ? firstTag.text : (organization?.name || 'ANNONS')}
                             </span>
                             {/* Title */}
-                            <h2 className={`text-[5.5cqw] font-extrabold uppercase tracking-[0.06em] leading-tight text-white mt-2 drop-shadow-md ${headlineFontClass}`}>
+                            <h2 className={`text-[5.5cqw] font-extrabold uppercase tracking-[0.06em] leading-tight mt-2 drop-shadow-md ${headlineFontClass}`} style={{ color: cardPreset.text }}>
                                 {displayHeadline}
                             </h2>
                         </div>
 
                         {/* Divider line 1 */}
-                        <div className="w-[20cqw] h-[2px] bg-gradient-to-r from-transparent via-white/40 to-transparent my-2 mx-auto" />
+                        <div className="w-[20cqw] h-[2px] bg-gradient-to-r from-transparent via-current opacity-40 my-2 mx-auto" style={{ color: cardPreset.text }} />
 
                         {/* Body description */}
                         <div className="flex-1 flex items-center justify-center py-[2cqw] overflow-hidden">
-                            <p className={`text-[3.6cqw] leading-relaxed text-slate-50 max-w-xl mx-auto whitespace-pre-wrap font-medium drop-shadow-sm select-text line-clamp-6 ${bodyFontClass}`}>
+                            <p className={`text-[3.6cqw] leading-relaxed max-w-xl mx-auto whitespace-pre-wrap font-medium drop-shadow-sm select-text line-clamp-6 ${bodyFontClass}`} style={{ color: cardPreset.body }}>
                                 {displayBody}
                             </p>
                         </div>
 
                         {/* Divider line 2 / Specs if present */}
                         {(post.realEstateRooms || post.realEstateArea || post.realEstatePrice) ? (
-                            <div className="w-full flex-shrink-0 flex justify-center items-center gap-[2.5cqw] py-[1.8cqw] my-2 border-t border-b border-white/15 text-[2.4cqw] font-mono tracking-wider font-bold uppercase" style={{ color: accentColor }}>
+                            <div className="w-full flex-shrink-0 flex justify-center items-center gap-[2.5cqw] py-[1.8cqw] my-2 border-t border-b text-[2.4cqw] font-mono tracking-wider font-bold uppercase" style={{ color: accentColor, borderColor: cardStyle === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.15)' }}>
                                 {post.realEstateRooms && <span>{post.realEstateRooms}</span>}
-                                {post.realEstateRooms && (post.realEstateArea || post.realEstatePrice) && <span className="text-white/30">|</span>}
+                                {post.realEstateRooms && (post.realEstateArea || post.realEstatePrice) && <span style={{ opacity: 0.3 }}>|</span>}
                                 {post.realEstateArea && <span>{post.realEstateArea}</span>}
-                                {post.realEstateArea && post.realEstatePrice && <span className="text-white/30">|</span>}
+                                {post.realEstateArea && post.realEstatePrice && <span style={{ opacity: 0.3 }}>|</span>}
                                 {post.realEstatePrice && <span>{post.realEstatePrice}</span>}
                             </div>
                         ) : (
-                            <div className="w-[22cqw] h-[1.5px] bg-gradient-to-r from-transparent via-white/20 to-transparent my-2 mx-auto" />
+                            <div className="w-[22cqw] h-[1.5px] bg-gradient-to-r from-transparent via-current opacity-20 my-2 mx-auto" style={{ color: cardPreset.text }} />
                         )}
 
                         {/* Footer part with QR or Brand Title */}
