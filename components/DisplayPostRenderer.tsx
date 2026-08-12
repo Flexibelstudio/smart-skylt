@@ -962,12 +962,23 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
     const isStamp = tag.displayType === 'stamp';
     const shape = tag.shape || 'circle';
 
+    const visual = getStampVisual(tag);
+
+    const lines = String(tag.text || '').split('\n');
+    const longest = Math.max(1, ...lines.map(l => l.trim().length));
+    const fontCqw = parseFloat(String(visual.styles.fontSize)) || 2.9;
+    const isStampShape = tag.displayType === 'stamp' && (tag.shape === 'circle' || tag.shape === 'square');
+    // Runda/fyrkantiga stämplar har redan en beräknad bredd i visual.styles.width
+    const approxWidthCqw = isStampShape
+        ? parseFloat(String(visual.styles.width)) || 16
+        : longest * fontCqw * 0.62 + 9; // 9cqw ≈ vänster+höger padding
+    const minCenterX = approxWidthCqw / 2 + 2; // 2cqw marginal till kanten
+
     // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
     const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
-    const defaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
+    const rawDefaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
+    const defaultX = Math.min(Math.max(rawDefaultX, minCenterX), 100 - minCenterX);
     const defaultY = isPortrait ? 5.2 : 8;
-
-    const visual = getStampVisual(tag);
 
     const style: React.CSSProperties = {
         position: 'absolute',
@@ -1468,7 +1479,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             }}
                         >
                             <h3 
-                                className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
+                                className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily)}`} 
                                 style={{ 
                                     fontSize: isPortrait ? '8.5cqw' : '5.5cqw',
                                     color: post.headlineTextColor || '#ffffff',
@@ -1479,7 +1490,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                             </h3>
                             {displayBody && (
                                 <p 
-                                    className={`text-slate-200 leading-relaxed font-semibold line-clamp-4 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
+                                    className={`text-slate-200 leading-relaxed font-semibold line-clamp-4 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily)}`} 
                                     style={{ 
                                         fontSize: isPortrait ? '4.2cqw' : '3.0cqw',
                                         color: post.bodyTextColor || '#cbd5e1',
@@ -1511,7 +1522,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         <div className="flex-grow p-[5cqw] flex flex-col justify-center items-center text-center bg-slate-900 border-l border-t border-slate-850">
                             <div className="space-y-[2cqw] max-w-full">
                                 <h3 
-                                    className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
+                                    className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily)}`} 
                                     style={{ 
                                         fontSize: isPortrait ? '5.5cqw' : '3.6cqw',
                                         color: post.headlineTextColor || '#ffffff'
@@ -1521,7 +1532,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                 </h3>
                                 {displayBody && (
                                     <p 
-                                        className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
+                                        className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily)}`} 
                                         style={{ 
                                             fontSize: isPortrait ? '3.8cqw' : '2.5cqw',
                                             color: post.bodyTextColor || '#cbd5e1'
@@ -1552,7 +1563,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                         <div className="flex-grow p-[5cqw] flex flex-col justify-center items-center text-center bg-slate-900 border-r border-b border-slate-850">
                             <div className="space-y-[2cqw] max-w-full">
                                 <h3 
-                                    className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily || 'display')}`} 
+                                    className={`text-white font-extrabold tracking-tight leading-tight uppercase line-clamp-3 ${getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily)}`} 
                                     style={{ 
                                         fontSize: isPortrait ? '5.5cqw' : '3.6cqw',
                                         color: post.headlineTextColor || '#ffffff'
@@ -1562,7 +1573,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                                 </h3>
                                 {displayBody && (
                                     <p 
-                                        className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily || 'sans')}`} 
+                                        className={`text-slate-300 leading-relaxed font-semibold line-clamp-5 ${getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily)}`} 
                                         style={{ 
                                             fontSize: isPortrait ? '3.8cqw' : '2.5cqw',
                                             color: post.bodyTextColor || '#cbd5e1'
@@ -1816,78 +1827,87 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             {post.imageOverlayEnabled && <div className="absolute inset-0 z-10" style={{ backgroundColor: resolveColor(post.imageOverlayColor, 'rgba(0,0,0,0.45)', organization) }} />}
             
             {/* Real Estate / Centered Skyltfönster Overlay Card */}
-            {post.layout === 'real-estate' && (
-                <div 
-                    className="absolute z-10 flex flex-col justify-between border border-white/20 bg-slate-950/85 backdrop-blur-xl rounded-[4cqw] text-white p-[5cqw] text-center"
-                    style={{
-                        top: '50%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        width: isPortrait ? '70%' : '46%',
-                        minHeight: isPortrait ? '48%' : '56%',
-                        maxHeight: isPortrait ? '82%' : '88%',
-                        boxShadow: '0 4cqw 18cqw rgba(0, 0, 0, 0.9)',
-                    }}
-                >
-                    {/* Elegant corners for a premium feel (the layout dividers high-tech details) */}
-                    <div className="absolute top-[2cqw] left-[2cqw] w-[2.5cqw] h-[2.5cqw] border-t-2 border-l-2 border-teal-400 opacity-90 rounded-tl-[1cqw]"></div>
-                    <div className="absolute top-[2cqw] right-[2cqw] w-[2.5cqw] h-[2.5cqw] border-t-2 border-r-2 border-teal-400 opacity-90 rounded-tr-[1cqw]"></div>
-                    <div className="absolute bottom-[2cqw] left-[2cqw] w-[2.5cqw] h-[2.5cqw] border-b-2 border-l-2 border-teal-400 opacity-90 rounded-bl-[1cqw]"></div>
-                    <div className="absolute bottom-[2cqw] right-[2cqw] w-[2.5cqw] h-[2.5cqw] border-b-2 border-r-2 border-teal-400 opacity-90 rounded-br-[1cqw]"></div>
+            {post.layout === 'real-estate' && (() => {
+                const accentColor = resolveColor('primary', '#2dd4bf', organization);
+                const rawCardBg = resolveColor(post.cardBackgroundColor, 'rgba(2, 6, 23, 0.85)', organization);
+                const cardBg = hexToRgba(rawCardBg, 0.85);
+                const headlineFontClass = getFontFamilyClass(post.headlineFontFamily || organization?.headlineFontFamily);
+                const bodyFontClass = getFontFamilyClass(post.bodyFontFamily || organization?.bodyFontFamily);
 
-                    {/* Header line & Category */}
-                    <div className="flex flex-col items-center justify-center pt-[1cqw]">
-                        <span className="text-[2.8cqw] font-sans font-bold tracking-[0.25em] text-teal-400 uppercase drop-shadow-sm">
-                            {firstTag ? firstTag.text : (organization?.name || 'ANNONS')}
-                        </span>
-                        {/* Title */}
-                        <h2 className="text-[5.5cqw] font-extrabold font-sans uppercase tracking-[0.06em] leading-tight text-white mt-2 drop-shadow-md">
-                            {displayHeadline}
-                        </h2>
-                    </div>
+                return (
+                    <div 
+                        className="absolute z-10 flex flex-col justify-between border border-white/20 backdrop-blur-xl rounded-[4cqw] text-white p-[5cqw] text-center"
+                        style={{
+                            backgroundColor: cardBg,
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: isPortrait ? '70%' : '46%',
+                            minHeight: isPortrait ? '48%' : '56%',
+                            maxHeight: isPortrait ? '82%' : '88%',
+                            boxShadow: '0 4cqw 18cqw rgba(0, 0, 0, 0.9)',
+                        }}
+                    >
+                        {/* Elegant corners for a premium feel (the layout dividers high-tech details) */}
+                        <div className="absolute top-[2cqw] left-[2cqw] w-[2.5cqw] h-[2.5cqw] border-t-2 border-l-2 opacity-90 rounded-tl-[1cqw]" style={{ borderColor: accentColor }}></div>
+                        <div className="absolute top-[2cqw] right-[2cqw] w-[2.5cqw] h-[2.5cqw] border-t-2 border-r-2 opacity-90 rounded-tr-[1cqw]" style={{ borderColor: accentColor }}></div>
+                        <div className="absolute bottom-[2cqw] left-[2cqw] w-[2.5cqw] h-[2.5cqw] border-b-2 border-l-2 opacity-90 rounded-bl-[1cqw]" style={{ borderColor: accentColor }}></div>
+                        <div className="absolute bottom-[2cqw] right-[2cqw] w-[2.5cqw] h-[2.5cqw] border-b-2 border-r-2 opacity-90 rounded-br-[1cqw]" style={{ borderColor: accentColor }}></div>
 
-                    {/* Divider line 1 */}
-                    <div className="w-[20cqw] h-[2px] bg-gradient-to-r from-transparent via-white/40 to-transparent my-2 mx-auto" />
-
-                    {/* Body description */}
-                    <div className="flex-1 flex items-center justify-center py-[2cqw] overflow-hidden">
-                        <p className="text-[3.6cqw] leading-relaxed text-slate-50 max-w-xl mx-auto whitespace-pre-wrap font-sans font-medium drop-shadow-sm select-text line-clamp-6">
-                            {displayBody}
-                        </p>
-                    </div>
-
-                    {/* Divider line 2 / Specs if present */}
-                    {(post.realEstateRooms || post.realEstateArea || post.realEstatePrice) ? (
-                        <div className="w-full flex-shrink-0 flex justify-center items-center gap-[2.5cqw] py-[1.8cqw] my-2 border-t border-b border-white/15 text-[2.4cqw] font-mono tracking-wider text-teal-300 font-bold uppercase">
-                            {post.realEstateRooms && <span>{post.realEstateRooms}</span>}
-                            {post.realEstateRooms && (post.realEstateArea || post.realEstatePrice) && <span className="text-white/30">|</span>}
-                            {post.realEstateArea && <span>{post.realEstateArea}</span>}
-                            {post.realEstateArea && post.realEstatePrice && <span className="text-white/30">|</span>}
-                            {post.realEstatePrice && <span>{post.realEstatePrice}</span>}
+                        {/* Header line & Category */}
+                        <div className="flex flex-col items-center justify-center pt-[1cqw]">
+                            <span className={`text-[2.8cqw] font-bold tracking-[0.25em] uppercase drop-shadow-sm ${headlineFontClass}`} style={{ color: accentColor }}>
+                                {firstTag ? firstTag.text : (organization?.name || 'ANNONS')}
+                            </span>
+                            {/* Title */}
+                            <h2 className={`text-[5.5cqw] font-extrabold uppercase tracking-[0.06em] leading-tight text-white mt-2 drop-shadow-md ${headlineFontClass}`}>
+                                {displayHeadline}
+                            </h2>
                         </div>
-                    ) : (
-                        <div className="w-[22cqw] h-[1.5px] bg-gradient-to-r from-transparent via-white/20 to-transparent my-2 mx-auto" />
-                    )}
 
-                    {/* Footer part with QR or Brand Title */}
-                    <div className="flex flex-col items-center gap-1.5 mt-1 pb-[1cqw]">
-                        {post.qrCodeUrl ? (
-                            <div className="flex flex-col items-center gap-1.5">
-                                <div className="p-2 bg-white rounded-[2cqw] shadow-2xl inline-block w-[18cqw] h-[18cqw] md:w-[12cqw] md:h-[12cqw] min-w-[65px] min-h-[65px] max-w-[130px] max-h-[130px] transition-transform duration-300 hover:scale-105">
-                                    <QrCodeComponent url={post.qrCodeUrl} className="w-full h-full" />
-                                </div>
-                                <span className="text-[1.8cqw] text-teal-400 font-mono tracking-wider max-w-[28cqw] truncate font-semibold mt-1">
-                                    {(post.qrCodeDisplayUrl || post.qrCodeUrl).replace('https://', '').replace('http://', '').replace('www.', '')}
-                                </span>
+                        {/* Divider line 1 */}
+                        <div className="w-[20cqw] h-[2px] bg-gradient-to-r from-transparent via-white/40 to-transparent my-2 mx-auto" />
+
+                        {/* Body description */}
+                        <div className="flex-1 flex items-center justify-center py-[2cqw] overflow-hidden">
+                            <p className={`text-[3.6cqw] leading-relaxed text-slate-50 max-w-xl mx-auto whitespace-pre-wrap font-medium drop-shadow-sm select-text line-clamp-6 ${bodyFontClass}`}>
+                                {displayBody}
+                            </p>
+                        </div>
+
+                        {/* Divider line 2 / Specs if present */}
+                        {(post.realEstateRooms || post.realEstateArea || post.realEstatePrice) ? (
+                            <div className="w-full flex-shrink-0 flex justify-center items-center gap-[2.5cqw] py-[1.8cqw] my-2 border-t border-b border-white/15 text-[2.4cqw] font-mono tracking-wider font-bold uppercase" style={{ color: accentColor }}>
+                                {post.realEstateRooms && <span>{post.realEstateRooms}</span>}
+                                {post.realEstateRooms && (post.realEstateArea || post.realEstatePrice) && <span className="text-white/30">|</span>}
+                                {post.realEstateArea && <span>{post.realEstateArea}</span>}
+                                {post.realEstateArea && post.realEstatePrice && <span className="text-white/30">|</span>}
+                                {post.realEstatePrice && <span>{post.realEstatePrice}</span>}
                             </div>
                         ) : (
-                            <span className="text-[2.6cqw] font-serif tracking-[0.18em] text-teal-300 uppercase font-black">
-                                {organization?.name || 'SkandiaMäklarna'}
-                            </span>
+                            <div className="w-[22cqw] h-[1.5px] bg-gradient-to-r from-transparent via-white/20 to-transparent my-2 mx-auto" />
                         )}
+
+                        {/* Footer part with QR or Brand Title */}
+                        <div className="flex flex-col items-center gap-1.5 mt-1 pb-[1cqw]">
+                            {post.qrCodeUrl ? (
+                                <div className="flex flex-col items-center gap-1.5">
+                                    <div className="p-2 bg-white rounded-[2cqw] shadow-2xl inline-block w-[18cqw] h-[18cqw] md:w-[12cqw] md:h-[12cqw] min-w-[65px] min-h-[65px] max-w-[130px] max-h-[130px] transition-transform duration-300 hover:scale-105">
+                                        <QrCodeComponent url={post.qrCodeUrl} className="w-full h-full" />
+                                    </div>
+                                    <span className="text-[1.8cqw] font-mono tracking-wider max-w-[28cqw] truncate font-semibold mt-1" style={{ color: accentColor }}>
+                                        {(post.qrCodeDisplayUrl || post.qrCodeUrl).replace('https://', '').replace('http://', '').replace('www.', '')}
+                                    </span>
+                                </div>
+                            ) : (
+                                <span className="text-[2.6cqw] font-serif tracking-[0.18em] uppercase font-black" style={{ color: accentColor }}>
+                                    {organization?.name || 'SkandiaMäklarna'}
+                                </span>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Rubrik-låda */}
             {post.headline && post.layout !== 'ai-ad' && post.layout !== 'real-estate' && (

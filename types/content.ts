@@ -182,6 +182,7 @@ export interface DisplayPost {
   imageOverlayEnabled?: boolean;
   bottomOverlayEnabled?: boolean;
   imageOverlayColor?: string; 
+  cardBackgroundColor?: string;
   backgroundEffect?: 'none' | 'confetti' | 'hearts';
   shareToInspiration?: boolean; 
   textAnimation?: 'none' | 'typewriter' | 'fade-up-word' | 'blur-in';

@@ -1339,13 +1339,24 @@ export const Step3_Atmosphere: React.FC<{
             />
 
             {/* Background Color Picker for Split/Fullscreen Layouts */}
-            <div className="p-4 rounded-lg bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+            <div className="p-4 rounded-lg bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 space-y-4">
                 <ColorPaletteInput 
                     label={isSplitLayout ? "Bakgrundsfärg (Textsida)" : "Bakgrundsfärg (om bild saknas/laddar)"}
                     value={post.backgroundColor || 'black'} 
                     onChange={(color) => onPostChange({ ...post, backgroundColor: color })} 
                     organization={organization} 
                 />
+
+                {post.layout === 'real-estate' && (
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
+                        <ColorPaletteInput
+                            label="Kortets bakgrundsfärg"
+                            value={post.cardBackgroundColor || 'rgba(2, 6, 23, 0.85)'}
+                            onChange={(color) => onPostChange({ ...post, cardBackgroundColor: color })}
+                            organization={organization}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );
