@@ -343,13 +343,22 @@ export const updateOrganization = async (orgId: string, data: Partial<Organizati
         return offlineWarning('updateOrganization');
     }
     if (!db) return;
+
+    // JSON-rundturen i sanitizeForFirestore släpper alla fält med värdet undefined.
+    // För att faktiskt radera ett fält i Firestore måste det uttryckas som FieldValue.delete().
+    const deletions = Object.keys(data).filter(k => (data as any)[k] === undefined);
+
     const dbData: any = { ...data };
     if (dbData.postTemplates) {
         dbData.postTemplates = await processTemplatesForUploads(orgId, dbData.postTemplates);
         dbData._serialized_postTemplates = serializeTemplatesArray(dbData.postTemplates);
         delete dbData.postTemplates;
     }
-    await db.collection('organizations').doc(orgId).update(sanitizeForFirestore(dbData));
+
+    const payload: any = sanitizeForFirestore(dbData);
+    deletions.forEach(k => { payload[k] = firebase.firestore.FieldValue.delete(); });
+
+    await db.collection('organizations').doc(orgId).update(payload);
 };
 
 export const deleteOrganization = async (organizationId: string) => {
@@ -540,6 +549,14 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
         return offlineWarning('updateDisplayScreen');
     }
     if (!db) return;
+
+    // JSON-rundturen i sanitizeForFirestore släpper alla fält med värdet undefined.
+    // För att faktiskt radera ett fält i Firestore måste det uttryckas som FieldValue.delete().
+    // posts och _serialized_posts hanteras av sin egen logik och får aldrig raderas den här vägen.
+    // postsUnreadable och postsUpdatedAtMillis är klientsidiga fält som plockas bort.
+    const excludedDeletions = ['posts', '_serialized_posts', 'postsUnreadable', 'postsUpdatedAtMillis'];
+    const deletions = Object.keys(data).filter(k => (data as any)[k] === undefined && !excludedDeletions.includes(k));
+
     const dbData: any = { ...data };
     delete dbData.postsUnreadable;
     delete dbData.postsUpdatedAtMillis;
@@ -575,12 +592,15 @@ export const updateDisplayScreen = async (orgId: string, screenId: string, data:
                 console.warn(`[updateDisplayScreen] Inget tidigare timestamp fanns i cachen för skärm ${screenId}. Tillåter skrivning.`);
             }
 
-            const payload = sanitizeForFirestore(dbData);
+            const payload: any = sanitizeForFirestore(dbData);
+            deletions.forEach(k => { payload[k] = firebase.firestore.FieldValue.delete(); });
             payload.postsUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
             tx.update(docRef, payload);
         });
     } else {
-        await docRef.update(sanitizeForFirestore(dbData));
+        const payload: any = sanitizeForFirestore(dbData);
+        deletions.forEach(k => { payload[k] = firebase.firestore.FieldValue.delete(); });
+        await docRef.update(payload);
     }
 };
 
