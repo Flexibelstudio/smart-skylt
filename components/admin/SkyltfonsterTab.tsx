@@ -104,21 +104,36 @@ const ScreenStats: React.FC<{ screen: DisplayScreen }> = ({ screen }) => {
                 </span>
             )}
             <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
-                <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400" title={`${activePosCount} inlägg visas på skärmen just nu.`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {activePosCount} aktiv{activePosCount === 1 ? 't' : 'a'}
-                </span>
-                {scheduledCount > 0 && (
-                    <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400" title={`${scheduledCount} inlägg är schemalagda för framtiden.`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                        {scheduledCount} schemalagda
-                    </span>
-                )}
-                {draftCount > 0 && (
-                    <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400" title={`${draftCount} utkast eller avslutade inlägg.`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                        {draftCount} utkast
-                    </span>
+                {screen.postsUnreadable ? (
+                    <>
+                        <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400" title="Inläggen kunde inte läsas in.">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            – aktiva
+                        </span>
+                        <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400" title="Inläggen kunde inte läsas in.">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            – utkast
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400" title={`${activePosCount} inlägg visas på skärmen just nu.`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            {activePosCount} aktiv{activePosCount === 1 ? 't' : 'a'}
+                        </span>
+                        {scheduledCount > 0 && (
+                            <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400" title={`${scheduledCount} inlägg är schemalagda för framtiden.`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                {scheduledCount} schemalagda
+                            </span>
+                        )}
+                        {draftCount > 0 && (
+                            <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400" title={`${draftCount} utkast eller avslutade inlägg.`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                {draftCount} utkast
+                            </span>
+                        )}
+                    </>
                 )}
             </div>
         </div>
@@ -975,6 +990,14 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                                                <div className="flex items-center gap-2">
                                                    <FormatGlyph aspectRatio={screen.aspectRatio} />
                                                    <p className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">{screen.name}</p>
+                                                   {screen.postsUnreadable && (
+                                                       <span 
+                                                           className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40"
+                                                           title="Inläggen kunde inte läsas in. Öppna kanalen och ladda om sidan."
+                                                       >
+                                                           ⚠️ Kunde inte läsas
+                                                       </span>
+                                                   )}
                                                </div>
                                                
                                                {screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4' ? (
@@ -1010,7 +1033,8 @@ export const SkyltfonsterTab: React.FC<SkyltfonsterTabProps> = (props) => {
                                            <div className="flex items-center gap-1.5">
                                                <PrimaryButton 
                                                    onClick={() => onEditDisplayScreen(screen)} 
-                                                   disabled={isSaving} 
+                                                   disabled={isSaving || screen.postsUnreadable} 
+                                                   title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
                                                    className="bg-teal-600 hover:bg-teal-500 shadow-sm active:scale-95 transition-all text-sm font-semibold !px-4"
                                                >
                                                    Hantera inlägg
