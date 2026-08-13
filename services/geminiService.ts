@@ -255,7 +255,7 @@ function createMockGoogleGenAI() {
           }));
         }
 
-        if (p.includes("brand identity of this website") || p.includes("primarycolor")) {
+        if (p.includes("brand identity of this website") || p.includes("primarycolor") || p.includes("brand analysis")) {
           return textResponse(JSON.stringify({
             primaryColor: "#1e3a8a",
             secondaryColor: "#10b981",
@@ -1144,48 +1144,26 @@ export const analyzeWebsiteContent = (url: string): Promise<{
     logoUrl?: string;
 }> =>
   handleAIError(async () => {
-    // 1. Försök med Cloud Function (rekommenderat för att dölja komplexitet och hantera CORS/timeouts bättre på servern)
+    // 1. Körs via Cloud Function i produktion
     if (functions) {
-        try {
-            // Sätt en längre timeout (5 min) för just detta anrop, eftersom analys kan ta tid.
-            const fn = functions.httpsCallable('gemini', { timeout: 300000 }); 
-            
-            const result = await fn({ 
-                action: 'analyzeBrandFromWebsite', 
-                params: { 
-                    url
-                } 
-            });
-            
-            return safeParseJSON(
-                (result.data as any).text ?? "{}", 
-                Schemas.WebsiteBrandAnalysisSchema
-            ) as any;
-        } catch (error: any) {
-            console.warn("Cloud function failed for website analysis, falling back to client-side generation:", error);
-            // Om Cloud Function misslyckas (t.ex. inte deployad än, eller timeout), 
-            // fortsätt nedåt för att köra klient-fallback.
-        }
+        // Sätt en längre timeout (5 min) för just detta anrop, eftersom analys kan ta tid.
+        const fn = functions.httpsCallable('gemini', { timeout: 300000 }); 
+        
+        const result = await fn({ 
+            action: 'analyzeBrandFromWebsite', 
+            params: { 
+                url
+            } 
+        });
+        
+        return safeParseJSON(
+            (result.data as any).text ?? "{}", 
+            Schemas.WebsiteBrandAnalysisSchema
+        ) as any;
     }
 
-    // 2. Klient-side Fallback (Körs om Cloud Function inte finns eller misslyckades)
-    const prompt = `
-        Analyze the brand identity of this website: ${url}.
-        Extract the following information:
-        1. Primary brand color (Hex code). If multiple, choose the most dominant.
-        2. Secondary brand color (Hex code).
-        3. Font style for headlines (categorize as 'sans', 'serif', 'display', or 'script').
-        4. Font style for body text (categorize as 'sans' or 'serif').
-        5. A concise business description (max 2 sentences) in Swedish.
-        6. 3-5 short phrases or keywords from the site that capture the tone of voice (in Swedish).
-        7. A list of 1-3 business type keywords (e.g. Café, Butik, Frisör, Konsult) in Swedish.
-        8. The URL of the main logo image found on the website. Prefer a direct image link (png/jpg/svg).
-
-        Use Google Search to visit the site and analyze its visual style and content.
-        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
-        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
-    `;
-
+    // 2. I utvecklings-/offlineläge utan Cloud Function används mock-klienten
+    const prompt = `Brand analysis (dev/offline mock): ${url}`;
     const response = await getClientAi().models.generateContent({
         model: AI_MODELS.TEXT,
         contents: prompt,
