@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { DisplayPost, Organization, SkyltIdeSuggestion, AdditionalTextElement } from '../../../types';
 import { StyledInput, FontSelector, StyledSelect } from '../../Forms';
-import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon, LinkIcon } from '../../icons';
+import { SparklesIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, LoadingSpinnerIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ToggleSwitch, LayoutWebpageIcon, TrashIcon, PencilIcon, LinkIcon, ChevronDownIcon } from '../../icons';
 import { useToast } from '../../../context/ToastContext';
 import { 
     refineDisplayPostContent,
@@ -14,8 +14,8 @@ import {
     generateDisplayPostImage
 } from '../../../services/geminiService';
 import AIIdeaGenerator from '../../AIGeneratorScreen';
-import { DnaStatusBadge } from '../../DnaStatusBadge';
 import { EmojiPicker } from '../../EmojiPicker';
+import { ColorPaletteInput } from '../../SharedComponents';
 
 // --- Shared Color Utilities ---
 const resolveColor = (colorKey: string | undefined, fallback: string, organization?: Organization): string => {
@@ -32,7 +32,7 @@ const resolveColor = (colorKey: string | undefined, fallback: string, organizati
     }
 };
 
-const ColorPaletteInput: React.FC<{
+const CompactColorPaletteInput: React.FC<{
     value: string;
     onChange: (color: string) => void;
     organization: Organization;
@@ -354,7 +354,7 @@ const TextBlock: React.FC<{
 
                             <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] uppercase font-bold text-slate-400">Färg:</span>
-                                <ColorPaletteInput value={color} onChange={onColorChange} organization={organization} />
+                                <CompactColorPaletteInput value={color} onChange={onColorChange} organization={organization} />
                             </div>
                         </div>
 
@@ -541,6 +541,9 @@ export const Step2_Content: React.FC<{
         type: 'success' | 'warning_image_blocked' | 'error';
         message: string;
     } | null>(null);
+
+    const [isLinkImportOpen, setIsLinkImportOpen] = useState<boolean>(() => Boolean(post.realEstateUrl && post.realEstateUrl.trim() !== ''));
+    const [isAiIdeasOpen, setIsAiIdeasOpen] = useState<boolean>(false);
 
     const [activeSuggestions, setActiveSuggestions] = useState<'headline' | 'body' | null>(null);
     const [headlineSuggestions, setHeadlineSuggestions] = useState<string[]>([]);
@@ -1002,83 +1005,106 @@ export const Step2_Content: React.FC<{
                     </div>
                 </div>
 
+                <div className="p-4 rounded-lg bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                    <ColorPaletteInput
+                        label="Skärmens bakgrundsfärg"
+                        value={post.backgroundColor || 'black'}
+                        onChange={(color) => onPostChange({ ...post, backgroundColor: color })}
+                        organization={organization}
+                    />
+                </div>
+
             </div>
         )
     }
 
     return (
         <div className="space-y-6">
-            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800/30">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-emerald-100 dark:bg-emerald-800 rounded-lg text-emerald-600 dark:text-emerald-300">
-                        <LinkIcon className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-lg text-emerald-900 dark:text-emerald-200">Smart länkimport</h3>
-                        <p className="text-sm text-emerald-800 dark:text-emerald-300">
+            {/* 1. Smart länkimport */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setIsLinkImportOpen(!isLinkImportOpen)}
+                    className="w-full min-h-[44px] flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer select-none"
+                >
+                    <LinkIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-100 flex-grow">Smart länkimport</span>
+                    <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 flex-shrink-0 ${isLinkImportOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {isLinkImportOpen && (
+                    <div className="px-3 pb-3">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
                             Klistra in valfri länk (t.ex. en nyhetsartikel, produkt eller bostadsannons) så hämtar AI:n text och bild automatiskt.
                         </p>
-                    </div>
-                </div>
-                
-                <div className="space-y-4">
-                    <div className="flex gap-2">
-                        <div className="flex-grow">
-                            <StyledInput
-                                type="url"
-                                value={post.realEstateUrl || ''}
-                                onChange={(e) => handleFieldChange('realEstateUrl', e.target.value)}
-                                placeholder="https://..."
-                            />
-                        </div>
-                        <button
-                            onClick={handleFetchContentFromUrl}
-                            disabled={aiLoading === 'fetch-real-estate' || !post.realEstateUrl}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
-                        >
-                            {aiLoading === 'fetch-real-estate' ? (
-                                <><LoadingSpinnerIcon className="w-5 h-5" /> Hämtar...</>
-                            ) : (
-                                <><SparklesIcon className="w-5 h-5" /> Hämta info</>
-                            )}
-                        </button>
-                    </div>
-
-                    {importStatus && (
-                        <div className={`p-4 rounded-xl border text-xs flex items-start gap-3 transition-all ${
-                            importStatus.type === 'warning_image_blocked' 
-                                ? 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400' 
-                                : importStatus.type === 'success'
-                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400'
-                                : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-400'
-                        }`}>
-                            <span className="text-base flex-shrink-0">
-                                {importStatus.type === 'warning_image_blocked' ? '⚠️' : importStatus.type === 'success' ? '✅' : '❌'}
-                            </span>
-                            <div className="space-y-1">
-                                <p className="font-bold">
-                                    {importStatus.type === 'warning_image_blocked' ? 'Text hämtad, men bild blockerades' : importStatus.type === 'success' ? 'Länkimport klar!' : 'Importfel'}
-                                </p>
-                                <p className="leading-relaxed opacity-95">{importStatus.message}</p>
+                        
+                        <div className="space-y-4">
+                            <div className="flex gap-2">
+                                <div className="flex-grow">
+                                    <StyledInput
+                                        type="url"
+                                        value={post.realEstateUrl || ''}
+                                        onChange={(e) => handleFieldChange('realEstateUrl', e.target.value)}
+                                        placeholder="https://..."
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleFetchContentFromUrl}
+                                    disabled={aiLoading === 'fetch-real-estate' || !post.realEstateUrl}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    {aiLoading === 'fetch-real-estate' ? (
+                                        <><LoadingSpinnerIcon className="w-5 h-5" /> Hämtar...</>
+                                    ) : (
+                                        <><SparklesIcon className="w-5 h-5" /> Hämta info</>
+                                    )}
+                                </button>
                             </div>
+
+                            {importStatus && (
+                                <div className={`p-4 rounded-xl border text-xs flex items-start gap-3 transition-all ${
+                                    importStatus.type === 'warning_image_blocked' 
+                                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400' 
+                                        : importStatus.type === 'success'
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                                        : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-400'
+                                }`}>
+                                    <span className="text-base flex-shrink-0">
+                                        {importStatus.type === 'warning_image_blocked' ? '⚠️' : importStatus.type === 'success' ? '✅' : '❌'}
+                                    </span>
+                                    <div className="space-y-1">
+                                        <p className="font-bold">
+                                            {importStatus.type === 'warning_image_blocked' ? 'Text hämtad, men bild blockerades' : importStatus.type === 'success' ? 'Länkimport klar!' : 'Importfel'}
+                                        </p>
+                                        <p className="leading-relaxed opacity-95">{importStatus.message}</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/30">
-                <div className="flex flex-wrap items-center justify-between pb-3 gap-2">
-                    <div className="flex items-center gap-2 text-lg font-bold text-purple-900 dark:text-purple-200">
-                        <SparklesIcon className="h-5 w-5 text-purple-500" />
-                        Idétorka? Låt AI hjälpa dig igång
+            {/* 2. Idéhjälp från AI */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setIsAiIdeasOpen(!isAiIdeasOpen)}
+                    className="w-full min-h-[44px] flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer select-none"
+                >
+                    <SparklesIcon className="h-5 w-5 text-purple-500 flex-shrink-0" />
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-100 flex-grow">Idéhjälp från AI</span>
+                    <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 flex-shrink-0 ${isAiIdeasOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isAiIdeasOpen && (
+                    <div className="px-3 pb-3">
+                        <AIIdeaGenerator
+                            onIdeaSelect={handleIdeaSelect}
+                            isLoading={!!aiLoading}
+                            organization={organization}
+                        />
                     </div>
-                    <DnaStatusBadge organization={organization} />
-                </div>
-                <AIIdeaGenerator
-                    onIdeaSelect={handleIdeaSelect}
-                    isLoading={!!aiLoading}
-                    organization={organization}
-                />
+                )}
             </div>
 
             <div className="space-y-4">
@@ -1238,6 +1264,17 @@ export const Step2_Content: React.FC<{
                     <p className="text-sm text-slate-500 italic">Inga extra textrutor tillagda.</p>
                 )}
             </div>
+
+            {post.layout === 'text-only' && (
+                <div className="p-4 rounded-lg bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                    <ColorPaletteInput
+                        label="Skärmens bakgrundsfärg"
+                        value={post.backgroundColor || 'black'}
+                        onChange={(color) => onPostChange({ ...post, backgroundColor: color })}
+                        organization={organization}
+                    />
+                </div>
+            )}
 
             {activeSuggestions === 'headline' && (
                 <SuggestionPopover

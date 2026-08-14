@@ -71,16 +71,6 @@ const LayoutSelector: React.FC<{
                 <p className="text-sm text-slate-500 dark:text-slate-400">Detta bestämmer hur mycket utrymme du vill ge till text kontra bild eller externa källor.</p>
             </div>
 
-            {/* AI Magic Group */}
-            <div className="bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-transparent p-4 rounded-2xl border border-purple-200/50 dark:border-purple-800/30">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400 block mb-2">Automatisera med AI (Snabbast)</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {aiLayouts.map(l => (
-                        <LayoutButton key={l.id} label={l.label} icon={l.icon} isActive={currentLayout === l.id} onClick={() => onChange(l.id)} badge={l.badge} />
-                    ))}
-                </div>
-            </div>
-
             {/* Media/Visuals Group */}
             <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-2">Bilder & Video</span>
@@ -96,6 +86,16 @@ const LayoutSelector: React.FC<{
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-2">Text & Kopplingar</span>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-3">
                     {standardLayouts.map(l => (
+                        <LayoutButton key={l.id} label={l.label} icon={l.icon} isActive={currentLayout === l.id} onClick={() => onChange(l.id)} badge={l.badge} />
+                    ))}
+                </div>
+            </div>
+
+            {/* AI Group */}
+            <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-2">Skapa med AI</span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-3">
+                    {aiLayouts.map(l => (
                         <LayoutButton key={l.id} label={l.label} icon={l.icon} isActive={currentLayout === l.id} onClick={() => onChange(l.id)} badge={l.badge} />
                     ))}
                 </div>

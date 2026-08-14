@@ -232,8 +232,19 @@
         animation: ken-burns 10s ease-in-out infinite alternate;
       }
 
-      /* Make date picker icon white on dark inputs */
+      /* Kalenderikonen i datumfält: mörk och tydlig i ljust läge, vit i mörkt läge */
       .dark-date-input::-webkit-calendar-picker-indicator {
+        filter: brightness(0);
+        opacity: 1;
+        cursor: pointer;
+        transform: scale(1.25);
+        transform-origin: center right;
+        margin-right: 2px;
+      }
+      .dark-date-input::-webkit-calendar-picker-indicator:hover {
+        opacity: 0.7;
+      }
+      .dark .dark-date-input::-webkit-calendar-picker-indicator {
         filter: invert(1);
       }
       

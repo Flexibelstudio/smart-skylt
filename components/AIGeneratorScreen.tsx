@@ -136,11 +136,8 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
   };
 
   return (
-    <div className="bg-slate-100 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <p className="text-sm text-slate-600 dark:text-slate-400">
-          Har du idétorka? Skriv ett nyckelord så hjälper AI:n dig med förslag.
-        </p>
+    <div className="space-y-3">
+      <div className="flex justify-end">
         <DnaStatusBadge organization={organization} />
       </div>
       <div className="flex flex-col sm:flex-row gap-2">
@@ -172,7 +169,7 @@ const AIIdeaGenerator: React.FC<AIIdeaGeneratorProps> = ({ onIdeaSelect, isLoadi
             onClick={generateIdeas}
             loading={isGenerating}
             disabled={isLoading || cooldown > 0}
-            className="bg-purple-600 hover:bg-purple-500 flex-grow shadow-lg shadow-purple-500/20"
+            className="bg-purple-600 hover:bg-purple-500 flex-grow"
         >
             {isGenerating ? "Skapar..." : (
               <span className="flex items-center gap-2">

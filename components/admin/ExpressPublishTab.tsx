@@ -120,6 +120,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [isSoldUpdating, setIsSoldUpdating] = useState<string | null>(null);
     const [showActiveList, setShowActiveList] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const cameraInputRef = useRef<HTMLInputElement>(null);
 
     // Emoji picker states and refs
     const [showHeadlineEmoji, setShowHeadlineEmoji] = useState(false);
@@ -328,6 +329,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const clearImage = () => {
         setGalleryImages([]);
         if (fileInputRef.current) fileInputRef.current.value = '';
+        if (cameraInputRef.current) cameraInputRef.current.value = '';
     };
 
     // Trigger Publish directly
@@ -712,11 +714,59 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     multiple={layout === 'real-estate'}
                                     className="hidden"
                                 />
+                                <input
+                                    type="file"
+                                    ref={cameraInputRef}
+                                    onChange={handleFileChange}
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                />
+
+                                {/* Mobilknappar: Ta foto och Välj bild sida vid sida (döljs på lg och uppåt) */}
+                                <div className="grid grid-cols-2 gap-3 mb-3 lg:hidden">
+                                    <button
+                                        type="button"
+                                        onClick={() => cameraInputRef.current?.click()}
+                                        className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        <span>📷</span>
+                                        <span>Ta foto</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        <span>🖼️</span>
+                                        <span>Välj bild</span>
+                                    </button>
+                                </div>
+
+                                {/* Vald bild-indikator på mobil för enskild bild (ej skyltfönster) */}
+                                {galleryImages.length > 0 && layout !== 'real-estate' && (
+                                    <div className="lg:hidden flex items-center gap-3 p-2.5 mb-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <img src={galleryImages[0]} alt="Vald bild" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                                        <div className="flex-grow min-w-0">
+                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">Bild vald</p>
+                                            <p className="text-[10px] text-slate-400">Används i detta inlägg</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={clearImage}
+                                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                                            title="Ta bort bild"
+                                        >
+                                            <TrashIcon className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                )}
                                 
+                                {/* Desktop dropzone (visas på lg och uppåt när ingen bild eller ej skyltfönster) */}
                                 {galleryImages.length === 0 || (layout !== 'real-estate' && galleryImages.length > 0) ? (
                                     <div 
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-900/30 gap-2 text-center"
+                                        className="hidden lg:flex border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 rounded-2xl p-6 flex-col items-center justify-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-900/30 gap-2 text-center"
                                     >
                                         <div className="p-2.5 bg-teal-50 dark:bg-teal-950/30 text-teal-600 dark:text-teal-400 rounded-xl">
                                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -748,6 +798,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                             next.splice(idx, 1);
                                                             setGalleryImages(next);
                                                             if (fileInputRef.current) fileInputRef.current.value = '';
+                                                            if (cameraInputRef.current) cameraInputRef.current.value = '';
                                                         }}
                                                         className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1 rounded-full shadow-md hover:scale-110 transition-all cursor-pointer flex items-center justify-center"
                                                     >
@@ -818,7 +869,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => setLayout('image-left')}
-                                        className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-left' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-left' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                     >
                                         <div className="w-10 h-6 border rounded bg-slate-150 dark:bg-slate-800 flex overflow-hidden">
                                             <div className="w-2/5 h-full bg-slate-300 dark:bg-slate-600" />
@@ -829,7 +880,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => setLayout('image-right')}
-                                        className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-right' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-right' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                     >
                                         <div className="w-10 h-6 border rounded bg-slate-150 dark:bg-slate-800 flex overflow-hidden">
                                             <div className="w-3/5 h-full flex flex-col justify-center p-0.5 gap-0.5"><div className="h-1 w-3/4 bg-slate-400" /><div className="h-0.5 w-full bg-slate-300" /></div>
@@ -840,7 +891,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => setLayout('image-fullscreen')}
-                                        className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-fullscreen' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-fullscreen' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                     >
                                         <div className="w-10 h-6 border rounded bg-slate-300 dark:bg-slate-600 flex items-end p-0.5"><div className="h-2 w-3/4 bg-slate-800/40 rounded-sm" /></div>
                                         Helskärm
@@ -848,7 +899,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => setLayout('real-estate')}
-                                        className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'real-estate' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'real-estate' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                     >
                                         <div className="w-10 h-6 border rounded bg-slate-300 dark:bg-slate-600 flex items-center justify-center relative overflow-hidden">
                                             <div className="w-3/5 h-4/5 bg-slate-900/80 rounded-sm border-[0.5px] border-white/20 flex flex-col justify-center items-center gap-[1px]">
@@ -877,7 +928,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                         key={chip.id}
                                                         type="button"
                                                         onClick={() => setCardStyle(chip.id as 'dark' | 'light' | 'subtle')}
-                                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                                                        className={`min-h-[44px] lg:min-h-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer flex items-center justify-center ${
                                                             isSelected
                                                                 ? 'bg-teal-500 text-white border-teal-500 shadow-sm'
                                                                 : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -1020,7 +1071,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                         : [...scheduleDays, day.value];
                                                     setScheduleDays(nextDays);
                                                 }}
-                                                className={`w-11 h-9 rounded-xl text-xs font-extrabold border transition-all active:scale-95 ${
+                                                className={`w-11 min-h-[44px] lg:h-9 lg:min-h-0 rounded-xl text-xs font-extrabold border transition-all active:scale-95 flex items-center justify-center ${
                                                     isSelected
                                                         ? 'border-teal-500 bg-teal-500 text-white shadow-sm ring-2 ring-teal-500/20'
                                                         : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
@@ -1138,7 +1189,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                             setSelectedTagIds(prev => [...prev, tag.id]);
                                                         }
                                                     }}
-                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 select-none active:scale-95 ${
+                                                    className={`min-h-[44px] lg:min-h-0 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 select-none active:scale-95 ${
                                                         isSelected 
                                                             ? 'border-teal-500 bg-teal-50 text-teal-600 dark:bg-teal-950/20 dark:text-teal-400 font-extrabold shadow-sm ring-1 ring-teal-500'
                                                             : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
@@ -1165,23 +1216,25 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                 )}
                             </div>
 
-                            {/* Submit Button */}
-                            <PrimaryButton
-                                type="submit"
-                                disabled={isSubmitting || !imageBase64 || !headline.trim()}
-                                className="w-full py-3.5 bg-teal-600 hover:bg-teal-500 dark:bg-teal-600 font-bold tracking-wide rounded-xl shadow-lg hover:shadow-xl transition-all select-none flex items-center justify-center gap-2 text-base"
-                            >
-                                {isSubmitting ? (
-                                    <>
-                                        <LoadingSpinnerIcon className="h-5 w-5 text-white animate-spin" />
-                                        Publicerar...
-                                    </>
-                                ) : (
-                                    <>
-                                        <span>Skicka till skärmen direkt ⚡</span>
-                                    </>
-                                )}
-                            </PrimaryButton>
+                            {/* Submit Button Sticky Mobile Container */}
+                            <div className="sticky bottom-0 z-20 -mx-4 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-white/95 dark:bg-slate-800/95 backdrop-blur border-t border-slate-200 dark:border-slate-700 lg:static lg:mx-0 lg:px-0 lg:pb-0 lg:bg-transparent lg:border-0 lg:backdrop-blur-none">
+                                <PrimaryButton
+                                    type="submit"
+                                    disabled={isSubmitting || !imageBase64 || !headline.trim()}
+                                    className="w-full py-3.5 bg-teal-600 hover:bg-teal-500 dark:bg-teal-600 font-bold tracking-wide rounded-xl shadow-lg hover:shadow-xl transition-all select-none flex items-center justify-center gap-2 text-base"
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <LoadingSpinnerIcon className="h-5 w-5 text-white animate-spin" />
+                                            Publicerar...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>Skicka till skärmen direkt ⚡</span>
+                                        </>
+                                    )}
+                                </PrimaryButton>
+                            </div>
                         </form>
                     </Card>
                 </div>
