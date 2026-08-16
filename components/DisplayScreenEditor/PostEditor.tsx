@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DisplayPost, Organization, DisplayScreen, UserRole, PostTemplate } from '../../types';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from '../Buttons';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -62,11 +62,22 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     const [isNoDateConfirmOpen, setIsNoDateConfirmOpen] = useState(false);
     const { showToast } = useToast();
 
-    const allSteps: EditorStep[] = ['layout', 'content', 'atmosphere', 'publishing'];
-    const aiSteps: EditorStep[] = ['layout', 'content', 'publishing'];
-    const steps = post.layout === 'ai-ad' ? aiSteps : allSteps;
+    const stepDefs: { id: EditorStep; title: string }[] =
+        post.layout === 'ai-ad'
+            ? [ { id: 'layout', title: 'Layout' }, { id: 'content', title: 'Skapa med AI' }, { id: 'publishing', title: 'Publicering' } ]
+            : ['text-only', 'webpage'].includes(post.layout)
+            ? [ { id: 'layout', title: 'Layout' }, { id: 'content', title: 'Text' }, { id: 'publishing', title: 'Publicering' } ]
+            : [ { id: 'layout', title: 'Layout' }, { id: 'atmosphere', title: 'Media' }, { id: 'content', title: 'Text' }, { id: 'publishing', title: 'Publicering' } ];
+
+    const steps = stepDefs.map(s => s.id);
     const currentStepIndex = steps.indexOf(currentStep);
     const isLastStep = currentStepIndex === steps.length - 1;
+
+    useEffect(() => {
+        if (!steps.includes(currentStep)) {
+            setCurrentStep('content');
+        }
+    }, [post.layout, currentStep]);
 
     const handleNext = () => {
         if (!isLastStep) {
@@ -91,7 +102,7 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     
     const handleCreatePostFromTemplate = (template?: PostTemplate) => {
         if (!organization) return;
-        const basePost = template ? { ...template.postData } : { layout: 'text-only' as const, durationSeconds: 10 };
+        const basePost = template ? { ...template.postData } : { layout: 'image-fullscreen' as const, durationSeconds: 10 };
         const newPost: DisplayPost = {
             internalTitle: template ? template.templateName : 'Nytt inlägg',
             ...basePost,
@@ -210,16 +221,16 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                 <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <div className="border-b border-slate-200 dark:border-slate-700 mb-6">
                         <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide">
-                            <StepButton step="layout" currentStep={currentStep} onClick={() => setCurrentStep('layout')} title="Layout" stepNumber={1} />
-                            {post.layout === 'ai-ad' ? (
-                                <StepButton step="content" currentStep={currentStep === 'atmosphere' ? 'content' : currentStep} onClick={() => setCurrentStep('content')} title="Skapa med AI" stepNumber={2} />
-                            ) : (
-                                <>
-                                    <StepButton step="content" currentStep={currentStep} onClick={() => setCurrentStep('content')} title="Text" stepNumber={2} />
-                                    <StepButton step="atmosphere" currentStep={currentStep} onClick={() => setCurrentStep('atmosphere')} title="Media" stepNumber={3} />
-                                </>
-                            )}
-                            <StepButton step="publishing" currentStep={currentStep} onClick={() => setCurrentStep('publishing')} title="Publicering" stepNumber={post.layout === 'ai-ad' ? 3 : 4} />
+                            {stepDefs.map((def, index) => (
+                                <StepButton
+                                    key={def.id}
+                                    step={def.id}
+                                    currentStep={currentStep}
+                                    onClick={() => setCurrentStep(def.id)}
+                                    title={def.title}
+                                    stepNumber={index + 1}
+                                />
+                            ))}
                         </div>
                     </div>
 
@@ -228,33 +239,42 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                     </div>
                 </div>
 
-                <div className="flex justify-between items-center mt-6">
-                    <div>
+                <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center">
+                    {/* Vänstergrupp: inte navigering, flödar normalt även på mobil */}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:gap-4">
                         {isLastStep && post.layout !== 'ai-ad' && (
-                            <SecondaryButton onClick={() => setIsSaveTemplateModalOpen(true)} disabled={isSaving}>
+                            <SecondaryButton onClick={() => setIsSaveTemplateModalOpen(true)} disabled={isSaving} className="w-full sm:w-auto min-h-[44px] lg:min-h-0">
                                 Spara som mall
                             </SecondaryButton>
                         )}
-                    </div>
-                    <div className="flex justify-end items-center gap-4">
                         {post.suggestionOriginId && isLastStep && (
-                            <DestructiveButton onClick={handleRejectSuggestion} disabled={isSaving}>Förkasta Förslag</DestructiveButton>
+                            <DestructiveButton onClick={handleRejectSuggestion} disabled={isSaving} className="w-full sm:w-auto min-h-[44px] lg:min-h-0">
+                                Förkasta Förslag
+                            </DestructiveButton>
                         )}
-                        <SecondaryButton onClick={handleCancel} disabled={isSaving}>Avbryt</SecondaryButton>
-                        {currentStepIndex > 0 && (
-                            <SecondaryButton onClick={handlePrevious} disabled={isSaving}>
-                                Föregående
+                    </div>
+
+                    {/* Navigeringsrad: fastnitad längst ner på mobil, vanlig rad på lg och uppåt */}
+                    <div className="sticky bottom-0 z-20 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] px-3 bg-white/95 dark:bg-slate-800/95 backdrop-blur border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg lg:static lg:p-0 lg:bg-transparent lg:border-0 lg:rounded-none lg:shadow-none lg:backdrop-blur-none">
+                        <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center lg:gap-4">
+                            <SecondaryButton onClick={handleCancel} disabled={isSaving} className="order-2 w-full lg:w-auto lg:order-1 min-h-[44px] lg:min-h-0">
+                                Avbryt
                             </SecondaryButton>
-                        )}
-                        {isLastStep ? (
-                            <PrimaryButton onClick={handleSaveWrapper} loading={isSaving}>
-                                {post.suggestionOriginId ? "Godkänn & Spara" : "Spara inlägg"}
-                            </PrimaryButton>
-                        ) : (
-                            <PrimaryButton onClick={handleNext}>
-                                Nästa
-                            </PrimaryButton>
-                        )}
+                            {currentStepIndex > 0 && (
+                                <SecondaryButton onClick={handlePrevious} disabled={isSaving} className="order-3 w-full lg:w-auto lg:order-2 min-h-[44px] lg:min-h-0">
+                                    Föregående
+                                </SecondaryButton>
+                            )}
+                            {isLastStep ? (
+                                <PrimaryButton onClick={handleSaveWrapper} loading={isSaving} className="col-span-2 order-1 w-full lg:w-auto lg:order-3 lg:col-span-1 min-h-[44px] lg:min-h-0">
+                                    {post.suggestionOriginId ? "Godkänn & Spara" : "Spara inlägg"}
+                                </PrimaryButton>
+                            ) : (
+                                <PrimaryButton onClick={handleNext} className="col-span-2 order-1 w-full lg:w-auto lg:order-3 lg:col-span-1 min-h-[44px] lg:min-h-0">
+                                    Nästa
+                                </PrimaryButton>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

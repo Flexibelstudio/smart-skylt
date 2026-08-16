@@ -1339,13 +1339,55 @@ export const Step3_Atmosphere: React.FC<{
             />
 
             {/* Background Color Picker for Split/Fullscreen Layouts */}
-            <div className="p-4 rounded-lg bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+            <div className="p-4 rounded-lg bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 space-y-4">
                 <ColorPaletteInput 
                     label={isSplitLayout ? "Bakgrundsfärg (Textsida)" : "Bakgrundsfärg (om bild saknas/laddar)"}
                     value={post.backgroundColor || 'black'} 
                     onChange={(color) => onPostChange({ ...post, backgroundColor: color })} 
                     organization={organization} 
                 />
+
+                {post.layout === 'real-estate' && (
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                Förval för centrerad ruta
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { id: 'dark', label: 'Mörk' },
+                                    { id: 'light', label: 'Ljus' },
+                                    { id: 'subtle', label: 'Diskret' }
+                                ].map((chip) => {
+                                    const isSelected = (post.cardStyle || 'dark') === chip.id;
+                                    return (
+                                        <button
+                                            key={chip.id}
+                                            type="button"
+                                            onClick={() => onPostChange({ ...post, cardStyle: chip.id as 'dark' | 'light' | 'subtle' })}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                                                isSelected
+                                                    ? 'bg-primary text-white border-primary shadow-sm'
+                                                    : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                                            }`}
+                                        >
+                                            {chip.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                                Väljer du en egen färg används den i stället för förvalet.
+                            </p>
+                        </div>
+                        <ColorPaletteInput
+                            label="Kortets bakgrundsfärg (Egen färg)"
+                            value={post.cardBackgroundColor || ''}
+                            onChange={(color) => onPostChange({ ...post, cardBackgroundColor: color })}
+                            organization={organization}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -35,9 +35,6 @@ import { AI_MODELS } from './aiModels';
 // Init
 // -------------------------------------------------------------
 
-// Skapa en global instans av AI-klienten med nyckeln från miljövariabeln om tillgänglig på klientsidan
-const clientApiKey = (typeof process !== "undefined" && process.env?.API_KEY) || "";
-
 function createMockGoogleGenAI() {
   return {
     models: {
@@ -258,7 +255,7 @@ function createMockGoogleGenAI() {
           }));
         }
 
-        if (p.includes("brand identity of this website") || p.includes("primarycolor")) {
+        if (p.includes("brand identity of this website") || p.includes("primarycolor") || p.includes("brand analysis")) {
           return textResponse(JSON.stringify({
             primaryColor: "#1e3a8a",
             secondaryColor: "#10b981",
@@ -298,7 +295,14 @@ function createMockGoogleGenAI() {
 }
 
 const isDevOrOffline = !!(import.meta.env?.DEV || isOffline);
-const ai = clientApiKey ? new GoogleGenAI({ apiKey: clientApiKey }) : (isDevOrOffline ? (createMockGoogleGenAI() as unknown as GoogleGenAI) : null);
+const ai = isDevOrOffline ? (createMockGoogleGenAI() as unknown as GoogleGenAI) : null;
+
+function getClientAi(): GoogleGenAI {
+  if (!ai) {
+    throw new Error("AI-tjänsten är inte tillgänglig just nu. Försök igen om en stund.");
+  }
+  return ai;
+}
 
 // -------------------------------------------------------------
 // Tools Definitions
@@ -502,7 +506,7 @@ async function handleAIError<T>(fn: () => Promise<T>): Promise<T> {
       if (errorString.includes("safety")) {
         throw new Error("Blockerades av säkerhetsskäl.");
       }
-      throw new Error("AI-tjänsten är inte tillgänglig just nu — försök igen om en stund");
+      throw new Error("AI-tjänsten är inte tillgänglig just nu. Försök igen om en stund.");
     }
     
     if (errorString.includes("429") || errorString.includes("resource_exhausted") || errorString.includes("too many requests")) {
@@ -546,8 +550,7 @@ class ProxyChat {
       if (functions) {
           result = await generateContentViaProxy(AI_MODELS.TEXT, this.history, config);
       } else {
-          if (!ai) throw new Error("AI:n är inte konfigurerad på varken klient eller server.");
-          const response = await ai.models.generateContent({
+          const response = await getClientAi().models.generateContent({
               model: AI_MODELS.TEXT,
               contents: this.history,
               config
@@ -593,7 +596,7 @@ class ProxyChat {
         if (errorString.includes("safety")) {
           throw new Error("Blockerades av säkerhetsskäl.");
         }
-        throw new Error("AI-tjänsten är inte tillgänglig just nu — försök igen om en stund");
+        throw new Error("AI-tjänsten är inte tillgänglig just nu. Försök igen om en stund.");
       }
       throw error;
     }
@@ -601,26 +604,7 @@ class ProxyChat {
 }
 
 export async function initializeMarketingCoachChat(organization: Organization): Promise<any> {
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || "";
-  
-  if (!apiKey && functions) {
-    return new ProxyChat(organization);
-  }
-  
-  const activeAi = apiKey ? new GoogleGenAI({ apiKey }) : ai;
-  if (!activeAi) {
-    return new ProxyChat(organization);
-  }
-
-  const systemInstruction = Prompts.getMarketingCoachSystemInstruction(organization);
-  return activeAi.chats.create({
-    model: AI_MODELS.TEXT,
-    config: { 
-      systemInstruction,
-      tools: [{ functionDeclarations: [createDisplayPostFunctionDeclaration] }]
-    },
-    history: [],
-  });
+  return new ProxyChat(organization);
 }
 
 export const formatPageWithAI = (rawContent: string): Promise<string> =>
@@ -631,7 +615,7 @@ export const formatPageWithAI = (rawContent: string): Promise<string> =>
         return result.data as string;
     }
     const prompt = Prompts.getFormatPagePrompt(rawContent);
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: prompt });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: prompt });
     return response.text ?? "";
   });
 
@@ -643,7 +627,7 @@ export const generatePageContentFromPrompt = (userPrompt: string): Promise<strin
         return result.data as string;
     }
     const prompt = Prompts.getGeneratePageContentPrompt(userPrompt);
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt });
     return response.text ?? "";
   });
 
@@ -655,7 +639,7 @@ export const generateDisplayPostContent = (userPrompt: string, organizationName:
         return result.data as { headline: string; body: string };
     }
     const prompt = Prompts.getDisplayPostContentPrompt(userPrompt, organizationName);
-    const response = await ai.models.generateContent({
+    const response = await getClientAi().models.generateContent({
       model: AI_MODELS.TEXT,
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema }
@@ -670,7 +654,7 @@ export const generateAutomationPrompt = (inputs: { goal: string; tone: string; m
         const response = await generateContentViaProxy(AI_MODELS.TEXT_LIGHT, prompt);
         return (response.text ?? "").trim();
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: prompt });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: prompt });
     return (response.text ?? "").trim();
   });
 
@@ -683,7 +667,7 @@ export const generateSkyltIdeas = (prompt: string, organization: Organization): 
         const response = await generateContentViaProxy(AI_MODELS.TEXT_LIGHT, fullPrompt, config);
         return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: fullPrompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT_LIGHT, contents: fullPrompt, config });
     return safeParseJSON(response.text ?? "[]", Schemas.SkyltIdeSuggestionArraySchema) as SkyltIdeSuggestion[];
   });
 
@@ -696,7 +680,7 @@ export const generateCampaignIdeasForEvent = (eventName: string, daysUntil: numb
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as any;
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.CampaignIdeasResponseSchema) as any;
   });
 
@@ -709,7 +693,7 @@ export const generateSeasonalCampaignIdeas = (organization: Organization, planni
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as any;
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.SeasonalCampaignIdeasResponseSchema) as any;
   });
 
@@ -723,7 +707,7 @@ export const generateRemixVariants = (post: DisplayPost, organization: Organizat
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         responseText = response.text;
     } else {
-        const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+        const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
         responseText = response.text;
     }
 
@@ -751,7 +735,7 @@ export const generateCompletePost = (
     if (functions) {
         textGenResponse = await generateContentViaProxy(AI_MODELS.TEXT, { parts }, config);
     } else {
-        textGenResponse = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: { parts }, config });
+        textGenResponse = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: { parts }, config });
     }
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
@@ -765,7 +749,7 @@ export const generateCompletePost = (
           imageBytes = proxyImg.imageBytes;
           mimeType = proxyImg.mimeType || 'image/jpeg';
       } else {
-          const imgResponse = await ai.models.generateContent({
+          const imgResponse = await getClientAi().models.generateContent({
               model: AI_MODELS.IMAGE,
               contents: {
                   parts: [{ text: (postData as any).imagePrompt }]
@@ -802,7 +786,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
     if (functions) {
         textGenResponse = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
     } else {
-        textGenResponse = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+        textGenResponse = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     }
 
     const postData = safeParseJSON(textGenResponse.text ?? "{}", Schemas.CompletePostResponseSchema) as unknown as Partial<DisplayPost>;
@@ -816,7 +800,7 @@ export const generateFollowUpPost = (originalPost: DisplayPost, organization: Or
           imageBytes = proxyImg.imageBytes;
           mimeType = proxyImg.mimeType || 'image/jpeg';
       } else {
-          const imgResponse = await ai.models.generateContent({
+          const imgResponse = await getClientAi().models.generateContent({
               model: AI_MODELS.IMAGE,
               contents: {
                   parts: [{ text: (postData as any).imagePrompt }]
@@ -851,7 +835,7 @@ export const generateHeadlineSuggestions = (body: string, existingHeadlines?: st
         return result.data as string[];
     }
     const prompt = Prompts.getHeadlineSuggestionsPrompt(body, existingHeadlines, organization);
-    const response = await ai.models.generateContent({
+    const response = await getClientAi().models.generateContent({
       model: AI_MODELS.TEXT,
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiHeadlineSuggestionsSchema },
@@ -869,7 +853,7 @@ export const generateBodySuggestions = (headline: string, existingBodies?: strin
     }
     const prompt = Prompts.getBodySuggestionsPrompt(headline, existingBodies, organization);
     const config = { responseMimeType: "application/json", responseSchema: Schemas.GenAiBodySuggestionsSchema };
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     // Explicit type here too
     return safeParseJSON<{ bodies: string[] }>(response.text ?? "{}", Schemas.BodySuggestionsSchema).bodies;
   });
@@ -882,7 +866,7 @@ export const refineDisplayPostContent = (content: { headline: string; body: stri
         return result.data as { headline: string; body: string };
     }
     const prompt = Prompts.getRefineContentPrompt(content, command);
-    const response = await ai.models.generateContent({
+    const response = await getClientAi().models.generateContent({
       model: AI_MODELS.TEXT,
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: Schemas.GenAiDisplayPostContentSchema },
@@ -899,7 +883,7 @@ export const refineTextWithCustomPrompt = (content: { headline: string; body: st
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.DisplayPostContentSchema) as { headline: string; body: string };
   });
 
@@ -916,7 +900,7 @@ export const generateDisplayPostImage = (prompt: string, aspectRatio: "1:1" | "1
         return { imageBytes: data, mimeType: mime };
     }
     const apiPrompt = Prompts.getGenerateImagePrompt(prompt, organization);
-    const response = await ai.models.generateContent({
+    const response = await getClientAi().models.generateContent({
       model: AI_MODELS.IMAGE,
       contents: {
           parts: [{ text: apiPrompt }]
@@ -952,7 +936,7 @@ export const editDisplayPostImage = (base64ImageData: string, mimeType: string, 
     const parts: any[] = [{ inlineData: { data: base64ImageData, mimeType } }, { text: `Perform the following edit on the image: ${prompt}` }];
     if (logo) parts.push({ inlineData: { data: logo.base64Data, mimeType: logo.mimeType } });
 
-    const response = await ai.models.generateContent({
+    const response = await getClientAi().models.generateContent({
       model: AI_MODELS.IMAGE,
       contents: { parts },
       config: { responseModalities: [Modality.IMAGE] },
@@ -972,7 +956,7 @@ export const generateEventReminderText = (event: { name: string; icon: string },
           const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
       }
-      const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+      const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.EventReminderSchema) as { headline: string; subtext: string };
     })
   );
@@ -988,7 +972,7 @@ export const updateStyleProfileSummary = (organization: Organization, recentPost
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.StyleProfileSummarySchema) as { summary: string };
   });
 
@@ -1002,7 +986,7 @@ export const generateRhythmReminderText = (organization: Organization, analysis:
           const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
       }
-      const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+      const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.RhythmReminderSchema) as { headline: string; subtext: string };
     })
   );
@@ -1023,7 +1007,7 @@ export const getSeasonalSuggestion = (posts: DisplayPost[], organization: Organi
           const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
           return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
       }
-      const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+      const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
       return safeParseJSON(response.text ?? "{}", Schemas.SeasonalSuggestionSchema) as { headline: string; subtext: string; context: string };
     })
   );
@@ -1039,7 +1023,7 @@ export const generateDnaAnalysis = (organization: Organization): Promise<Partial
         const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as any;
         return { ...analysisData, lastUpdatedAt: new Date().toISOString(), feedback: null };
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     const analysisData = safeParseJSON(response.text ?? "{}", Schemas.DnaAnalysisSchema) as any;
     return { ...analysisData, lastUpdatedAt: new Date().toISOString(), feedback: null };
   });
@@ -1053,7 +1037,7 @@ export const analyzePostDiff = (aiSuggestion: DisplayPost, finalPost: DisplayPos
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as { ändringar: string[]; tolkning: string; förslagFörFramtiden: string; };
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.PostDiffAnalysisSchema) as { ändringar: string[]; tolkning: string; förslagFörFramtiden: string; };
   });
 
@@ -1066,7 +1050,7 @@ export const analyzePost = (post: DisplayPost, organization: Organization): Prom
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         return safeParseJSON(response.text ?? "{}", Schemas.PostAnalysisSchema) as any;
     }
-    const response = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
+    const response = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt, config });
     return safeParseJSON(response.text ?? "{}", Schemas.PostAnalysisSchema) as any;
   });
 
@@ -1083,7 +1067,7 @@ export async function summarizeLearnLogForOrg(orgId: string) {
       const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt);
       summary = response.text?.trim() || "";
   } else {
-      const result = await ai.models.generateContent({ model: AI_MODELS.TEXT, contents: prompt });
+      const result = await getClientAi().models.generateContent({ model: AI_MODELS.TEXT, contents: prompt });
       summary = result.text?.trim() || "";
   }
 
@@ -1124,7 +1108,7 @@ export const extractContentFromUrl = (url: string): Promise<{
         const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
         textResponse = response.text ?? "";
     } else {
-        const response = await ai.models.generateContent({
+        const response = await getClientAi().models.generateContent({
             model: AI_MODELS.TEXT,
             contents: prompt,
             config
@@ -1160,49 +1144,27 @@ export const analyzeWebsiteContent = (url: string): Promise<{
     logoUrl?: string;
 }> =>
   handleAIError(async () => {
-    // 1. Försök med Cloud Function (rekommenderat för att dölja komplexitet och hantera CORS/timeouts bättre på servern)
+    // 1. Körs via Cloud Function i produktion
     if (functions) {
-        try {
-            // Sätt en längre timeout (5 min) för just detta anrop, eftersom analys kan ta tid.
-            const fn = functions.httpsCallable('gemini', { timeout: 300000 }); 
-            
-            const result = await fn({ 
-                action: 'analyzeBrandFromWebsite', 
-                params: { 
-                    url
-                } 
-            });
-            
-            return safeParseJSON(
-                (result.data as any).text ?? "{}", 
-                Schemas.WebsiteBrandAnalysisSchema
-            ) as any;
-        } catch (error: any) {
-            console.warn("Cloud function failed for website analysis, falling back to client-side generation:", error);
-            // Om Cloud Function misslyckas (t.ex. inte deployad än, eller timeout), 
-            // fortsätt nedåt för att köra klient-fallback.
-        }
+        // Sätt en längre timeout (5 min) för just detta anrop, eftersom analys kan ta tid.
+        const fn = functions.httpsCallable('gemini', { timeout: 300000 }); 
+        
+        const result = await fn({ 
+            action: 'analyzeBrandFromWebsite', 
+            params: { 
+                url
+            } 
+        });
+        
+        return safeParseJSON(
+            (result.data as any).text ?? "{}", 
+            Schemas.WebsiteBrandAnalysisSchema
+        ) as any;
     }
 
-    // 2. Klient-side Fallback (Körs om Cloud Function inte finns eller misslyckades)
-    const prompt = `
-        Analyze the brand identity of this website: ${url}.
-        Extract the following information:
-        1. Primary brand color (Hex code). If multiple, choose the most dominant.
-        2. Secondary brand color (Hex code).
-        3. Font style for headlines (categorize as 'sans', 'serif', 'display', or 'script').
-        4. Font style for body text (categorize as 'sans' or 'serif').
-        5. A concise business description (max 2 sentences) in Swedish.
-        6. 3-5 short phrases or keywords from the site that capture the tone of voice (in Swedish).
-        7. A list of 1-3 business type keywords (e.g. Café, Butik, Frisör, Konsult) in Swedish.
-        8. The URL of the main logo image found on the website. Prefer a direct image link (png/jpg/svg).
-
-        Use Google Search to visit the site and analyze its visual style and content.
-        Svara ENDAST med ett giltigt JSON-objekt utan markdown eller övrig text, med EXAKT dessa nycklar:
-        { "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }
-    `;
-
-    const response = await ai.models.generateContent({
+    // 2. I utvecklings-/offlineläge utan Cloud Function används mock-klienten
+    const prompt = `Brand analysis (dev/offline mock): ${url}`;
+    const response = await getClientAi().models.generateContent({
         model: AI_MODELS.TEXT,
         contents: prompt,
         config: {
@@ -1229,7 +1191,7 @@ export const generateTagOrStampWithAi = (
       const response = await generateContentViaProxy(AI_MODELS.TEXT, prompt, config);
       return safeParseJSON(response.text ?? "{}", Schemas.TagStampSuggestionSchema) as any;
     }
-    const response = await ai.models.generateContent({
+    const response = await getClientAi().models.generateContent({
       model: AI_MODELS.TEXT,
       contents: prompt,
       config,

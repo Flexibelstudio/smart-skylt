@@ -351,7 +351,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
 
     const handleCreatePost = (template?: PostTemplate) => {
         if (!organization) return;
-        const basePost = template ? { ...template.postData } : { layout: 'text-only' as const, durationSeconds: 10 };
+        const basePost = template ? { ...template.postData } : { layout: 'image-fullscreen' as const, durationSeconds: 10 };
         const newPost: DisplayPost = {
             internalTitle: template ? template.templateName : 'Nytt inlägg',
             ...basePost,

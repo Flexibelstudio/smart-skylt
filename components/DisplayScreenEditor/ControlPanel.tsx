@@ -321,41 +321,58 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     <div className="flex flex-col gap-1 w-full sm:w-auto">
                         <div className="flex items-center gap-2">
                             <h3 className="font-bold text-lg text-slate-800 dark:text-white">Inlägg</h3>
-                            <span className="bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold px-2 py-0.5 rounded-full" title="Aktiva inlägg i flödet">
-                                {counts.active} aktiv{counts.active === 1 ? 't' : 'a'}
+                            <span className="bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold px-2 py-0.5 rounded-full" title={screen.postsUnreadable ? "Inläggen kunde inte läsas in" : "Aktiva inlägg i flödet"}>
+                                {screen.postsUnreadable ? '– aktiva' : `${counts.active} aktiv${counts.active === 1 ? 't' : 'a'}`}
                             </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                            {counts.scheduled > 0 && (
-                                <span className="flex items-center gap-1 shrink-0" title={`${counts.scheduled} inlägg kommer startas i framtiden`}>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                    {counts.scheduled} schemalagda
-                                </span>
-                            )}
-                            {counts.draft > 0 && (
-                                <span className="flex items-center gap-1 shrink-0" title={`${counts.draft} utkast`}>
+                            {screen.postsUnreadable ? (
+                                <span className="flex items-center gap-1 shrink-0" title="Inläggen kunde inte läsas in">
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                    {counts.draft} utkast
+                                    – utkast
                                 </span>
-                            )}
-                            {counts.archived > 0 && (
-                                <span className="flex items-center gap-1 shrink-0" title={`${counts.archived} arkiverade inlägg`}>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-450" />
-                                    {counts.archived} arkiv
-                                </span>
+                            ) : (
+                                <>
+                                    {counts.scheduled > 0 && (
+                                        <span className="flex items-center gap-1 shrink-0" title={`${counts.scheduled} inlägg kommer startas i framtiden`}>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                            {counts.scheduled} schemalagda
+                                        </span>
+                                    )}
+                                    {counts.draft > 0 && (
+                                        <span className="flex items-center gap-1 shrink-0" title={`${counts.draft} utkast`}>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                            {counts.draft} utkast
+                                        </span>
+                                    )}
+                                    {counts.archived > 0 && (
+                                        <span className="flex items-center gap-1 shrink-0" title={`${counts.archived} arkiverade inlägg`}>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-slate-450" />
+                                            {counts.archived} arkiv
+                                        </span>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
 
                     <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5 justify-end">
                         <button
+                            type="button"
                             onClick={onInitiateExpressPublish}
-                            className="py-2 px-4 shadow-sm text-sm font-semibold flex items-center justify-center gap-1.5 bg-teal-50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-900/50 hover:bg-teal-100 dark:hover:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-xl active:scale-95 transition-all h-[38px] cursor-pointer"
+                            disabled={screen.postsUnreadable}
+                            title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
+                            className={`py-2 px-4 shadow-sm text-sm font-semibold flex items-center justify-center gap-1.5 bg-teal-50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-900/50 hover:bg-teal-100 dark:hover:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-xl transition-all h-[38px] ${screen.postsUnreadable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
                         >
                             <span>Skapa snabb-inlägg</span>
                             <span className="text-amber-500 font-bold">⚡</span>
                         </button>
-                        <PrimaryButton onClick={onInitiateCreatePost} className="shadow-lg shadow-primary/20 !h-[38px] flex items-center justify-center">
+                        <PrimaryButton 
+                            onClick={onInitiateCreatePost} 
+                            disabled={screen.postsUnreadable}
+                            title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
+                            className="shadow-lg shadow-primary/20 !h-[38px] flex items-center justify-center"
+                        >
                             + Skapa inlägg
                         </PrimaryButton>
                     </div>
@@ -443,6 +460,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
             {/* Post List */}
             <div className="space-y-3">
+                {screen.postsUnreadable && (
+                    <div className="bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-sm p-4 rounded-lg border border-amber-200 dark:border-amber-800/50 border-l-4 border-l-amber-500 font-medium">
+                        ⚠️ Inläggen kunde inte läsas in. Ladda om sidan innan du ändrar något — sparar du nu riskerar du att radera inlägg.
+                    </div>
+                )}
                 {filteredPosts.length > 0 ? (
                     filteredPosts.map((post, index) => {
                         const status = getPostStatus(post);
@@ -466,10 +488,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 <div className="flex items-start gap-4 w-full">
                                     {sortOption === 'manual' && (
                                         <div className="flex flex-col gap-0.5 flex-shrink-0 mt-1">
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleMovePost(post, 'up'); }} disabled={index === 0} className="p-0.5 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Flytta upp">
+                                            <button 
+                                                type="button" 
+                                                onClick={(e) => { e.stopPropagation(); handleMovePost(post, 'up'); }} 
+                                                disabled={index === 0 || screen.postsUnreadable} 
+                                                className="p-0.5 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" 
+                                                title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : "Flytta upp"}
+                                            >
                                                 <ChevronDownIcon className="w-4 h-4 rotate-180" />
                                             </button>
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleMovePost(post, 'down'); }} disabled={index === filteredPosts.length - 1} className="p-0.5 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Flytta ned">
+                                            <button 
+                                                type="button" 
+                                                onClick={(e) => { e.stopPropagation(); handleMovePost(post, 'down'); }} 
+                                                disabled={index === filteredPosts.length - 1 || screen.postsUnreadable} 
+                                                className="p-0.5 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" 
+                                                title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : "Flytta ned"}
+                                            >
                                                 <ChevronDownIcon className="w-4 h-4" />
                                             </button>
                                         </div>
@@ -525,16 +559,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                 {/* SÅLD Stamp */}
                                                 <button
                                                     type="button"
+                                                    disabled={screen.postsUnreadable}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         handleToggleSold(post);
                                                     }}
-                                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer select-none active:scale-95 ${
+                                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 select-none ${
+                                                        screen.postsUnreadable 
+                                                            ? 'opacity-50 cursor-not-allowed' 
+                                                            : 'cursor-pointer active:scale-95'
+                                                    } ${
                                                         post.isExpressSold
                                                             ? 'bg-[#ef4444] text-white border-[#ef4444]'
                                                             : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
                                                     }`}
-                                                    title={post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld'}
+                                                    title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : (post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld')}
                                                 >
                                                     <span>🔴</span>
                                                     <span>SÅLD</span>
@@ -550,13 +589,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                             <button
                                                                 type="button"
                                                                 key={tag.id}
+                                                                disabled={screen.postsUnreadable}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     handleToggleTagOnPost(post, tag.id);
                                                                 }}
-                                                                className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 border-slate-200 dark:border-slate-700/80 cursor-pointer select-none active:scale-95 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30`}
+                                                                className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 border-slate-200 dark:border-slate-700/80 select-none ${
+                                                                    screen.postsUnreadable 
+                                                                        ? 'opacity-50 cursor-not-allowed' 
+                                                                        : 'cursor-pointer active:scale-95 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
+                                                                }`}
                                                                 style={isActive ? { backgroundColor: tag.backgroundColor, color: tag.textColor, borderColor: tag.backgroundColor } : {}}
-                                                                title={`Klicka för att ${isActive ? 'avaktivera' : 'aktivera'} ${tag.text}`}
+                                                                title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : `Klicka för att ${isActive ? 'avaktivera' : 'aktivera'} ${tag.text}`}
                                                             >
                                                                 <span>{tag.displayType === 'stamp' ? '💮' : '🏷️'}</span>
                                                                 <span>{tag.text}</span>
@@ -679,7 +723,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                             </div>
                         );
                     })
-                ) : (
+                ) : !screen.postsUnreadable ? (
                     <div className="text-center py-12 bg-slate-50 dark:bg-slate-800/50 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center">
                         <div className="w-16 h-16 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center mb-4 shadow-sm">
                             <SparklesIcon className="w-8 h-8 text-slate-300 dark:text-slate-500" />
@@ -689,10 +733,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                             {filterStatus !== 'all' ? 'Inga inlägg matchar ditt filter.' : 'Kanalen är tom. Skapa ditt första inlägg manuellt eller låt AI:n hjälpa dig.'}
                         </p>
                         {filterStatus === 'all' && (
-                            <PrimaryButton onClick={onInitiateCreatePost}>Skapa första inlägget</PrimaryButton>
+                            <PrimaryButton 
+                                onClick={onInitiateCreatePost}
+                                disabled={screen.postsUnreadable}
+                                title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
+                            >
+                                Skapa första inlägget
+                            </PrimaryButton>
                         )}
                     </div>
-                )}
+                ) : null}
             </div>
 
             {/* Modals */}

@@ -854,21 +854,26 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
     }, [organization, showToast]);
 
     const handleImportFromWebsite = async (data: any, url: string) => {
-        setPrimaryColor(data.primaryColor || primaryColor);
-        if (data.secondaryColor) setSecondaryColor(data.secondaryColor);
+        const newPrimary = (data.primaryColor && data.primaryColor.trim()) ? data.primaryColor.trim() : primaryColor;
+        const newSecondary = (data.secondaryColor && data.secondaryColor.trim()) ? data.secondaryColor.trim() : secondaryColor;
+
+        const newHeadlineFont =
+            data.headlineFontCategory === 'serif' ? 'merriweather'
+            : data.headlineFontCategory === 'display' ? 'display'
+            : data.headlineFontCategory === 'script' ? 'script'
+            : 'sans';
+        const newBodyFont = data.bodyFontCategory === 'serif' ? 'merriweather' : 'sans';
+
+        setPrimaryColor(newPrimary);
+        if (newSecondary) setSecondaryColor(newSecondary);
         
         if (data.logoUrl) {
             setLogoLight(data.logoUrl);
             setLogoDark(data.logoUrl);
         }
 
-        if (data.headlineFontCategory === 'serif') setHeadlineFontFamily('merriweather');
-        else if (data.headlineFontCategory === 'display') setHeadlineFontFamily('display');
-        else if (data.headlineFontCategory === 'script') setHeadlineFontFamily('script');
-        else setHeadlineFontFamily('sans');
-
-        if (data.bodyFontCategory === 'serif') setBodyFontFamily('merriweather');
-        else setBodyFontFamily('sans');
+        setHeadlineFontFamily(newHeadlineFont);
+        setBodyFontFamily(newBodyFont);
 
         setBusinessDescription(data.businessDescription || businessDescription);
         
@@ -883,11 +888,21 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
 
         const hasColors = Boolean((data.primaryColor && data.primaryColor.trim()) || (data.secondaryColor && data.secondaryColor.trim()));
         if (hasColors) {
-            showToast({ message: "Analys klar! Profilen har uppdaterats.", type: 'success' });
+            showToast({ 
+                message: `Analys klar! Färger (${newPrimary}${newSecondary ? ' och ' + newSecondary : ''}), typsnitt och text är sparade. Du kan justera allt under Visuell Design & Färger.`, 
+                type: 'success' 
+            });
         } else {
             showToast({
                 message: "Vi kunde läsa texten men inte färgerna från sajten. Dina nuvarande färger är oförändrade — fyll i dem manuellt om du vill.",
                 type: 'warning'
+            });
+        }
+
+        if (data.logoUrl) {
+            showToast({
+                message: "Vi hittade en logotyp på sajten. Granska den under Visuell Design & Färger och tryck Spara om du vill använda den.",
+                type: 'info'
             });
         }
 
@@ -901,6 +916,10 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
             preferenceProfile: updatedPreferenceProfile,
             businessDescription: data.businessDescription || organization.businessDescription,
             businessType: newBusinessTypes,
+            primaryColor: newPrimary,
+            headlineFontFamily: newHeadlineFont,
+            bodyFontFamily: newBodyFont,
+            ...(newSecondary ? { secondaryColor: newSecondary } : {}),
         };
 
         await onUpdateOrganization(organization.id, partialUpdate);
@@ -910,7 +929,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
                 const orgForAnalysis = { 
                     ...organization, 
                     ...partialUpdate, 
-                    primaryColor: data.primaryColor || organization.primaryColor,
+                    primaryColor: newPrimary,
                 };
                 
                 showToast({ message: "Skapar DNA-profil...", type: 'info' });
