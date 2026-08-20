@@ -11,6 +11,9 @@ import { ResetPasswordScreen } from './components/ResetPasswordScreen';
 // Lazy load DisplayWindowScreen for the Embed Wrapper to avoid loading full admin bundle for viewers
 const DisplayWindowScreen = React.lazy(() => import('./components/DisplayWindowScreen').then(module => ({ default: module.DisplayWindowScreen })));
 
+// Lazy load LandingPage så att marknadsföringssidan inte tynger appbundeln
+const LandingPage = React.lazy(() => import('./components/LandingPage').then(module => ({ default: module.LandingPage })));
+
 // --- EMBED WRAPPER (Kept here for simplicity as a router sub-component) ---
 const EmbedWrapper: React.FC<{ organizationId: string; screenId: string }> = ({ organizationId, screenId }) => {
     const { selectOrganization, selectDisplayScreenById, selectedDisplayScreen, allOrganizations } = useLocation();
@@ -59,6 +62,12 @@ const EmbedWrapper: React.FC<{ organizationId: string; screenId: string }> = ({ 
     );
 };
 
+// Domäner som ska visa landningssidan i stället för adminappen.
+// TOM TILLS VIDARE — smartskylt.se är fortfarande adminappen.
+// När appen flyttat till app.smartskylt.se: lägg in
+// ['smartskylt.se', 'www.smartskylt.se'] här.
+const MARKNADSDOMANER: string[] = [];
+
 // --- MAIN APP ROUTER ---
 export default function App() {
     const appMode = getAppMode();
@@ -84,6 +93,28 @@ export default function App() {
         return <EmbedWrapper organizationId={organizationId} screenId={screenId} />;
     }
 
-    // 4. Admin/CMS Mode (Default)
+    // 4. Marknadsföringsläge (domän eller ?marketing=true)
+    // Skyltläget kollas ovan, så en skärm kan aldrig hamna här.
+    const isMarknad =
+        (MARKNADSDOMANER.includes(window.location.hostname) ||
+            params.get('marketing') === 'true') &&
+        params.get('app') !== 'true';
+
+    if (isMarknad) {
+        return (
+            <Suspense fallback={<div className="min-h-screen bg-white" />}>
+                <LandingPage
+                    onLoginClick={() => {
+                        const p = new URLSearchParams(window.location.search);
+                        p.delete('marketing');
+                        p.set('app', 'true');
+                        window.location.search = p.toString();
+                    }}
+                />
+            </Suspense>
+        );
+    }
+
+    // 5. Admin/CMS Mode (Default)
     return <AdminApp />;
 }

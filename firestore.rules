@@ -1,0 +1,212 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ------------------------------------------------------------
+    // Hjälpfunktioner (identitet/roller)
+    // ------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function userExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isSystemOwner() {
+      return userExists() && getUserData().role == 'systemowner';
+    }
+    function isOrgAdmin(orgId) {
+      return userExists() &&
+             getUserData().role == 'organizationadmin' &&
+             getUserData().organizationId == orgId;
+    }
+    function isAnyOrgAdmin() {
+      return userExists() && getUserData().role == 'organizationadmin';
+    }
+    // ------------------------------------------------------------
+    // Hjälpfunktioner (validering)
+    // ------------------------------------------------------------
+    // Tillåt sträng eller timestamp, eller att fältet saknas.
+    function optStringOrTimestamp(m, field) {
+      return !(field in m) || (m[field] is string) || (m[field] is timestamp);
+    }
+    // Minimal post/kampanj-validering för dokument i displayPosts.
+    function isValidDisplayPost(p) {
+      return p is map
+        && (!( "id" in p) || (p.id is string))
+        && (!( "organizationId" in p) || (p.organizationId is string))
+        && (!( "displayScreenId" in p) || (p.displayScreenId is string))
+        && optStringOrTimestamp(p, "startDate")
+        && optStringOrTimestamp(p, "endDate");
+    }
+    // Låt id/subdomain vara oföränderliga om de finns i befintligt doc.
+    function immutableOrgKeysUnchanged() {
+      return (("id" in resource.data)       ? (("id" in request.resource.data) ? resource.data.id == request.resource.data.id : true) : true)
+          && (("subdomain" in resource.data)? (("subdomain" in request.resource.data) ? resource.data.subdomain == request.resource.data.subdomain : true) : true);
+    }
+    // displayScreens ska, om de skickas, vara en lista (inte för stor).
+    function validDisplayScreensIfPresent() {
+      return !("displayScreens" in request.resource.data)
+        || (
+          request.resource.data.displayScreens is list
+          && request.resource.data.displayScreens.size() <= 100
+        );
+    }
+    // ------------------------------------------------------------
+    // USERS
+    // ------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSystemOwner());
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isSystemOwner();
+      allow create: if isSystemOwner();
+      match /notifications/{notificationId} {
+        allow read, write, delete: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+    // ------------------------------------------------------------
+    // SYSTEM (Skylie, inställningar)
+    // ------------------------------------------------------------
+    match /system/{document=**} {
+      // Krävs för att alla inloggade ska kunna läsa assistentens profil
+      allow read: if isSignedIn();
+      allow write: if isSystemOwner();
+    }
+    match /system_settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSystemOwner();
+    }
+    // ------------------------------------------------------------
+    // ORGANIZATIONS
+    // ------------------------------------------------------------
+    match /organizations/{orgId} {
+      // Läsning: publik (display/embed kräver detta)
+      allow read: if true;
+      allow create: if isSystemOwner();
+      allow update, delete: if (isSystemOwner() || isOrgAdmin(orgId))
+                            && immutableOrgKeysUnchanged()
+                            && validDisplayScreensIfPresent();
+      // Generisk subcollection-regel (displayScreens, instagramStories, suggestedPosts)
+      match /{subCollection}/{docId} {
+        allow read: if true;
+        allow write: if isSystemOwner() || isOrgAdmin(orgId);
+      }
+      // Specifik validering för inlägg om de ligger i subcollection
+      match /displayPosts/{postId} {
+        allow read: if true;
+        allow create, update: if (isSystemOwner() || isOrgAdmin(orgId))
+                              && isValidDisplayPost(request.resource.data);
+        allow delete: if isSystemOwner() || isOrgAdmin(orgId);
+      }
+      // VIDEO OPERATIONS (AI-jobb) - Endast backend skriver
+      match /videoOperations/{operationId} {
+        allow read: if isSystemOwner() || isOrgAdmin(orgId);
+        allow write: if false;
+      }
+    }
+    // ------------------------------------------------------------
+    // ROOT COLLECTIONS (Backwards compatibility)
+    // ------------------------------------------------------------
+    match /displayPosts/{postId} {
+      allow read: if true;
+      allow create, update: if (isAnyOrgAdmin() || isSystemOwner())
+                            && isValidDisplayPost(request.resource.data);
+      allow delete: if isAnyOrgAdmin() || isSystemOwner();
+    }
+    match /screenPairingCodes/{codeId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isAnyOrgAdmin() || isSystemOwner();
+      allow delete: if isSignedIn();
+    }
+    match /screenSessions/{deviceId} {
+      allow read: if true;
+      allow write, delete: if isSignedIn();
+    }
+    match /systemAnnouncements/{announcementId} {
+      allow read: if isSignedIn();
+      allow write: if isSystemOwner();
+    }
+
+    match /organizationNotifications/{notificationId} {
+      allow read, update: if isSystemOwner() || isOrgAdmin(resource.data.organizationId);
+      allow create, delete: if false;
+    }
+    match /mediaLibrary/{mediaId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // ------------------------------------------------------------
+    // QR-STATISTIK  ← NYTT
+    // ------------------------------------------------------------
+    // Saknades tidigare helt, vilket gjorde att klienten nekades läsning
+    // och QR-statistiken alltid visade noll — i både staging och prod.
+    // Skrivning sker enbart från Cloud Function qrRedirect via Admin SDK,
+    // som går förbi reglerna. Därför write: false.
+    match /qrScanCounts/{postId} {
+      allow read: if isSystemOwner() || isOrgAdmin(resource.data.orgId);
+      allow write: if false;
+    }
+
+    // ------------------------------------------------------------
+    // AI-ANVÄNDNING  ← NYTT (Mickes fynd)
+    // ------------------------------------------------------------
+    // Klienten läser aiUsage/{orgId}_{YYYY-MM} för kortet "AI-användning".
+    // Skrivning sker enbart från Cloud Functions via Admin SDK.
+    // OBS: resource är null när dokumentet inte finns. resource.data.orgId
+    // ger då fel och läsningen nekas — vilket skulle sänka kortet för varje
+    // ny organisation och för alla den 1:a i månaden. Därför tredelningen.
+    match /aiUsage/{docId} {
+      allow read: if isSystemOwner()
+                  || (resource == null && isAnyOrgAdmin())
+                  || (resource != null && isOrgAdmin(resource.data.orgId));
+      allow write: if false;
+    }
+
+    // ------------------------------------------------------------
+    // SKYDDADE ORG-INSTÄLLNINGAR  ← NYTT (Mickes fynd)
+    // ------------------------------------------------------------
+    // Ligger som EGEN toppnivå-collection, inte som subcollection under
+    // organizations. Firestore-regler är additiva: den generiska regeln
+    // match /organizations/{orgId}/{subCollection}/{docId} med
+    // allow read: if true gör varje subcollection publikt läsbar, även en
+    // som heter "private". En mer specifik regel kan inte ta bort access.
+    //
+    // Innehåller icsUrl per kalender (kundernas iCal-länkar).
+    // Functions läser via Admin SDK och påverkas inte.
+    match /orgPrivateSettings/{orgId} {
+      allow read, write: if isSystemOwner() || isOrgAdmin(orgId);
+    }
+
+    // ------------------------------------------------------------
+    // LEADS FRÅN LANDNINGSSIDAN  ← NYTT
+    // ------------------------------------------------------------
+    // Formuläret på landningssidan fylls i av besökare som inte är
+    // inloggade. Därför måste create vara öppet — men bara create.
+    // Ingen kan läsa, ändra eller radera utifrån, och storleksgränserna
+    // gör collectionen ointressant som skräppostmål.
+    match /leads/{leadId} {
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['namn','foretag','epost','telefon','meddelande','kalla','skapad'])
+                    && request.resource.data.namn is string
+                    && request.resource.data.namn.size() > 0
+                    && request.resource.data.namn.size() < 200
+                    && request.resource.data.foretag is string
+                    && request.resource.data.foretag.size() < 200
+                    && request.resource.data.epost is string
+                    && request.resource.data.epost.size() > 0
+                    && request.resource.data.epost.size() < 200
+                    && request.resource.data.telefon is string
+                    && request.resource.data.telefon.size() < 100
+                    && request.resource.data.meddelande is string
+                    && request.resource.data.meddelande.size() < 2000;
+      // Läsning i adminappen när lead-vyn byggs. Tills dess läser vi dem
+      // i Firebase-konsolen, som går förbi reglerna.
+      allow read: if isSystemOwner();
+      allow update, delete: if false;
+    }
+
+  }
+}
