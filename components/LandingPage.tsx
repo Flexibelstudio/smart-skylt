@@ -63,6 +63,10 @@ const PRIS: { belopp: string; enhet: string } | null = null;
 
 const KONTAKT_EPOST = 'info@flexibelfriskvardhalsa.se';
 
+/** Loggan i navigeringen och sidfoten. Ligger i public/.
+ *  Byt sökväg här om ni gör en egen, mindre version. */
+const LOGGA = '/favicon.png';
+
 /* ===================== Små byggstenar ===================== */
 
 const Sektion: React.FC<{
@@ -165,9 +169,17 @@ export const LandingPage: React.FC<{ onLoginClick?: () => void }> = ({
       {/* ---------- Navigering ---------- */}
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between gap-4">
-          <span className="font-display font-black text-xl tracking-tight text-slate-900">
-            Smart<span className="text-primary">Skylt</span>
-          </span>
+          <a href="/" className="flex items-center gap-2.5 shrink-0">
+            <img
+              src={LOGGA}
+              alt=""
+              aria-hidden="true"
+              className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl object-contain"
+            />
+            <span className="font-display font-black text-lg sm:text-xl tracking-tight text-slate-900">
+              Smart<span className="text-primary">Skylt</span>
+            </span>
+          </a>
           <div className="flex items-center gap-2 sm:gap-4">
             {onLoginClick && (
               <button
@@ -378,9 +390,15 @@ export const LandingPage: React.FC<{ onLoginClick?: () => void }> = ({
           <p className="mt-5 text-xl text-slate-500">Mindre än du tror.</p>
           <div className="mt-10 grid sm:grid-cols-3 gap-6">
             {[
-              { titel: 'En skärm', text: 'Har ni redan en TV i fönstret fungerar den.' },
-              { titel: 'En liten box', text: 'En Android-box, ungefär som en Chromecast.' },
+              {
+                titel: 'En smart-TV',
+                text: 'En TV med Android. Har ni redan en i fönstret fungerar den oftast. Är TV:n äldre löser en liten Android-box samma sak.',
+              },
               { titel: 'Wifi', text: 'Det ni redan har räcker.' },
+              {
+                titel: 'Vi fixar resten',
+                text: 'Vi ställer in TV:n och kopplar upp den mot er kanal. Ni behöver inte installera något själva.',
+              },
             ].map((h) => (
               <div key={h.titel} className="rounded-2xl bg-slate-50 p-6">
                 <h3 className="font-display font-bold text-lg text-slate-900">
@@ -391,7 +409,7 @@ export const LandingPage: React.FC<{ onLoginClick?: () => void }> = ({
             ))}
           </div>
           <p className="mt-8 text-lg text-slate-700">
-            Vi kopplar upp det åt er. Ni är igång samma dag.
+            Ni är igång samma dag.
           </p>
         </div>
       </Sektion>
@@ -457,8 +475,16 @@ export const LandingPage: React.FC<{ onLoginClick?: () => void }> = ({
       {/* ---------- Sidfot ---------- */}
       <footer className="border-t border-slate-200 px-5 sm:px-8 py-10">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between text-sm text-slate-500">
-          <span className="font-display font-black text-base text-slate-900">
-            Smart<span className="text-primary">Skylt</span>
+          <span className="flex items-center gap-2.5">
+            <img
+              src={LOGGA}
+              alt=""
+              aria-hidden="true"
+              className="h-7 w-7 rounded-lg object-contain"
+            />
+            <span className="font-display font-black text-base text-slate-900">
+              Smart<span className="text-primary">Skylt</span>
+            </span>
           </span>
           <a href={`mailto:${KONTAKT_EPOST}`} className="hover:text-slate-900">
             {KONTAKT_EPOST}
