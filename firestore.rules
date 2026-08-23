@@ -205,7 +205,9 @@ service cloud.firestore {
       // Läsning i adminappen när lead-vyn byggs. Tills dess läser vi dem
       // i Firebase-konsolen, som går förbi reglerna.
       allow read: if isSystemOwner();
-      allow update, delete: if false;
+      // Systemägaren får arkivera ett lead (sätta arkiverad). Ingen radering.
+      allow update: if isSystemOwner();
+      allow delete: if false;
     }
 
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Organization, SystemSettings, AppNotification } from '../types';
-import { getSystemSettings, updateSystemSettings, createSystemAnnouncement, listenToSystemAnnouncements, updateSystemAnnouncement, deleteSystemAnnouncement } from '../services/firebaseService';
+import { getSystemSettings, updateSystemSettings, createSystemAnnouncement, listenToSystemAnnouncements, updateSystemAnnouncement, deleteSystemAnnouncement, listenToLeads, setLeadArchived, Lead } from '../services/firebaseService';
 import { MonitorIcon, PencilIcon, TrashIcon } from './icons';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from './Buttons';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -470,11 +470,27 @@ export const SystemOwnerScreen: React.FC<SystemOwnerScreenProps> = ({ allOrganiz
     const [isSending, setIsSending] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
 
+    const [leads, setLeads] = useState<Lead[]>([]);
+    const [isLoadingLeads, setIsLoadingLeads] = useState(true);
+    const [visaArkiveradeLeads, setVisaArkiveradeLeads] = useState(false);
+    const aktivaLeads = useMemo(() => leads.filter(l => !l.arkiverad), [leads]);
+    const arkiveradeLeads = useMemo(() => leads.filter(l => l.arkiverad), [leads]);
+    const synligaLeads = visaArkiveradeLeads ? leads : aktivaLeads;
+
     const [announcements, setAnnouncements] = useState<AppNotification[]>([]);
     const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(true);
     const [editingAnnouncement, setEditingAnnouncement] = useState<AppNotification | null>(null);
     const [announcementToDelete, setAnnouncementToDelete] = useState<AppNotification | null>(null);
 
+
+    useEffect(() => {
+        setIsLoadingLeads(true);
+        const unsubscribe = listenToLeads(data => {
+            setLeads(data);
+            setIsLoadingLeads(false);
+        });
+        return () => unsubscribe();
+    }, []);
 
     useEffect(() => {
         setIsLoadingAnnouncements(true);
@@ -651,6 +667,109 @@ export const SystemOwnerScreen: React.FC<SystemOwnerScreenProps> = ({ allOrganiz
                 )}
             </div>
             
+            <div className="bg-slate-100 dark:bg-gray-800 p-6 rounded-xl space-y-4 border border-slate-200 dark:border-slate-700 shadow-md">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-300 dark:border-gray-700 pb-3">
+                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                        Leads
+                        {aktivaLeads.length > 0 && (
+                            <span className="ml-3 align-middle text-sm font-bold bg-primary text-white rounded-full px-2.5 py-1">
+                                {aktivaLeads.length}
+                            </span>
+                        )}
+                    </h3>
+                    {arkiveradeLeads.length > 0 && (
+                        <button
+                            onClick={() => setVisaArkiveradeLeads(v => !v)}
+                            className="text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-primary transition-colors"
+                        >
+                            {visaArkiveradeLeads
+                                ? 'Dölj arkiverade'
+                                : `Visa arkiverade (${arkiveradeLeads.length})`}
+                        </button>
+                    )}
+                </div>
+                <p className="text-sm text-slate-500 dark:text-gray-400">
+                    Demoförfrågningar från landningssidan.
+                </p>
+
+                <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-2">
+                    {isLoadingLeads ? (
+                        <p className="text-slate-500 dark:text-slate-400 text-center py-4">Laddar leads...</p>
+                    ) : synligaLeads.length === 0 ? (
+                        <p className="text-slate-500 dark:text-slate-400 text-center py-4">
+                            {leads.length === 0
+                                ? 'Inga leads ännu.'
+                                : 'Alla leads är arkiverade.'}
+                        </p>
+                    ) : (
+                        synligaLeads.map(lead => (
+                            <div
+                                key={lead.id}
+                                className={`p-4 rounded-lg border ${lead.arkiverad
+                                    ? 'bg-slate-50 dark:bg-gray-900/30 border-slate-200 dark:border-gray-700 opacity-70'
+                                    : 'bg-white dark:bg-gray-900/50 border-slate-200 dark:border-gray-700'}`}
+                            >
+                                <div className="flex flex-wrap justify-between items-start gap-3">
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <h4 className="font-bold text-slate-800 dark:text-slate-200">
+                                                {lead.foretag || lead.namn || 'Namnlöst lead'}
+                                            </h4>
+                                            {lead.arkiverad && (
+                                                <span className="text-[11px] font-semibold uppercase tracking-wide bg-slate-200 dark:bg-gray-700 text-slate-600 dark:text-slate-300 rounded-full px-2 py-0.5">
+                                                    Arkiverad
+                                                </span>
+                                            )}
+                                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                {lead.skapad
+                                                    ? parseToDate(lead.skapad)?.toLocaleString('sv-SE', {
+                                                          day: 'numeric',
+                                                          month: 'short',
+                                                          year: 'numeric',
+                                                          hour: '2-digit',
+                                                          minute: '2-digit',
+                                                      })
+                                                    : ''}
+                                            </span>
+                                        </div>
+                                        {lead.namn && lead.foretag && (
+                                            <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                                                Kontaktperson: {lead.namn}
+                                            </p>
+                                        )}
+                                        <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 break-all">
+                                            {lead.epost}
+                                            {lead.telefon ? ` · ${lead.telefon}` : ''}
+                                        </p>
+                                        {lead.meddelande && (
+                                            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 whitespace-pre-wrap">
+                                                {lead.meddelande}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 flex-shrink-0">
+                                        {lead.epost && (
+                                            <a
+                                                href={`mailto:${lead.epost}?subject=${encodeURIComponent('SmartSkylt – din demoförfrågan')}`}
+                                                className="inline-flex items-center rounded-lg bg-primary text-white text-sm font-semibold px-4 py-2 hover:brightness-95 transition-all"
+                                            >
+                                                Svara via e-post
+                                            </a>
+                                        )}
+                                        <button
+                                            onClick={() => setLeadArchived(lead.id, !lead.arkiverad)}
+                                            className="inline-flex items-center rounded-lg border border-slate-300 dark:border-gray-600 text-slate-600 dark:text-slate-300 text-sm font-semibold px-4 py-2 hover:bg-slate-200 dark:hover:bg-gray-700 transition-colors"
+                                        >
+                                            {lead.arkiverad ? 'Återställ' : 'Arkivera'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
              <div className="bg-slate-100 dark:bg-gray-800 p-6 rounded-xl space-y-4 border border-slate-200 dark:border-slate-700 shadow-md">
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white border-b border-slate-300 dark:border-gray-700 pb-3">Systemmeddelande</h3>
                 <p className="text-sm text-slate-500 dark:text-gray-400">

@@ -1015,6 +1015,40 @@ export const listenToScreenSessions = (
 
 // --- ANNOUNCEMENTS & NOTIFICATIONS ---
 
+/* ------------------------------------------------------------------ */
+/*                 LEADS FRÅN LANDNINGSSIDAN                           */
+/* ------------------------------------------------------------------ */
+/* Formuläret på landningssidan skriver hit. Reglerna tillåter create
+   för vem som helst, men läsning bara för systemägare. */
+export interface Lead {
+    id: string;
+    namn?: string;
+    foretag?: string;
+    epost?: string;
+    telefon?: string;
+    meddelande?: string;
+    kalla?: string;
+    arkiverad?: boolean;
+    skapad?: any;
+}
+
+export const listenToLeads = (callback: (leads: Lead[]) => void) => {
+    if (isOffline || !db) { callback([]); return () => {}; }
+    return db.collection('leads').orderBy('skapad', 'desc').limit(200).onSnapshot(
+        snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as Lead))),
+        err => {
+            console.error('Kunde inte läsa leads:', err);
+            callback([]);
+        }
+    );
+};
+
+export const setLeadArchived = async (leadId: string, arkiverad: boolean) => {
+    if (isOffline) return offlineWarning('setLeadArchived');
+    if (!db) return;
+    await db.collection('leads').doc(leadId).update({ arkiverad });
+};
+
 export const listenToSystemAnnouncements = (callback: (announcements: AppNotification[]) => void) => {
     if (isOffline) return () => {}; // Mock if needed
     if (!db) return () => {};
