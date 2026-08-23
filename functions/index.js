@@ -249,6 +249,50 @@ const AI_MODELS = {
   IMAGE_GENERATION: "imagen-4.0-generate-001",
 };
 
+/* Bildgenerering med reservväg.
+   Imagen nås via predict på v1beta, och den vägen är inte exponerad för
+   alla nycklar — felet blir då:
+     "models/imagen-... is not found for API version v1beta,
+      or is not supported for predict"
+   Text fungerar ändå, eftersom den går via generateContent.
+
+   Därför: försök med Imagen först, och faller den tillbaka på Geminis
+   bildmodell via generateContent — samma väg som bildredigeringen redan
+   använder och som vi vet fungerar. Bildgenerering slutar alltså aldrig
+   fungera bara för att Imagen inte är tillgänglig.
+
+   Bäddar Imagen in igen behålls den automatiskt, eftersom den provas
+   först. Byt modellnamn i AI_MODELS ovan — aldrig här. */
+const generateImageBase64 = async (ai, prompt, aspectRatio) => {
+  try {
+    const img = await ai.models.generateImages({
+      model: AI_MODELS.IMAGE_GENERATION,
+      prompt,
+      config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
+    });
+    const bytes = img?.generatedImages?.[0]?.image?.imageBytes;
+    if (bytes) return { base64: bytes, mimeType: "image/jpeg" };
+    throw new Error("Imagen returnerade ingen bild");
+  } catch (err) {
+    console.warn(
+      `[bild] ${AI_MODELS.IMAGE_GENERATION} gick inte (${err?.message || err}) — försöker med ${AI_MODELS.IMAGE}`
+    );
+    const ratio = aspectRatio ? ` The image must have a ${aspectRatio} aspect ratio.` : "";
+    const response = await ai.models.generateContent({
+      model: AI_MODELS.IMAGE,
+      contents: `${prompt}${ratio}`,
+      config: { responseModalities: [Modality.IMAGE] },
+    });
+    const part = response?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
+    if (part?.inlineData) {
+      console.log(`[bild] ${AI_MODELS.IMAGE} lyckades`);
+      return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType || "image/png" };
+    }
+    throw new HttpsError("not-found", "Kunde inte generera någon bild.");
+  }
+};
+
+
 // Kreditvikter per åtgärd (text ≈ ören, bild är de dyra)
 const AI_CREDIT_COSTS = {
   generateContent: 1,
@@ -689,20 +733,17 @@ async function runAutomationsOnce(orgIdFilter) {
                 // Append the style to the image prompt for consistency
                 const fullImagePrompt = `${postDetails.imagePrompt}. Style: ${imageStyle}.${sp.visualStyle ? ` Visual brand style: ${sp.visualStyle}.` : ""}`;
                 
-                const img = await ai.models.generateImages({
-                  model: AI_MODELS.IMAGE_GENERATION,
-                  prompt: fullImagePrompt,
-                  config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: screen.aspectRatio },
-                });
-                if (img.generatedImages) {
-                  const imageBytes = img.generatedImages[0].image.imageBytes;
+                const bild = await generateImageBase64(ai, fullImagePrompt, screen.aspectRatio);
+                if (bild) {
+                  const imageBytes = bild.base64;
                   const bucket = storage.bucket();
-                  const fileName = `organizations/${orgId}/ai-automation-assets/${Date.now()}-${Math.round(Math.random() * 1e6)}.jpg`;
+                  const filandelse = bild.mimeType === "image/png" ? "png" : "jpg";
+                  const fileName = `organizations/${orgId}/ai-automation-assets/${Date.now()}-${Math.round(Math.random() * 1e6)}.${filandelse}`;
                   const file = bucket.file(fileName);
                   const token = randomUUID();
                   await file.save(Buffer.from(imageBytes, "base64"), {
                       metadata: {
-                          contentType: "image/jpeg",
+                          contentType: bild.mimeType,
                           metadata: { firebaseStorageDownloadTokens: token }
                       }
                   });
@@ -1132,18 +1173,14 @@ export const gemini = onCall(
             }
 
             case "generateImages": {
-              const response = await ai.models.generateImages({
-                model: params.model,
-                prompt: params.prompt,
-                config: params.config,
-              });
-              
-              if (!response.generatedImages?.length) throw new HttpsError("not-found", "No image generated.");
-              
-              return { 
-                  imageBytes: response.generatedImages[0].image.imageBytes,
-                  mimeType: 'image/jpeg' 
-              };
+              // Går via samma hjälpfunktion som övriga bildvägar, så att
+              // reservvägen gäller även när klienten anropar proxyn direkt.
+              const bild = await generateImageBase64(
+                ai,
+                params.prompt,
+                params.config?.aspectRatio
+              );
+              return { imageBytes: bild.base64, mimeType: bild.mimeType };
             }
 
             case "analyzeBrandFromWebsite": {
@@ -1315,13 +1352,8 @@ Så här väljer du:
             }
 
             case "generateDisplayPostImage": {
-              const resp = await ai.models.generateImages({
-                model: AI_MODELS.IMAGE_GENERATION,
-                prompt: params.prompt + " NO TEXT.",
-                config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio: params.aspectRatio },
-              });
-              if (resp.generatedImages?.length) return `data:image/jpeg;base64,${resp.generatedImages[0].image.imageBytes}`;
-              throw new HttpsError("not-found", "No image.");
+              const bild = await generateImageBase64(ai, params.prompt + " NO TEXT.", params.aspectRatio);
+              return `data:${bild.mimeType};base64,${bild.base64}`;
             }
 
             case "editDisplayPostImage": {
