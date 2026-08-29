@@ -410,7 +410,7 @@ const SubImageCarousel: React.FC<{
     );
 };
 
-const PostMarkdownRenderer: React.FC<{ content: string; className?: string; style?: React.CSSProperties }> = ({ content, className, style }) => {
+const PostMarkdownRenderer: React.FC<{ content: string; className?: string; style?: React.CSSProperties; textBlock?: string }> = ({ content, className, style, textBlock }) => {
     const renderMarkdown = useMemo(() => {
         if (!content) return { __html: '' };
         const lines = content.split('\n');
@@ -436,7 +436,7 @@ const PostMarkdownRenderer: React.FC<{ content: string; className?: string; styl
         closeListIfNeeded();
         return { __html: htmlLines.join('\n') };
     }, [content]);
-    return <div className={className} style={style} dangerouslySetInnerHTML={renderMarkdown} />;
+    return <div data-textblock={textBlock} className={className} style={style} dangerouslySetInnerHTML={renderMarkdown} />;
 };
 
 const DraggableTextElement: React.FC<any> = ({ 
@@ -695,7 +695,7 @@ const DraggableTextElement: React.FC<any> = ({
                     {/* Ghost Element: Controls the height. Hidden when editing but present in DOM. */}
                     <div className={`${isEditing ? 'invisible' : ''} col-start-1 row-start-1 min-h-[1.2em]`}>
                         {type === 'headline' ? (
-                            <h1 className={fontClass} style={{
+                            <h1 data-textblock="headline" className={fontClass} style={{
                                 ...textEffectStyle,
                                 ...(maxLines ? {
                                     display: '-webkit-box',
@@ -708,6 +708,7 @@ const DraggableTextElement: React.FC<any> = ({
                             </h1>
                         ) : (
                             <PostMarkdownRenderer 
+                                textBlock="body"
                                 content={isEditing ? (tempText || ' ') : (text || ' ')} 
                                 className={fontClass} 
                                 style={{

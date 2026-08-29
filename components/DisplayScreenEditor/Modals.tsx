@@ -569,6 +569,21 @@ export const DownloadAssetsModal: React.FC<{
           allowTaint: true,
           backgroundColor: post.backgroundColor || 'black',
           scale: 2,
+          // html2canvas ritar texten en aning lägre än webbläsaren och klipper
+          // vid textblockets underkant. Då kapas underslängar och fötter:
+          // "GLADA" blir "GI ADA", "jobbat" blir "iobbat".
+          // Vi ger därför varje textblock lite luft i KLONEN (bara för
+          // nedladdningen — skärmarna påverkas inte). Lika mycket uppe som
+          // nere, så att texten står kvar på exakt samma ställe.
+          onclone: (clonedDoc: Document) => {
+            clonedDoc
+              .querySelectorAll<HTMLElement>('[data-textblock]')
+              .forEach((el) => {
+                el.style.paddingTop = '0.25em';
+                el.style.paddingBottom = '0.25em';
+                el.style.overflow = 'visible';
+              });
+          },
         });
 
         const dataUrl = canvas.toDataURL('image/png');
