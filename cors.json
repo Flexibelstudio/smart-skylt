@@ -1,0 +1,16 @@
+[
+  {
+    "origin": [
+      "https://smartskylt.se",
+      "https://www.smartskylt.se",
+      "https://app.smartskylt.se",
+      "https://skylt.smartskylt.se",
+      "https://staging.smartskylt.se",
+      "https://app.staging.smartskylt.se",
+      "http://localhost:3000"
+    ],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]

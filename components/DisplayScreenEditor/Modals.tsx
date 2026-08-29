@@ -25,7 +25,7 @@ import { EmptyState } from '../EmptyState';
 import { StyledInput, StyledSelect } from '../Forms';
 import { useToast } from '../../context/ToastContext';
 import { ConfirmDialog } from '../ConfirmDialog';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { generateRemixVariants, generateDisplayPostImage } from '../../services/geminiService';
 
@@ -602,29 +602,25 @@ export const DownloadAssetsModal: React.FC<{
     void (async () => {
       try {
         await vantaPaMedia(targetElement);
-        const canvas = await html2canvas(targetElement, {
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: post.backgroundColor || 'black',
-          scale: 2,
-          // html2canvas ritar texten en aning lägre än webbläsaren och klipper
-          // vid textblockets underkant. Då kapas underslängar och fötter:
-          // "GLADA" blir "GI ADA", "jobbat" blir "iobbat".
-          // Vi ger därför varje textblock lite luft i KLONEN (bara för
-          // nedladdningen — skärmarna påverkas inte). Lika mycket uppe som
-          // nere, så att texten står kvar på exakt samma ställe.
-          onclone: (clonedDoc: Document) => {
-            clonedDoc
-              .querySelectorAll<HTMLElement>('[data-textblock]')
-              .forEach((el) => {
-                el.style.paddingTop = '0.25em';
-                el.style.paddingBottom = '0.25em';
-                el.style.overflow = 'visible';
-              });
-          },
-        });
+        // Vi använder html-to-image i stället för html2canvas. html2canvas ritar
+        // om all text själv med canvas-kommandon och kapade då sista raden i
+        // varje textblock ("GLADA" blev "GI ADA"). html-to-image lägger i
+        // stället hela inlägget i ett SVG-foreignObject och låter Chrome rita
+        // det — samma motor som ritar skärmen. Då blir PNG:en identisk med
+        // det man ser.
+        const options = {
+          pixelRatio: 2,
+          backgroundColor: post.backgroundColor || '#000000',
+          // Hämta bilderna på nytt i stället för att lita på webbläsarens cache.
+          // En bild som redan hämtats utan CORS ligger kvar i cachen utan rätt
+          // huvuden, och skulle då fortsätta saknas i den nedladdade PNG:en.
+          cacheBust: true,
+        };
 
-        const dataUrl = canvas.toDataURL('image/png');
+        // Första varvet värmer upp bild- och typsnittscachen. Utan det kan
+        // fotot saknas i resultatet. Andra varvet är det vi använder.
+        await toPng(targetElement, options);
+        const dataUrl = await toPng(targetElement, options);
         const a = document.createElement('a');
         a.href = dataUrl;
         a.download = `${
@@ -634,7 +630,7 @@ export const DownloadAssetsModal: React.FC<{
         a.click();
         document.body.removeChild(a);
       } catch (e) {
-        console.error('html2canvas error during image capture:', e);
+        console.error('Fel vid bildgenerering av inlägget:', e);
         showToast({
           message: 'Ett fel inträffade vid bildgenerering.',
           type: 'error',
@@ -853,7 +849,7 @@ export const DownloadAssetsModal: React.FC<{
           </div>
         </div>
       </div>
-      {/* Off-screen renderer for html2canvas */}
+      {/* Osynlig renderare som fångas vid nedladdning */}
       <div
         style={{
           position: 'fixed',
