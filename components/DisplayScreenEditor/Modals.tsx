@@ -535,6 +535,43 @@ export const RemixModal: React.FC<{
   );
 };
 
+// Väntar tills alla bilder/videor i det osynliga inlägget faktiskt är laddade,
+// och tills typsnitten är klara. Tidigare låg det en fast setTimeout på 500 ms
+// här — hann bilden inte ladda på den tiden blev den nedladdade PNG:en utan
+// foto. Vi ger den upp till 10 sekunder och kör ändå om något hänger sig.
+const vantaPaMedia = async (root: HTMLElement, timeoutMs = 10000) => {
+  const bilder = Array.from(root.querySelectorAll('img'));
+  const videor = Array.from(root.querySelectorAll('video'));
+
+  const klar = Promise.all([
+    ...bilder.map((img) =>
+      img.complete && img.naturalWidth > 0
+        ? Promise.resolve()
+        : new Promise<void>((res) => {
+            img.addEventListener('load', () => res(), { once: true });
+            img.addEventListener('error', () => res(), { once: true });
+          })
+    ),
+    ...videor.map((v) =>
+      v.readyState >= 2
+        ? Promise.resolve()
+        : new Promise<void>((res) => {
+            v.addEventListener('loadeddata', () => res(), { once: true });
+            v.addEventListener('error', () => res(), { once: true });
+          })
+    ),
+    (document as any).fonts?.ready ?? Promise.resolve(),
+  ]);
+
+  await Promise.race([
+    klar,
+    new Promise<void>((res) => setTimeout(res, timeoutMs)),
+  ]);
+
+  // Ett extra andetag så att layouten hinner sätta sig efter att bilden kom in.
+  await new Promise<void>((res) => setTimeout(res, 150));
+};
+
 // ------------------------------------------------------------
 // DownloadAssetsModal
 // ------------------------------------------------------------
@@ -562,8 +599,9 @@ export const DownloadAssetsModal: React.FC<{
 
     setIsGenerating(true);
 
-    setTimeout(async () => {
+    void (async () => {
       try {
+        await vantaPaMedia(targetElement);
         const canvas = await html2canvas(targetElement, {
           useCORS: true,
           allowTaint: true,
@@ -604,7 +642,7 @@ export const DownloadAssetsModal: React.FC<{
       } finally {
         setIsGenerating(false);
       }
-    }, 500);
+    })();
   };
 
   const handleDownloadMedia = async (url: string, filename: string) => {
