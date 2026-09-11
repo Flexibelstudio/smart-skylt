@@ -1136,6 +1136,8 @@ export const extractContentFromUrl = (url: string): Promise<{
 export const analyzeWebsiteContent = (url: string): Promise<{
     primaryColor: string;
     secondaryColor: string;
+    tertiaryColor?: string;
+    accentColor?: string;
     headlineFontCategory: 'sans' | 'serif' | 'display' | 'script' | 'unknown';
     bodyFontCategory: 'sans' | 'serif' | 'unknown';
     businessDescription: string;

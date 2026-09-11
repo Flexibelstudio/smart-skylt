@@ -782,6 +782,11 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
     const handleImportFromWebsite = async (data: any, url: string) => {
         const newPrimary = (data.primaryColor && data.primaryColor.trim()) ? data.primaryColor.trim() : primaryColor;
         const newSecondary = (data.secondaryColor && data.secondaryColor.trim()) ? data.secondaryColor.trim() : secondaryColor;
+        // Tertiär och accent fylls bara när sajten faktiskt har namngivna
+        // varumärkesfärger nog för fler än två fack. Saknas de lämnas
+        // användarens befintliga val orörda — importen tar aldrig bort något.
+        const newTertiary = (data.tertiaryColor && data.tertiaryColor.trim()) ? data.tertiaryColor.trim() : undefined;
+        const newAccent = (data.accentColor && data.accentColor.trim()) ? data.accentColor.trim() : undefined;
 
         const newHeadlineFont =
             data.headlineFontCategory === 'serif' ? 'merriweather'
@@ -792,6 +797,8 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
 
         setPrimaryColor(newPrimary);
         if (newSecondary) setSecondaryColor(newSecondary);
+        if (newTertiary) setTertiaryColor(newTertiary);
+        if (newAccent) setAccentColor(newAccent);
         
         if (data.logoUrl) {
             setLogoLight(data.logoUrl);
@@ -815,7 +822,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
         const hasColors = Boolean((data.primaryColor && data.primaryColor.trim()) || (data.secondaryColor && data.secondaryColor.trim()));
         if (hasColors) {
             showToast({ 
-                message: `Analys klar! Färger (${newPrimary}${newSecondary ? ' och ' + newSecondary : ''}), typsnitt och text är sparade. Du kan justera allt under Visuell Design & Färger.`, 
+                message: `Analys klar! Färger (${[newPrimary, newSecondary, newTertiary, newAccent].filter(Boolean).join(', ')}), typsnitt och text är sparade. Du kan justera allt under Visuell Design & Färger.`, 
                 type: 'success' 
             });
         } else {
@@ -846,6 +853,8 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
             headlineFontFamily: newHeadlineFont,
             bodyFontFamily: newBodyFont,
             ...(newSecondary ? { secondaryColor: newSecondary } : {}),
+            ...(newTertiary ? { tertiaryColor: newTertiary } : {}),
+            ...(newAccent ? { accentColor: newAccent } : {}),
         };
 
         await onUpdateOrganization(organization.id, partialUpdate);

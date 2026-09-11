@@ -117,6 +117,10 @@ export const PostAnalysisSchema = z.object({
 export const WebsiteBrandAnalysisSchema = z.object({
     primaryColor: RobustString,
     secondaryColor: RobustString,
+    // Valfria: sätts bara när sajten har namngivna varumärkesfärger nog för
+    // fler än två fack. Saknas de rörs användarens befintliga värden inte.
+    tertiaryColor: RobustString.optional(),
+    accentColor: RobustString.optional(),
     headlineFontCategory: z.enum(['sans', 'serif', 'display', 'script', 'unknown']).default('unknown'),
     bodyFontCategory: z.enum(['sans', 'serif', 'unknown']).default('unknown'),
     businessDescription: RobustString,

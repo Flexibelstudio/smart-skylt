@@ -1322,12 +1322,21 @@ Så här väljer du:
   medan en ljus ton som förekommer ofta oftast bara är sidans bakgrund.
 - secondaryColor = en färg som kompletterar primärfärgen, typiskt en ljus
   bakgrundston eller en mörkare variant av samma kulör.
+- tertiaryColor = varumärkets MÖRKA eller neutrala ton, den som används till
+  text, rubriker och ramar. Heter variabeln något med dark, text, ink eller
+  neutral är det oftast den. Den är ofta grå eller brunaktig — det gör den
+  inte mindre till en varumärkesfärg. Utelämna nyckeln om ingen sådan finns.
+- accentColor = en färg som används sparsamt som blickfång, skild från
+  primärfärgen. Utelämna nyckeln om sajten bara har en tydlig kulör.
+
+Ta ALDRIG samma hexkod till två fack. Har sajten bara två tydliga färger:
+utelämna tertiaryColor och accentColor helt.
 - Innehåller listan bara ljusa, lågmättade toner: välj ändå de två som bäst
   representerar sajten. Utelämna ENDAST om listan är helt tom.`
                         : `1. Inga hexfärger hittades på sajten. Utlämna primaryColor och secondaryColor HELT ur JSON-svaret (inkludera inte dessa nycklar). Hitta ALDRIG på egna hexkoder.`;
 
                     const jsonKeysInstruction = hasColors
-                        ? `{ "primaryColor": "#hex", "secondaryColor": "#hex", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }`
+                        ? `{ "primaryColor": "#hex", "secondaryColor": "#hex", "tertiaryColor": "#hex (utelämna om okänd)", "accentColor": "#hex (utelämna om okänd)", "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }`
                         : `{ "headlineFontCategory": "sans|serif|display|script", "bodyFontCategory": "sans|serif", "businessDescription": "...", "textSnippets": ["...", "..."], "businessType": ["..."], "logoUrl": "https://..." }`;
 
                     const prompt = `
