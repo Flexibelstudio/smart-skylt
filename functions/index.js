@@ -317,46 +317,24 @@ const AI_MODELS = {
   TEXT: "gemini-3.5-flash",
   TEXT_LIGHT: "gemini-2.5-flash",
   IMAGE: "gemini-2.5-flash-image",
-  IMAGE_GENERATION: "imagen-4.0-generate-001",
 };
 
 /* Bildgenerering.
 
    Vi anropar Geminis bildmodell via generateContent — samma väg som
-   bildredigeringen redan använder och som vi vet fungerar.
+   bildredigeringen använder.
 
-   Imagen låg tidigare först, med Gemini som reserv. Men Imagen nås via
-   predict på v1beta, och den vägen är inte öppen för vår nyckel:
-     "models/imagen-4.0-generate-001 is not found for API version v1beta,
-      or is not supported for predict"
-   Loggen visade att reservvägen bar varenda bild. Varje bild kostade
-   alltså en rundtur till ett anrop vi visste skulle misslyckas, plus en
-   varning i loggen som inte betydde något.
+   Imagen fanns tidigare här som förstahandsval, med Gemini som reserv.
+   Den vägen är stängd för vårt konto, och det är kontrollerat, inte antaget:
+   ListModels 11 september 2026 gav INGEN imagen-modell alls, och ingen av
+   bildmodellerna har "predict" bland sina metoder — bara generateContent.
+   Därför är Imagen borttagen helt. Varje bild slapp därmed en rundtur till
+   ett anrop som alltid misslyckades.
 
-   Vill vi tillbaka till Imagen: lägg in rätt modellnamn i AI_MODELS och
-   sätt IMAGE_GENERATION_ENABLED till true. Kör ListModels först och
-   kontrollera att modellen har "predict" bland supportedGenerationMethods
-   — annars hamnar vi här igen. */
-const IMAGE_GENERATION_ENABLED = false;
-
+   Vill någon prova Imagen igen: kör ListModels först och kontrollera att
+   modellen faktiskt har "predict". Saknas den går anropet inte fram, hur
+   rätt namnet än ser ut. */
 const generateImageBase64 = async (ai, prompt, aspectRatio) => {
-  if (IMAGE_GENERATION_ENABLED) {
-    try {
-      const img = await ai.models.generateImages({
-        model: AI_MODELS.IMAGE_GENERATION,
-        prompt,
-        config: { numberOfImages: 1, outputMimeType: "image/jpeg", aspectRatio },
-      });
-      const bytes = img?.generatedImages?.[0]?.image?.imageBytes;
-      if (bytes) return { base64: bytes, mimeType: "image/jpeg" };
-      throw new Error("Imagen returnerade ingen bild");
-    } catch (err) {
-      console.warn(
-        `[bild] ${AI_MODELS.IMAGE_GENERATION} gick inte (${err?.message || err}) — försöker med ${AI_MODELS.IMAGE}`
-      );
-    }
-  }
-
   const ratio = aspectRatio ? ` The image must have a ${aspectRatio} aspect ratio.` : "";
   const response = await ai.models.generateContent({
     model: AI_MODELS.IMAGE,
