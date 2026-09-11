@@ -256,17 +256,23 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             qrX = 50; qrY = 82; qrW = 15;
         } else if (layout === 'collage') {
             hX = 50;
-            hY = 80;
+            hY = 45;
             hW = 90;
 
             bX = 50;
-            bY = 89;
+            bY = 55;
             bW = 90;
 
             qrX = isPortraitScreen ? 86 : 89;
-            qrY = 12;
+            qrY = isPortraitScreen ? 89 : 84;
             qrW = 15;
         }
+
+        const collageCardColors = cardStyle === 'light'
+            ? { bg: 'rgba(255, 255, 255, 0.92)', headline: '#0f172a', body: '#334155' }
+            : cardStyle === 'subtle'
+            ? { bg: 'rgba(2, 6, 23, 0.55)', headline: '#ffffff', body: '#e2e8f0' }
+            : { bg: 'rgba(2, 6, 23, 0.85)', headline: '#ffffff', body: '#e2e8f0' };
 
         return {
             id: 'express_preview_temp',
@@ -288,9 +294,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     imageUrl: img,
                 })),
                 headlineBackgroundEnabled: true,
-                headlineBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                headlineBackgroundColor: collageCardColors.bg,
                 bodyBackgroundEnabled: true,
-                bodyBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                bodyBackgroundColor: collageCardColors.bg,
+                headlineTextColor: collageCardColors.headline,
+                bodyTextColor: collageCardColors.body,
             } : {}),
             isExpressPost: true,
             isExpressSold: false,
@@ -303,8 +311,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             // Font rendering matching engine rules
             headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
             bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
-            headlineTextColor: '#ffffff',
-            bodyTextColor: '#cbd5e1',
+            headlineTextColor: layout === 'collage' ? collageCardColors.headline : '#ffffff',
+            bodyTextColor: layout === 'collage' ? collageCardColors.body : '#cbd5e1',
             backgroundColor: '#0f172a',
 
             headlinePositionX: hX,
@@ -502,17 +510,23 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 qrW = 15;
             } else if (layout === 'collage') {
                 hX = 50;
-                hY = 80;
+                hY = 45;
                 hW = 90;
 
                 bX = 50;
-                bY = 89;
+                bY = 55;
                 bW = 90;
 
                 qrX = isPortraitScreen ? 86 : 89;
-                qrY = 12;
+                qrY = isPortraitScreen ? 89 : 84;
                 qrW = 15;
             }
+
+            const collageCardColors = cardStyle === 'light'
+                ? { bg: 'rgba(255, 255, 255, 0.92)', headline: '#0f172a', body: '#334155' }
+                : cardStyle === 'subtle'
+                ? { bg: 'rgba(2, 6, 23, 0.55)', headline: '#ffffff', body: '#e2e8f0' }
+                : { bg: 'rgba(2, 6, 23, 0.85)', headline: '#ffffff', body: '#e2e8f0' };
 
             const newPost: DisplayPost = {
                 id: `express_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -534,9 +548,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                         imageUrl: img,
                     })),
                     headlineBackgroundEnabled: true,
-                    headlineBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                    headlineBackgroundColor: collageCardColors.bg,
                     bodyBackgroundEnabled: true,
-                    bodyBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                    bodyBackgroundColor: collageCardColors.bg,
+                    headlineTextColor: collageCardColors.headline,
+                    bodyTextColor: collageCardColors.body,
                 } : {}),
                 ...(cleanUrl ? { qrCodeUrl: cleanUrl } : {}),
                 isExpressPost: true,
@@ -547,8 +563,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 scheduleTimeRanges: scheduleTimeRanges,
                 headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
                 bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
-                headlineTextColor: '#ffffff',
-                bodyTextColor: '#cbd5e1',
+                headlineTextColor: layout === 'collage' ? collageCardColors.headline : '#ffffff',
+                bodyTextColor: layout === 'collage' ? collageCardColors.body : '#cbd5e1',
                 backgroundColor: '#0f172a',
                 tagIds: selectedTagIds,
                 
@@ -838,10 +854,10 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         Collage
                                     </button>
                                 </div>
-                                {layout === 'real-estate' && (
+                                {(layout === 'real-estate' || layout === 'collage') && (
                                     <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-2">
                                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            Kortstil för centrerad ruta
+                                            Kortstil
                                         </label>
                                         <div className="flex flex-wrap gap-2">
                                             {[
