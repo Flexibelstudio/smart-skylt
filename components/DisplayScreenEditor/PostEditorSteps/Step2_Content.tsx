@@ -140,26 +140,6 @@ const EffectColorPicker: React.FC<{
     );
 };
 
-// --- Booking Placeholder Helper Component ---
-const BookingPlaceholderHelper: React.FC<{
-    organization?: Organization;
-    onInsert: () => void;
-}> = ({ organization, onInsert }) => {
-    const calendars = (organization?.bookingCalendars || []).filter(c => c.enabled);
-    if (calendars.length === 0) return null;
-    return (
-        <div className="mt-2 mb-4 p-3 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200/70 dark:border-teal-800/50 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-teal-800 dark:text-teal-300">
-                💡 Visa dagens lediga bokningstider automatiskt i texten. Uppdateras var 15:e minut. Tiderna ersätter brödtexten i det här inlägget.
-            </p>
-            <button type="button" onClick={onInsert}
-                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white whitespace-nowrap transition-colors">
-                + Infoga lediga tider
-            </button>
-        </div>
-    );
-};
-
 // --- Text Block Component ---
 const TextBlock: React.FC<{
     label: string;
@@ -313,17 +293,6 @@ const TextBlock: React.FC<{
                         className="w-full bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 mb-4 focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-white"
                         placeholder={`Skriv din ${label.toLowerCase()} här...`}
                     />
-
-                    {label === 'Brödtext' && (
-                        <BookingPlaceholderHelper
-                            organization={organization}
-                            onInsert={() => {
-                                const val = textValue || '';
-                                const needsSpace = val.length > 0 && !val.endsWith(' ');
-                                onTextChange(val + (needsSpace ? ' ' : '') + '{{lediga_tider}}');
-                            }}
-                        />
-                    )}
 
                     {/* Inline Design Controls */}
                     <div className="space-y-4 pt-3 border-t border-slate-100 dark:border-slate-700/50">
@@ -944,21 +913,21 @@ export const Step2_Content: React.FC<{
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Beskrivning / Instruktion</label>
-                                        <textarea 
-                                            value={post.body || ''} 
-                                            onChange={(e) => handleFieldChange('body', e.target.value)} 
-                                            placeholder="Skanna QR-koden till höger med din mobilkamera för att se lediga tider hos oss direkt."
-                                            rows={2}
-                                            className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-slate-700 dark:text-slate-300"
-                                        />
-                                        <BookingPlaceholderHelper
-                                            organization={organization}
-                                            onInsert={() => {
-                                                const currentBody = post.body || '';
-                                                const needsSpace = currentBody.length > 0 && !currentBody.endsWith(' ');
-                                                handleFieldChange('body', currentBody + (needsSpace ? ' ' : '') + '{{lediga_tider}}');
-                                            }}
-                                        />
+                                        {(post.body || '').includes('{{lediga_tider}}') ? (
+                                            <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200/70 dark:border-teal-800/50 flex items-center gap-2">
+                                                <p className="text-xs font-medium text-teal-800 dark:text-teal-300">
+                                                    💡 Brödtexten visar dagens lediga bokningstider. Ändra det under Layout.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <textarea 
+                                                value={post.body || ''} 
+                                                onChange={(e) => handleFieldChange('body', e.target.value)} 
+                                                placeholder="Skanna QR-koden till höger med din mobilkamera för att se lediga tider hos oss direkt."
+                                                rows={2}
+                                                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-slate-700 dark:text-slate-300"
+                                            />
+                                        )}
                                     </div>
 
                                     {/* Template Buttons */}
@@ -1150,41 +1119,49 @@ export const Step2_Content: React.FC<{
                     rows={2}
                 />
 
-                <TextBlock 
-                    label="Brödtext"
-                    textValue={post.body || ''}
-                    onTextChange={val => handleFieldChange('body', val)}
-                    fontFamily={post.bodyFontFamily || organization.bodyFontFamily || 'sans'}
-                    onFontChange={val => handleFieldChange('bodyFontFamily', val)}
-                    
-                    fontScale={post.bodyFontScale}
-                    onScaleChange={val => handleFieldChange('bodyFontScale', val)}
-                    defaultScale={4.8}
+                {(post.body || '').includes('{{lediga_tider}}') ? (
+                    <div className="p-4 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200/70 dark:border-teal-800/50 flex items-center gap-2">
+                        <p className="text-sm font-medium text-teal-800 dark:text-teal-300">
+                            💡 Brödtexten visar dagens lediga bokningstider. Ändra det under Layout.
+                        </p>
+                    </div>
+                ) : (
+                    <TextBlock 
+                        label="Brödtext"
+                        textValue={post.body || ''}
+                        onTextChange={val => handleFieldChange('body', val)}
+                        fontFamily={post.bodyFontFamily || organization.bodyFontFamily || 'sans'}
+                        onFontChange={val => handleFieldChange('bodyFontFamily', val)}
+                        
+                        fontScale={post.bodyFontScale}
+                        onScaleChange={val => handleFieldChange('bodyFontScale', val)}
+                        defaultScale={4.8}
 
-                    color={post.bodyTextColor || post.textColor || 'white'}
-                    onColorChange={val => handleFieldChange('bodyTextColor', val)}
-                    textAlign={post.bodyTextAlign || post.textAlign || 'center'}
-                    onAlignChange={val => handleFieldChange('bodyTextAlign', val)}
-                    bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled ?? false}
-                    onBgEnabledChange={val => handleFieldChange('bodyBackgroundEnabled', val)}
-                    bgColor={post.bodyBackgroundColor || post.textBackgroundColor || 'rgba(0,0,0,0.5)'}
-                    onBgColorChange={val => handleFieldChange('bodyBackgroundColor', val)}
-                    // Effects props
-                    shadowType={post.bodyShadowType || 'none'}
-                    onShadowTypeChange={val => handleFieldChange('bodyShadowType', val)}
-                    shadowColor={post.bodyShadowColor || '#000000'}
-                    onShadowColorChange={val => handleFieldChange('bodyShadowColor', val)}
-                    outlineWidth={post.bodyOutlineWidth || 0}
-                    onOutlineWidthChange={val => handleFieldChange('bodyOutlineWidth', val)}
-                    outlineColor={post.bodyOutlineColor || '#000000'}
-                    onOutlineColorChange={val => handleFieldChange('bodyOutlineColor', val)}
-                    // AI
-                    onAiSuggest={handleOpenBodySuggestions}
-                    onRefine={(cmd) => handleAiTextRefine(cmd, 'body')}
-                    aiLoading={aiLoading}
-                    organization={organization}
-                    rows={4}
-                />
+                        color={post.bodyTextColor || post.textColor || 'white'}
+                        onColorChange={val => handleFieldChange('bodyTextColor', val)}
+                        textAlign={post.bodyTextAlign || post.textAlign || 'center'}
+                        onAlignChange={val => handleFieldChange('bodyTextAlign', val)}
+                        bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled ?? false}
+                        onBgEnabledChange={val => handleFieldChange('bodyBackgroundEnabled', val)}
+                        bgColor={post.bodyBackgroundColor || post.textBackgroundColor || 'rgba(0,0,0,0.5)'}
+                        onBgColorChange={val => handleFieldChange('bodyBackgroundColor', val)}
+                        // Effects props
+                        shadowType={post.bodyShadowType || 'none'}
+                        onShadowTypeChange={val => handleFieldChange('bodyShadowType', val)}
+                        shadowColor={post.bodyShadowColor || '#000000'}
+                        onShadowColorChange={val => handleFieldChange('bodyShadowColor', val)}
+                        outlineWidth={post.bodyOutlineWidth || 0}
+                        onOutlineWidthChange={val => handleFieldChange('bodyOutlineWidth', val)}
+                        outlineColor={post.bodyOutlineColor || '#000000'}
+                        onOutlineColorChange={val => handleFieldChange('bodyOutlineColor', val)}
+                        // AI
+                        onAiSuggest={handleOpenBodySuggestions}
+                        onRefine={(cmd) => handleAiTextRefine(cmd, 'body')}
+                        aiLoading={aiLoading}
+                        organization={organization}
+                        rows={4}
+                    />
+                )}
             </div>
             
             {/* --- ADDITIONAL TEXT ELEMENTS --- */}

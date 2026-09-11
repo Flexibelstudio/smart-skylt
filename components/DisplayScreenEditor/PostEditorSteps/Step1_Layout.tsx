@@ -1,7 +1,8 @@
 
-import React from 'react';
-import { DisplayPost, DisplayScreen, CollageItem } from '../../../types';
-import { LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon, LayoutImageTopIcon, LayoutImageBottomIcon, HomeIcon, SparklesIcon } from '../../icons';
+import React, { useState } from 'react';
+import { DisplayPost, DisplayScreen, CollageItem, Organization } from '../../../types';
+import { LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon, LayoutImageTopIcon, LayoutImageBottomIcon, HomeIcon, SparklesIcon, ToggleSwitch } from '../../icons';
+import { ConfirmDialog } from '../../ConfirmDialog';
 
 // --- Layout Selectors ---
 const LayoutButton: React.FC<{
@@ -171,7 +172,25 @@ export const Step1_Layout: React.FC<{
     post: DisplayPost;
     onPostChange: (updatedPost: DisplayPost) => void;
     screen: DisplayScreen;
-}> = ({ post, onPostChange, screen }) => {
+    organization?: Organization;
+}> = ({ post, onPostChange, screen, organization }) => {
+    const [showConfirm, setShowConfirm] = useState(false);
+
+    const hasBookingCalendars = (organization?.bookingCalendars || []).filter(c => c.enabled).length > 0;
+    const showsBookingSlots = (post.body || '').includes('{{lediga_tider}}');
+
+    const handleToggleBookingSlots = (checked: boolean) => {
+        if (checked) {
+            const currentBody = (post.body || '').trim();
+            if (currentBody.length > 0 && !currentBody.includes('{{lediga_tider}}')) {
+                setShowConfirm(true);
+            } else {
+                onPostChange({ ...post, body: '{{lediga_tider}}' });
+            }
+        } else {
+            onPostChange({ ...post, body: '' });
+        }
+    };
 
     const handleLayoutChange = (newLayout: DisplayPost['layout']) => {
         const updates: Partial<DisplayPost> = { layout: newLayout };
@@ -249,6 +268,37 @@ export const Step1_Layout: React.FC<{
                     </div>
                 </div>
             )}
+
+            {hasBookingCalendars && (
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                    <h5 className="text-sm font-bold text-slate-800 dark:text-slate-200">Bokningstider</h5>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-700/30 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
+                        <ToggleSwitch
+                            label="Visa dagens lediga tider i det här inlägget"
+                            checked={showsBookingSlots}
+                            onChange={handleToggleBookingSlots}
+                        />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 px-2 mt-1">
+                            Tiderna hämtas automatiskt och ersätter brödtexten. Uppdateras var 15:e minut.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            <ConfirmDialog
+                isOpen={showConfirm}
+                onClose={() => setShowConfirm(false)}
+                onConfirm={() => {
+                    onPostChange({ ...post, body: '{{lediga_tider}}' });
+                    setShowConfirm(false);
+                }}
+                title="Ersätt brödtext?"
+                confirmText="Ja, fortsätt"
+                cancelText="Avbryt"
+                variant="primary"
+            >
+                Brödtexten ersätts av de lediga tiderna. Vill du fortsätta?
+            </ConfirmDialog>
         </div>
     );
 };

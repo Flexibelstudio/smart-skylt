@@ -183,6 +183,7 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                             }
                         }} 
                         screen={screen} 
+                        organization={organization}
                     />
                 );
             case 'content':

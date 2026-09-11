@@ -316,7 +316,7 @@ async function fetchSiteBrandData(url) {
 const AI_MODELS = {
   TEXT: "gemini-3.5-flash",
   TEXT_LIGHT: "gemini-2.5-flash",
-  IMAGE: "gemini-2.5-flash-image",
+  IMAGE: "gemini-3.1-flash-image",
 };
 
 /* Bildgenerering.

@@ -1238,6 +1238,9 @@ interface BookingSlotsBlockProps {
     anchor?: 'center' | 'top';
 }
 
+const SLOT_SCALE = 1.5;    // brickornas storlek relativt brödtextens skala
+const LABEL_RATIO = 0.5;   // etikettens storlek relativt brickorna
+
 const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
     organization,
     x = 50,
@@ -1252,8 +1255,9 @@ const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
 
     // Beräkna skalor baserat på DraggableTextElements enhet cqw för brödtext
     const baseScale = fontScale ?? (isPortrait ? 4.2 : 2.8);
-    const timeFontSize = `${baseScale}cqw`;
-    const labelFontSize = `${baseScale * 0.55}cqw`;
+    const chipScale = baseScale * SLOT_SCALE;
+    const timeFontSize = `${chipScale}cqw`;
+    const labelFontSize = `${chipScale * LABEL_RATIO}cqw`;
 
     const totalChips = (view.groups || []).reduce((acc, g) => acc + (g.chips ? g.chips.length : 0), 0);
     const hasChips = totalChips > 0;
@@ -1272,8 +1276,8 @@ const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
         backgroundColor: 'rgba(0, 0, 0, 0.65)',
         fontSize: timeFontSize,
         lineHeight: 1.3,
-        padding: `${baseScale * 0.22}cqw ${baseScale * 0.55}cqw`,
-        borderRadius: `${baseScale * 0.25}cqw`,
+        padding: `${chipScale * 0.22}cqw ${chipScale * 0.55}cqw`,
+        borderRadius: `${chipScale * 0.25}cqw`,
         color: '#ffffff',
     };
 
@@ -1286,8 +1290,9 @@ const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
                         fontSize: labelFontSize,
                         color: 'rgba(255, 255, 255, 0.75)',
                         lineHeight: 1.3,
+                        marginBottom: `${chipScale * 0.38}cqw`,
                     }}
-                    className="uppercase tracking-wider font-bold mb-[1.2cqw] text-center"
+                    className="uppercase tracking-widest font-bold text-center"
                 >
                     LEDIGA TIDER I DAG
                 </div>
@@ -1307,9 +1312,9 @@ const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
                 </div>
             ) : isPortrait ? (
                 /* c) Stående skärm: brickorna staplas i en kolumn, tidigast överst */
-                <div className="flex flex-col items-center w-full" style={{ gap: `${baseScale * 0.35}cqw` }}>
+                <div className="flex flex-col items-center w-full" style={{ gap: `${chipScale * 0.35}cqw` }}>
                     {view.groups.map((group, gIdx) => (
-                        <div key={gIdx} className="flex flex-col items-center w-full" style={{ gap: `${baseScale * 0.25}cqw` }}>
+                        <div key={gIdx} className="flex flex-col items-center w-full" style={{ gap: `${chipScale * 0.25}cqw` }}>
                             {/* d) Gruppens label om den finns */}
                             {group.label && (
                                 <div
@@ -1338,9 +1343,9 @@ const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
             ) : (
                 /* c) Liggande skärm: brickorna ligger på rad, tidigast till vänster, med radbrytning */
                 /* d) Grupperna följer efter varandra i samma riktning */
-                <div className="flex flex-wrap items-center justify-center w-full" style={{ gap: `${baseScale * 0.45}cqw` }}>
+                <div className="flex flex-wrap items-center justify-center w-full" style={{ gap: `${chipScale * 0.45}cqw` }}>
                     {view.groups.map((group, gIdx) => (
-                        <div key={gIdx} className="inline-flex flex-wrap items-center justify-center" style={{ gap: `${baseScale * 0.3}cqw` }}>
+                        <div key={gIdx} className="inline-flex flex-wrap items-center justify-center" style={{ gap: `${chipScale * 0.3}cqw` }}>
                             {group.label && (
                                 <span
                                     style={{
