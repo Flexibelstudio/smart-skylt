@@ -132,6 +132,78 @@ async function fetchSiteBrandData(url) {
         } catch { /* ignorera trasiga href */ }
     }
 
+    /* ------------------------------------------------------------------
+       Namngivna varumärkesfärger ur CSS-variabler.
+
+       Moderna sajter deklarerar sina profilfärger EN gång som
+       :root { --color-brand-accent: #d96e4a; } och använder dem sedan via
+       var(). Frekvensräkningen nedan hittar dem därför aldrig — de
+       förekommer en enda gång. Dessutom sållar den bort gråskala, vilket
+       gör att en grå profilfärg garanterat försvinner.
+
+       Därför läser vi variablerna direkt, löser upp var()-kedjor, och
+       lämnar dem till modellen som EGEN lista. Här gäller inget
+       mättnadsfilter: heter variabeln "brand" är den en varumärkesfärg
+       även om den är grå.
+       ------------------------------------------------------------------ */
+    const rawVars = new Map();
+    for (const text of cssTexts) {
+        for (const m of text.matchAll(/--([a-zA-Z0-9_-]+)\s*:\s*([^;{}]+)/g)) {
+            const namn = m[1].toLowerCase();
+            const värde = m[2].trim();
+            if (värde && !rawVars.has(namn)) rawVars.set(namn, värde);
+        }
+    }
+
+    // var(--a, var(--b, #fff)) kan peka vidare i flera led. Fem räcker gott,
+    // och taket skyddar mot variabler som pekar på varandra i en cirkel.
+    const resolveVarValue = (värde, djup = 0) => {
+        if (!värde || djup > 5) return värde;
+        const m = värde.match(/var\(\s*--([a-zA-Z0-9_-]+)\s*(?:,\s*([^)]+))?\)/);
+        if (!m) return värde;
+        const pekat = rawVars.get(m[1].toLowerCase());
+        return resolveVarValue(pekat || m[2] || '', djup + 1);
+    };
+
+    const toHex = (värde) => {
+        if (!värde) return null;
+        const v = värde.trim();
+        const hex6 = v.match(/^#([0-9a-fA-F]{6})\b/);
+        if (hex6) return hex6[1].toLowerCase();
+        const hex3 = v.match(/^#([0-9a-fA-F]{3})\b/);
+        if (hex3) {
+            const t = hex3[1].toLowerCase();
+            return t[0] + t[0] + t[1] + t[1] + t[2] + t[2];
+        }
+        const rgb = v.match(/^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/i);
+        if (rgb) {
+            const tal = [rgb[1], rgb[2], rgb[3]].map(x => parseInt(x, 10));
+            if (tal.every(x => x >= 0 && x <= 255)) {
+                return tal.map(x => x.toString(16).padStart(2, '0')).join('');
+            }
+        }
+        return null; // oklch/hsl och liknande lämnas åt frekvensräkningen
+    };
+
+    // Ju lägre siffra desto troligare att variabeln bär varumärkets identitet.
+    const namnPrioritet = (namn) => {
+        if (/(^|-)brand(-|$)/.test(namn)) return 0;
+        if (/primary|accent/.test(namn)) return 1;
+        if (/secondary|tertiary/.test(namn)) return 2;
+        if (/theme|logo|highlight/.test(namn)) return 3;
+        if (/^(color|colour)-/.test(namn)) return 4;
+        return null; // allt annat är layoutvariabler, inte profilfärger
+    };
+
+    const namedBrandColors = [...rawVars.entries()]
+        .map(([namn, rått]) => ({ namn, prio: namnPrioritet(namn), hex: toHex(resolveVarValue(rått)) }))
+        .filter(v => v.prio !== null && v.hex)
+        .sort((a, b) => a.prio - b.prio || a.namn.localeCompare(b.namn))
+        .slice(0, 12)
+        .map(v => `#${v.hex} (--${v.namn})`);
+
+    console.log(`[fetchSiteBrandData] CSS-variabler: ${rawVars.size}. Namngivna varumärkesfärger:`, namedBrandColors);
+
     // Räkna hexfärger och rgb/rgba-färger, filtrera bort gråskala/nära vitt/svart
     const counts = new Map();
 
@@ -237,7 +309,7 @@ async function fetchSiteBrandData(url) {
 
     const meta = extractMeta(html);
 
-    return { colorCandidates, themeColor, logoCandidates, visibleText, meta };
+    return { colorCandidates, namedBrandColors, themeColor, logoCandidates, visibleText, meta };
 }
 
 // Central förteckning över AI-modeller. Byt modell HÄR — aldrig i anropen.
@@ -1201,7 +1273,8 @@ export const gemini = onCall(
                 const siteData = await fetchSiteBrandData(params.url);
 
                 if (siteData) {
-                    const hasColors = siteData.colorCandidates.length > 0;
+                    const namedColors = siteData.namedBrandColors || [];
+                    const hasColors = siteData.colorCandidates.length > 0 || namedColors.length > 0;
                     const themeColorInfo = siteData.themeColor ? `Meta theme-color: ${siteData.themeColor}` : '';
                     const colorsList = hasColors
                         ? siteData.colorCandidates.join(', ')
@@ -1220,16 +1293,33 @@ export const gemini = onCall(
                         ? metaLines.join('\n')
                         : 'Ingen specifik metadata hittades';
 
+                    const namedColorsBlock = namedColors.length > 0
+                        ? `Namngivna varumärkesfärger, hämtade ur sajtens CSS-variabler:
+${namedColors.join(', ')}`
+                        : 'Inga namngivna varumärkesfärger (CSS-variabler) hittades.';
+
                     const colorInstruction = hasColors
-                        ? `1. FÄRGER: Listan ovan innehåller färger som faktiskt förekommer på sajten.
+                        ? `1. FÄRGER: Listorna ovan innehåller färger som faktiskt förekommer på sajten.
+
+VIKTIGAST: finns det namngivna varumärkesfärger väger de TYNGRE än
+frekvenslistan. En variabel som heter brand, primary eller accent är
+sajtägarens eget namn på sin profilfärg — det är ett starkare bevis än
+hur många gånger en färg råkar förekomma. Välj i första hand därifrån.
+Detta gäller ÄVEN om färgen är grå eller dämpad; frekvenslistan sållar
+bort gråskala, men en grå profilfärg är fortfarande en profilfärg.
+
+Du MÅSTE välja primaryColor och secondaryColor ur listorna — du får aldrig
+hitta på en egen hexkod, men du får inte heller utelämna färgerna när
+någon av listorna innehåller minst en färg.
 Du MÅSTE välja primaryColor och secondaryColor ur listan — du får aldrig
 hitta på en egen hexkod, men du får inte heller utelämna färgerna när
 listan innehåller minst en färg.
 Så här väljer du:
-- primaryColor = den mest MÄTTADE, karaktärsfulla färgen i listan (den som
-  bär varumärkets identitet). Frekvens spelar mindre roll — en färg som
-  förekommer få gånger kan mycket väl vara profilfärgen, medan en ljus ton
-  som förekommer ofta oftast bara är sidans bakgrund.
+- primaryColor = den namngivna färg som tydligast bär varumärkets identitet
+  (brand/primary/accent före övriga). Saknas namngivna färger: den mest
+  MÄTTADE, karaktärsfulla färgen i frekvenslistan. Frekvens spelar mindre
+  roll — en färg som förekommer få gånger kan mycket väl vara profilfärgen,
+  medan en ljus ton som förekommer ofta oftast bara är sidans bakgrund.
 - secondaryColor = en färg som kompletterar primärfärgen, typiskt en ljus
   bakgrundston eller en mörkare variant av samma kulör.
 - Innehåller listan bara ljusa, lågmättade toner: välj ändå de två som bäst
@@ -1249,6 +1339,8 @@ Så här väljer du:
 
                         Sidans text (utdrag):
                         ${siteData.visibleText}
+
+                        ${namedColorsBlock}
 
                         Färger som FAKTISKT förekommer i sidans HTML/CSS, sorterade efter frekvens:
                         ${colorsList}
