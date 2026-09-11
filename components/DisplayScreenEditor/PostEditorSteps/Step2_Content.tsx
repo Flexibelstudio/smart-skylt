@@ -150,8 +150,7 @@ const BookingPlaceholderHelper: React.FC<{
     return (
         <div className="mt-2 mb-4 p-3 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200/70 dark:border-teal-800/50 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-teal-800 dark:text-teal-300">
-                💡 Visa dagens lediga bokningstider automatiskt i texten. Uppdateras var 15:e minut.
-                {calendars.length > 1 && <> För en enskild person: <code className="font-mono">{'{{lediga_tider:' + calendars[0].staffName + '}}'}</code></>}
+                💡 Visa dagens lediga bokningstider automatiskt i texten. Uppdateras var 15:e minut. Tiderna ersätter brödtexten i det här inlägget.
             </p>
             <button type="button" onClick={onInsert}
                 className="text-xs font-bold px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white whitespace-nowrap transition-colors">

@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import {
-  PostTemplate,
   DisplayPost,
   Organization,
   DisplayScreen,
@@ -870,79 +869,6 @@ export const DownloadAssetsModal: React.FC<{
         </div>
       </div>
     </>,
-    portalRoot
-  );
-};
-
-// ------------------------------------------------------------
-// CreatePostModal
-// ------------------------------------------------------------
-export const CreatePostModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  templates: PostTemplate[];
-  onCreate: (template?: PostTemplate) => void;
-}> = ({ isOpen, onClose, templates, onCreate }) => {
-  if (!isOpen) return null;
-
-  let portalRoot = document.getElementById('modal-root');
-  if (!portalRoot) {
-    portalRoot = document.createElement('div');
-    portalRoot.id = 'modal-root';
-    document.body.appendChild(portalRoot);
-  }
-
-  return ReactDOM.createPortal(
-    <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-4xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-2xl font-bold mb-2">Skapa nytt inlägg</h2>
-        <p className="text-slate-600 dark:text-slate-300 mb-6">
-          Välj en startpunkt för ditt nya inlägg.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[60vh] overflow-y-auto pr-2">
-          <button
-            onClick={() => onCreate()}
-            className="h-48 p-6 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-500 hover:border-primary text-left transition-all flex flex-col justify-center items-center group"
-          >
-            <span className="text-5xl text-slate-400 group-hover:text-primary transition-colors">
-              +
-            </span>
-            <span className="font-bold text-lg mt-2 text-slate-800 dark:text-slate-200">
-              Tomt inlägg
-            </span>
-            <p className="text-sm text-slate-500 dark:text-slate-400/80 text-center mt-1">
-              Börja från noll med full kreativ frihet.
-            </p>
-          </button>
-          {templates.map((template) => (
-            <button
-              key={template.id}
-              onClick={() => onCreate(template)}
-              className="h-48 p-4 bg-slate-100 dark:bg-slate-700 rounded-lg text-left transition-colors flex flex-col relative group hover:bg-slate-200 dark:hover:bg-slate-600 hover:ring-2 hover:ring-primary"
-            >
-              <h3 className="font-bold text-lg text-primary">
-                {template.templateName}
-              </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 flex-grow">
-                {template.postData.headline}
-              </p>
-              <span className="text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-full self-start">
-                {template.postData.layout}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="flex justify-end mt-8 border-t border-slate-200 dark:border-slate-700 pt-4">
-          <SecondaryButton onClick={onClose}>Avbryt</SecondaryButton>
-        </div>
-      </div>
-    </div>,
     portalRoot
   );
 };

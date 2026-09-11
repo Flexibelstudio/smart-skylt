@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Organization, DisplayScreen, DisplayPost, PostTemplate, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant, AdditionalTextElement } from '../types';
+import { Organization, DisplayScreen, DisplayPost, CustomEvent, CampaignIdea, MediaItem, StyleProfile, UserRole, AiImageVariant, AdditionalTextElement } from '../types';
 import { useToast } from '../context/ToastContext';
 import { StarIcon } from './icons';
 import { useLocation } from '../context/StudioContext';
@@ -18,13 +18,13 @@ import { ControlPanel } from './DisplayScreenEditor/ControlPanel';
 import { 
     CampaignIdeaModal,
     DownloadAssetsModal,
-    SharePostModal,
-    CreatePostModal
+    SharePostModal
 } from './DisplayScreenEditor/Modals';
 import { syncSharedPosts, copyPostToScreens } from './DisplayScreenEditor/sharedPostsUtils';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ExpressPublishTab } from './admin/ExpressPublishTab';
 import { createPortal } from 'react-dom';
+import { getPostGeometry } from '../utils/postGeometry';
 
 
 interface DisplayScreenEditorScreenProps {
@@ -91,7 +91,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     const [postToDownloadAssets, setPostToDownloadAssets] = useState<DisplayPost | null>(null);
     const [showStarAnimation, setShowStarAnimation] = useState(false);
     
-    const [isCreatePostModalOpen, setIsCreatePostModalOpen] = useState(false);
     const [isExpressPublishOpen, setIsExpressPublishOpen] = useState(false);
     const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
     const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
@@ -349,18 +348,56 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         if (isNewPost) setShowStarAnimation(true);
     };
 
-    const handleCreatePost = (template?: PostTemplate) => {
+    const handleCreatePost = () => {
         if (!organization) return;
-        const basePost = template ? { ...template.postData } : { layout: 'image-fullscreen' as const, durationSeconds: 10 };
+        const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
+        const geometry = getPostGeometry('image-fullscreen', isPortrait);
+
         const newPost: DisplayPost = {
-            internalTitle: template ? template.templateName : 'Nytt inlägg',
-            ...basePost,
+            internalTitle: 'Nytt inlägg',
+            layout: 'image-fullscreen',
+            durationSeconds: 10,
+            headline: '',
+            body: '',
+            headlineTextColor: 'white',
+            bodyTextColor: 'white',
+            backgroundColor: 'black',
+            textAlign: 'center',
+            bodyAnchor: 'top',
+            bodyMaxLines: 3,
+            headlineShadowType: 'soft',
+            headlineShadowColor: 'rgba(0, 0, 0, 0.95)',
+            bodyShadowType: 'soft',
+            bodyShadowColor: 'rgba(0, 0, 0, 0.95)',
+            ...geometry,
             id: `new-${Date.now()}`,
-            headlineFontFamily: template?.postData.headlineFontFamily ?? organization.headlineFontFamily,
-            bodyFontFamily: template?.postData.bodyFontFamily ?? organization.bodyFontFamily,
+            headlineFontFamily: organization.headlineFontFamily,
+            bodyFontFamily: organization.bodyFontFamily,
         };
         setOriginalPost(JSON.parse(JSON.stringify(newPost)));
         setEditingPost(newPost);
+    };
+
+    const handleDuplicatePost = (post: DisplayPost) => {
+        if (!organization) return;
+        const copy: any = JSON.parse(JSON.stringify(post));
+
+        copy.id = `new-${Date.now()}`;
+        copy.internalTitle = `${post.internalTitle || 'Inlägg'} (kopia)`;
+
+        // Kopian ska vara opublicerad tills användaren bestämmer datum
+        copy.startDate = undefined;
+        copy.endDate = undefined;
+        copy.status = 'active';
+
+        // Får inte följa med: AI-bildvarianter kan vara stora och hör till originalet,
+        // och suggestionOriginId gör att editorn tror att inlägget är ett AI-förslag
+        // och byter ut sparaknapparna mot "Godkänn & Spara" / "Förkasta förslag".
+        delete copy.aiImageVariants;
+        delete copy.suggestionOriginId;
+
+        setOriginalPost(JSON.parse(JSON.stringify(copy)));
+        setEditingPost(copy);
     };
 
     const handleCancelEdit = () => {
@@ -607,9 +644,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                             setOriginalPost(JSON.parse(JSON.stringify(post)));
                             setEditingPost(cleanPost);
                         }} 
+                        onDuplicatePost={handleDuplicatePost}
                         onDeletePost={(id) => setPostIdToDelete(id)}
                         onDownloadPost={setPostToDownloadAssets}
-                        onInitiateCreatePost={() => setIsCreatePostModalOpen(true)}
+                        onInitiateCreatePost={() => handleCreatePost()}
                         onInitiateExpressPublish={() => setIsExpressPublishOpen(true)}
                         onSharePost={handleSharePost}
                         openDropdownId={openDropdownId}
@@ -618,16 +656,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                     />
                 </>
             )}
-            
-            <CreatePostModal
-                isOpen={isCreatePostModalOpen}
-                onClose={() => setIsCreatePostModalOpen(false)}
-                templates={organization.postTemplates || []}
-                onCreate={(template) => {
-                    setIsCreatePostModalOpen(false);
-                    handleCreatePost(template);
-                }}
-            />
 
             <ConfirmDialog
                 isOpen={!!postIdToDelete}

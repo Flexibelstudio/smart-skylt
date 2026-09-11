@@ -4,6 +4,8 @@ import { DisplayPost, Tag, Organization, DisplayScreen, TagPositionOverride, Col
 import QRCode from 'qrcode';
 import { MoveIcon } from './icons';
 import { resolveBookingPlaceholders } from '../utils/bookingPlaceholders';
+import { getBookingSlotsView } from '../utils/bookingSlots';
+import { isSoldStampEnabled } from '../utils/orgFeatures';
 
 // --- HELPER FUNCTIONS ---
 
@@ -1225,6 +1227,149 @@ export interface DisplayPostRendererProps {
     onUpdateTextPosition?: any; onUpdateTextWidth?: any;
 }
 
+interface BookingSlotsBlockProps {
+    organization?: Organization;
+    x?: number;
+    y?: number;
+    width?: number;
+    isPortrait?: boolean;
+    fontScale?: number;
+    color?: string;
+    anchor?: 'center' | 'top';
+}
+
+const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
+    organization,
+    x = 50,
+    y = 50,
+    width = 80,
+    isPortrait = false,
+    fontScale,
+    color,
+    anchor = 'center',
+}) => {
+    const view = useMemo(() => getBookingSlotsView(organization), [organization]);
+
+    // Beräkna skalor baserat på DraggableTextElements enhet cqw för brödtext
+    const baseScale = fontScale ?? (isPortrait ? 4.2 : 2.8);
+    const timeFontSize = `${baseScale}cqw`;
+    const labelFontSize = `${baseScale * 0.55}cqw`;
+
+    const totalChips = (view.groups || []).reduce((acc, g) => acc + (g.chips ? g.chips.length : 0), 0);
+    const hasChips = totalChips > 0;
+
+    const containerStyle: React.CSSProperties = {
+        position: 'absolute',
+        top: `${y}%`,
+        left: `${x}%`,
+        transform: `translate(-50%, ${anchor === 'top' ? '0' : '-50%'})`,
+        width: `${width}%`,
+        zIndex: 40,
+        pointerEvents: 'none',
+    };
+
+    const brickStyle: React.CSSProperties = {
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        fontSize: timeFontSize,
+        lineHeight: 1.3,
+        padding: `${baseScale * 0.22}cqw ${baseScale * 0.55}cqw`,
+        borderRadius: `${baseScale * 0.25}cqw`,
+        color: '#ffffff',
+    };
+
+    return (
+        <div style={containerStyle} className="flex flex-col items-center select-none">
+            {/* a) Överst en etikett i versaler: "LEDIGA TIDER I DAG" (visas endast när det finns tider) */}
+            {hasChips && (
+                <div
+                    style={{
+                        fontSize: labelFontSize,
+                        color: 'rgba(255, 255, 255, 0.75)',
+                        lineHeight: 1.3,
+                    }}
+                    className="uppercase tracking-wider font-bold mb-[1.2cqw] text-center"
+                >
+                    LEDIGA TIDER I DAG
+                </div>
+            )}
+
+            {/* e) Finns ingen tid att visa renderas i stället view.status som en enda rad text */}
+            {!hasChips ? (
+                <div
+                    style={{
+                        fontSize: timeFontSize,
+                        color: color || '#ffffff',
+                        lineHeight: 1.3,
+                    }}
+                    className="font-bold text-center whitespace-nowrap drop-shadow-md"
+                >
+                    {view.status || 'Se lediga tider på vår bokningssida'}
+                </div>
+            ) : isPortrait ? (
+                /* c) Stående skärm: brickorna staplas i en kolumn, tidigast överst */
+                <div className="flex flex-col items-center w-full" style={{ gap: `${baseScale * 0.35}cqw` }}>
+                    {view.groups.map((group, gIdx) => (
+                        <div key={gIdx} className="flex flex-col items-center w-full" style={{ gap: `${baseScale * 0.25}cqw` }}>
+                            {/* d) Gruppens label om den finns */}
+                            {group.label && (
+                                <div
+                                    style={{
+                                        fontSize: labelFontSize,
+                                        color: 'rgba(255, 255, 255, 0.75)',
+                                        lineHeight: 1.3,
+                                    }}
+                                    className="font-bold text-center uppercase tracking-wide mt-[0.5cqw]"
+                                >
+                                    {group.label}
+                                </div>
+                            )}
+                            {group.chips.map((chip, cIdx) => (
+                                <div
+                                    key={cIdx}
+                                    style={brickStyle}
+                                    className="font-bold shadow-md whitespace-nowrap text-center"
+                                >
+                                    {chip}
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                /* c) Liggande skärm: brickorna ligger på rad, tidigast till vänster, med radbrytning */
+                /* d) Grupperna följer efter varandra i samma riktning */
+                <div className="flex flex-wrap items-center justify-center w-full" style={{ gap: `${baseScale * 0.45}cqw` }}>
+                    {view.groups.map((group, gIdx) => (
+                        <div key={gIdx} className="inline-flex flex-wrap items-center justify-center" style={{ gap: `${baseScale * 0.3}cqw` }}>
+                            {group.label && (
+                                <span
+                                    style={{
+                                        fontSize: labelFontSize,
+                                        color: 'rgba(255, 255, 255, 0.75)',
+                                        lineHeight: 1.3,
+                                    }}
+                                    className="font-bold whitespace-nowrap uppercase tracking-wide mr-[0.3cqw]"
+                                >
+                                    {group.label}
+                                </span>
+                            )}
+                            {group.chips.map((chip, cIdx) => (
+                                <div
+                                    key={cIdx}
+                                    style={brickStyle}
+                                    className="font-bold shadow-md whitespace-nowrap text-center inline-block"
+                                >
+                                    {chip}
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     post: initialPost,
     allTags: allTagsFromProp,
@@ -1331,8 +1476,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
         return p;
     }, [initialPost, isPortraitLayout]);
 
+    const showsBookingSlots = (post.body || '').toLowerCase().includes('{{lediga_tider');
     const displayHeadline = resolveBookingPlaceholders(post?.headline, organization);
-    const displayBody = resolveBookingPlaceholders(post?.body, organization);
+    const displayBody = showsBookingSlots ? (post?.body || '') : resolveBookingPlaceholders(post?.body, organization);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const allTags = useMemo(() => organization?.tags || allTagsFromProp || [], [organization, allTagsFromProp]);
@@ -1431,7 +1577,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
     const isMediaLayout = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right', 'collage', 'real-estate', 'ai-ad'].includes(post.layout);
 
     // DEDIKERAT SNABBINLÄGGS-LAYOUT: Garanterar att snabbinlägg ser 100% identiska ut som i förhandsgranskningen i admin!
-    if (post.isExpressPost && post.layout !== 'real-estate') {
+    if (post.isExpressPost && post.layout !== 'real-estate' && post.layout !== 'collage') {
         const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
         
         return (
@@ -1953,35 +2099,48 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
 
             {/* Brödtext-låda */}
             {post.body && post.layout !== 'ai-ad' && post.layout !== 'real-estate' && (
-                <DraggableTextElement
-                    type="body"
-                    text={displayBody}
-                    editText={post.body}
-                    x={bX} y={bY} width={bW}
-                    textAlign={bAlign}
-                    fontSize={post.bodyFontSize}
-                    fontScale={bFontScale} // Pass the smart fallback/saved scale
-                    fontFamily={post.bodyFontFamily}
-                    color={post.bodyTextColor || post.textColor}
-                    bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
-                    bgColor={post.bodyBackgroundColor || post.textBackgroundColor}
-                    anchor={post.bodyAnchor || 'center'}
-                    maxLines={post.bodyMaxLines}
-                    // NEW: Effects props
-                    shadowType={post.bodyShadowType}
-                    shadowColor={post.bodyShadowColor}
-                    outlineWidth={post.bodyOutlineWidth}
-                    outlineColor={post.bodyOutlineColor}
-                    // ---
-                    mode={mode}
-                    organization={organization}
-                    isDraggable={isTextDraggable}
-                    onUpdatePosition={onUpdateBodyPosition}
-                    onUpdateWidth={onUpdateBodyWidth}
-                    onUpdateFontScale={onUpdateBodyFontScale} // Handler for scaling
-                    onUpdateText={onUpdateBodyText} // Handler for inline editing
-                    isExpressStyle={['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout)}
-                />
+                showsBookingSlots ? (
+                    <BookingSlotsBlock
+                        organization={organization}
+                        x={bX}
+                        y={bY}
+                        width={bW}
+                        isPortrait={isPortrait}
+                        fontScale={bFontScale}
+                        color={post.bodyTextColor || post.textColor}
+                        anchor={post.bodyAnchor || 'center'}
+                    />
+                ) : (
+                    <DraggableTextElement
+                        type="body"
+                        text={displayBody}
+                        editText={post.body}
+                        x={bX} y={bY} width={bW}
+                        textAlign={bAlign}
+                        fontSize={post.bodyFontSize}
+                        fontScale={bFontScale} // Pass the smart fallback/saved scale
+                        fontFamily={post.bodyFontFamily}
+                        color={post.bodyTextColor || post.textColor}
+                        bgEnabled={post.bodyBackgroundEnabled ?? post.textBackgroundEnabled}
+                        bgColor={post.bodyBackgroundColor || post.textBackgroundColor}
+                        anchor={post.bodyAnchor || 'center'}
+                        maxLines={post.bodyMaxLines}
+                        // NEW: Effects props
+                        shadowType={post.bodyShadowType}
+                        shadowColor={post.bodyShadowColor}
+                        outlineWidth={post.bodyOutlineWidth}
+                        outlineColor={post.bodyOutlineColor}
+                        // ---
+                        mode={mode}
+                        organization={organization}
+                        isDraggable={isTextDraggable}
+                        onUpdatePosition={onUpdateBodyPosition}
+                        onUpdateWidth={onUpdateBodyWidth}
+                        onUpdateFontScale={onUpdateBodyFontScale} // Handler for scaling
+                        onUpdateText={onUpdateBodyText} // Handler for inline editing
+                        isExpressStyle={['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(post.layout)}
+                    />
+                )
             )}
 
             {/* Additional Text Elements */}
@@ -2037,7 +2196,7 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
             )}
 
             {/* SÅLD Stamp overlay for express speed posts */}
-            {post.isExpressSold && (
+            {isSoldStampEnabled(organization) && post.isExpressSold && (
                 <div 
                     className="absolute z-50 pointer-events-none select-none flex items-center justify-center animate-pulse-stamp"
                     style={{

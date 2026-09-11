@@ -5,13 +5,14 @@ import { useToast } from '../../context/ToastContext';
 import { Card } from '../Card';
 import { PrimaryButton } from '../Buttons';
 import { StyledInput } from '../Forms';
-import { LoadingSpinnerIcon, TrashIcon, ChevronDownIcon } from '../icons';
+import { LoadingSpinnerIcon, TrashIcon, ChevronDownIcon, LayoutCollageIcon } from '../icons';
 import QRCode from 'qrcode';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ScaledPreviewWrapper } from '../DisplayScreenEditor/PreviewPanes';
 import { DisplayScreenPreviewModal } from '../SuperAdminScreen';
 import { EmojiPicker } from '../EmojiPicker';
 import { resizeImageFile } from '../../utils/imageResize';
+import { isSoldStampEnabled } from '../../utils/orgFeatures';
 
 interface ExpressPublishTabProps {
     organization: Organization;
@@ -107,7 +108,9 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [webpageUrl, setWebpageUrl] = useState('');
     const [galleryImages, setGalleryImages] = useState<string[]>([]);
     const imageBase64 = galleryImages[0] || null;
-    const [layout, setLayout] = useState<'image-left' | 'image-right' | 'image-fullscreen' | 'real-estate'>('image-left');
+    const [layout, setLayout] = useState<'image-left' | 'image-right' | 'image-fullscreen' | 'real-estate' | 'collage'>('image-left');
+    const [collageStyle, setCollageStyle] = useState<'three' | 'four'>('three');
+    const collageSlotCount = collageStyle === 'three' ? 3 : 4;
     const [cardStyle, setCardStyle] = useState<'dark' | 'light' | 'subtle'>('dark');
     const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
     
@@ -184,6 +187,13 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         return activeScreen.aspectRatio === '9:16' || activeScreen.aspectRatio === '3:4';
     }, [activeScreen]);
 
+    const getCollageLayout = (): DisplayPost['collageLayout'] => {
+        if (isPortraitScreen) {
+            return collageStyle === 'three' ? 'portrait-1-top-2-bottom' : 'portrait-4-grid';
+        }
+        return collageStyle === 'three' ? 'landscape-1-top-2-bottom' : 'landscape-4-grid';
+    };
+
     // Active express posts on the selected channel
     const activeExpressPosts = useMemo(() => {
         if (!activeScreen) return [];
@@ -244,6 +254,18 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             hX = 50; hY = 30; hW = 80;
             bX = 50; bY = 53; bW = 80;
             qrX = 50; qrY = 82; qrW = 15;
+        } else if (layout === 'collage') {
+            hX = 50;
+            hY = 80;
+            hW = 90;
+
+            bX = 50;
+            bY = 89;
+            bW = 90;
+
+            qrX = isPortraitScreen ? 86 : 89;
+            qrY = 12;
+            qrW = 15;
         }
 
         return {
@@ -258,6 +280,18 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 id: `sub_${Date.now()}_${i}`,
                 imageUrl: img
             })),
+            ...(layout === 'collage' ? {
+                collageLayout: getCollageLayout(),
+                collageItems: galleryImages.slice(0, collageSlotCount).map((img, i) => ({
+                    id: `col_${Date.now()}_${i}`,
+                    type: 'image' as const,
+                    imageUrl: img,
+                })),
+                headlineBackgroundEnabled: true,
+                headlineBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                bodyBackgroundEnabled: true,
+                bodyBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+            } : {}),
             isExpressPost: true,
             isExpressSold: false,
             durationSeconds: 15,
@@ -294,7 +328,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             bodyShadowType: 'soft',
             bodyShadowColor: 'rgba(0, 0, 0, 0.95)'
         };
-    }, [headline, description, webpageUrl, layout, cardStyle, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
+    }, [headline, description, webpageUrl, layout, cardStyle, collageStyle, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
 
     // Handle Image Upload -> Base64
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -355,16 +389,22 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             showToast({ message: "Vänligen fyll i en rubrik.", type: 'error' });
             return;
         }
-        if (!imageBase64) {
-            showToast({ message: "Vänligen ladda upp en bild på bostaden/bilen först.", type: 'error' });
+        if (layout === 'collage' ? galleryImages.length < 2 : !imageBase64) {
+            showToast({ message: layout === 'collage' ? "Vänligen ladda upp minst två bilder för collage." : "Vänligen ladda upp en bild på bostaden/bilen först.", type: 'error' });
             return;
         }
 
         setIsSubmitting(true);
         try {
-            const cleanUrl = webpageUrl.trim();
+            let cleanUrl = webpageUrl.trim();
+            if (cleanUrl) {
+                if (!/^https?:\/\//i.test(cleanUrl)) {
+                    cleanUrl = 'https://' + cleanUrl;
+                }
+            }
             const defaultBody = description.trim() || "Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.";
 
+            // Samma värden finns i utils/postGeometry.ts — håll i synk.
             // Calculate pristine coordinate positions based on selected layout and screen shape
             // This ensures text fits perfectly in its dedicated containers, and never overlaps or darkens the beautiful pictures.
             let hX = 50;
@@ -460,6 +500,18 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 qrX = 50;
                 qrY = 82;
                 qrW = 15;
+            } else if (layout === 'collage') {
+                hX = 50;
+                hY = 80;
+                hW = 90;
+
+                bX = 50;
+                bY = 89;
+                bW = 90;
+
+                qrX = isPortraitScreen ? 86 : 89;
+                qrY = 12;
+                qrW = 15;
             }
 
             const newPost: DisplayPost = {
@@ -474,6 +526,18 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                     id: `sub_${Date.now()}_${i}`,
                     imageUrl: img
                 })),
+                ...(layout === 'collage' ? {
+                    collageLayout: getCollageLayout(),
+                    collageItems: galleryImages.slice(0, collageSlotCount).map((img, i) => ({
+                        id: `col_${Date.now()}_${i}`,
+                        type: 'image' as const,
+                        imageUrl: img,
+                    })),
+                    headlineBackgroundEnabled: true,
+                    headlineBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                    bodyBackgroundEnabled: true,
+                    bodyBackgroundColor: 'rgba(0, 0, 0, 0.65)',
+                } : {}),
                 ...(cleanUrl ? { qrCodeUrl: cleanUrl } : {}),
                 isExpressPost: true,
                 isExpressSold: false,
@@ -713,171 +777,12 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                 </div>
                             )}
 
-                            {/* Image Dropzone Upload */}
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                                    Ladda upp bilder {layout === 'real-estate' ? "(Skyltfönster stöder upp till 4 st bilder)" : "(Huvudbild)"}
-                                </label>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    onChange={handleFileChange}
-                                    accept="image/*"
-                                    multiple={layout === 'real-estate'}
-                                    className="hidden"
-                                />
-                                <input
-                                    type="file"
-                                    ref={cameraInputRef}
-                                    onChange={handleFileChange}
-                                    accept="image/*"
-                                    capture="environment"
-                                    className="hidden"
-                                />
-
-                                {/* Mobilknappar: Ta foto och Välj bild sida vid sida (döljs på lg och uppåt) */}
-                                <div className="grid grid-cols-2 gap-3 mb-3 lg:hidden">
-                                    <button
-                                        type="button"
-                                        onClick={() => cameraInputRef.current?.click()}
-                                        className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
-                                    >
-                                        <span>📷</span>
-                                        <span>Ta foto</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
-                                    >
-                                        <span>🖼️</span>
-                                        <span>Välj bild</span>
-                                    </button>
-                                </div>
-
-                                {/* Vald bild-indikator på mobil för enskild bild (ej skyltfönster) */}
-                                {galleryImages.length > 0 && layout !== 'real-estate' && (
-                                    <div className="lg:hidden flex items-center gap-3 p-2.5 mb-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-                                        <img src={galleryImages[0]} alt="Vald bild" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
-                                        <div className="flex-grow min-w-0">
-                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">Bild vald</p>
-                                            <p className="text-[10px] text-slate-400">Används i detta inlägg</p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={clearImage}
-                                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                                            title="Ta bort bild"
-                                        >
-                                            <TrashIcon className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                )}
-                                
-                                {/* Desktop dropzone (visas på lg och uppåt när ingen bild eller ej skyltfönster) */}
-                                {galleryImages.length === 0 || (layout !== 'real-estate' && galleryImages.length > 0) ? (
-                                    <div 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="hidden lg:flex border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 rounded-2xl p-6 flex-col items-center justify-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-900/30 gap-2 text-center"
-                                    >
-                                        <div className="p-2.5 bg-teal-50 dark:bg-teal-950/30 text-teal-600 dark:text-teal-400 rounded-xl">
-                                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                            </svg>
-                                        </div>
-                                        <div>
-                                            <p className="font-semibold text-sm text-slate-700 dark:text-slate-300">
-                                                {galleryImages.length > 0 ? "Klicka för att byta bild" : "Klicka eller dra bild hit för att ladda upp"}
-                                            </p>
-                                            <p className="text-[11px] text-slate-400 mt-0.5">Stöder JPG, PNG, WEBP</p>
-                                        </div>
-                                    </div>
-                                ) : null}
-
-                                {layout === 'real-estate' && galleryImages.length > 0 && (
-                                    <div className="space-y-3">
-                                        <div className="grid grid-cols-4 gap-3">
-                                            {galleryImages.map((img, idx) => (
-                                                <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-sm flex items-center justify-center">
-                                                    <img src={img} alt="" className="w-full h-full object-cover" />
-                                                    <div className="absolute top-1 left-1 bg-teal-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-sm">
-                                                        {idx === 0 ? "Huvud" : idx + 1}
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const next = [...galleryImages];
-                                                            next.splice(idx, 1);
-                                                            setGalleryImages(next);
-                                                            if (fileInputRef.current) fileInputRef.current.value = '';
-                                                            if (cameraInputRef.current) cameraInputRef.current.value = '';
-                                                        }}
-                                                        className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1 rounded-full shadow-md hover:scale-110 transition-all cursor-pointer flex items-center justify-center"
-                                                    >
-                                                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
-                                                    </button>
-                                                    {idx > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                const next = [...galleryImages];
-                                                                const temp = next[idx];
-                                                                next[idx] = next[idx - 1];
-                                                                next[idx - 1] = temp;
-                                                                setGalleryImages(next);
-                                                            }}
-                                                            className="absolute bottom-1 left-1 bg-slate-900/85 hover:bg-slate-950 text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex gap-0.5 items-center"
-                                                            title="Flytta framåt"
-                                                        >
-                                                            ◀
-                                                        </button>
-                                                    )}
-                                                    {idx < galleryImages.length - 1 && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                const next = [...galleryImages];
-                                                                const temp = next[idx];
-                                                                next[idx] = next[idx + 1];
-                                                                next[idx + 1] = temp;
-                                                                setGalleryImages(next);
-                                                            }}
-                                                            className="absolute bottom-1 right-1 bg-slate-900/85 hover:bg-slate-950 text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex gap-0.5 items-center"
-                                                            title="Flytta bakåt"
-                                                        >
-                                                            ▶
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                            {Array.from({ length: 4 - galleryImages.length }).map((_, i) => (
-                                                <div 
-                                                    key={i} 
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                    className="aspect-square rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all hover:bg-teal-500/5 text-slate-400 hover:text-teal-500"
-                                                >
-                                                    <span className="text-xl font-light">+</span>
-                                                    <span className="text-[9px] font-medium">BILD {galleryImages.length + i + 1}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {galleryImages.length < 4 && (
-                                            <p className="text-[11px] text-slate-400">
-                                                Tips: Du kan klicka på de tomma rutorna för att ladda upp fler bilder (upp till 4 st) eller markera flera bilder i filväljaren på en gång.
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
                             {/* Compact layout select options */}
                             <div>
                                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                                     Layoutstil
                                 </label>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                                     <button
                                         type="button"
                                         onClick={() => setLayout('image-left')}
@@ -922,6 +827,16 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         </div>
                                         Centrerad ruta
                                     </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLayout('collage')}
+                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'collage' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                    >
+                                        <div className="w-10 h-6 border rounded bg-slate-150 dark:bg-slate-800 flex items-center justify-center overflow-hidden text-slate-600 dark:text-slate-300">
+                                            <LayoutCollageIcon className="h-4 w-4" />
+                                        </div>
+                                        Collage
+                                    </button>
                                 </div>
                                 {layout === 'real-estate' && (
                                     <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-2">
@@ -951,6 +866,232 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                 );
                                             })}
                                         </div>
+                                    </div>
+                                )}
+                                {layout === 'collage' && (
+                                    <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                            Collagestil
+                                        </label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {[
+                                                { id: 'three', label: '3 bilder', note: 'en stor överst, två under' },
+                                                { id: 'four', label: '4 bilder', note: null }
+                                            ].map((chip) => {
+                                                const isSelected = collageStyle === chip.id;
+                                                return (
+                                                    <button
+                                                        key={chip.id}
+                                                        type="button"
+                                                        onClick={() => setCollageStyle(chip.id as 'three' | 'four')}
+                                                        className={`min-h-[44px] lg:min-h-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer flex items-center justify-center ${
+                                                            isSelected
+                                                                ? 'bg-teal-500 text-white border-teal-500 shadow-sm'
+                                                                : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                                                        }`}
+                                                    >
+                                                        <span>{chip.label}</span>
+                                                        {chip.note && (
+                                                            <span className="text-[10px] font-normal opacity-80 ml-1">
+                                                                ({chip.note})
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                            Bilderna placeras i den ordning du laddar upp dem.
+                                        </p>
+                                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                                            Vald stil använder {collageSlotCount} bilder — du har laddat upp {galleryImages.length}.
+                                            {galleryImages.length > collageSlotCount && (
+                                                <>
+                                                    {' '}De sista bilderna används inte i den här stilen.
+                                                    {collageStyle === 'three' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setCollageStyle('four')}
+                                                            className="ml-1.5 text-teal-600 dark:text-teal-400 underline hover:text-teal-700 dark:hover:text-teal-300 font-medium cursor-pointer"
+                                                        >
+                                                            Byt till 4 bilder
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Image Dropzone Upload */}
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                    {layout === 'collage'
+                                        ? `Ladda upp bilder (den här stilen använder ${collageSlotCount})`
+                                        : layout === 'real-estate'
+                                        ? 'Ladda upp bilder (flera tillåtna)'
+                                        : 'Ladda upp bild'}
+                                </label>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileChange}
+                                    accept="image/*"
+                                    multiple={layout === 'real-estate' || layout === 'collage'}
+                                    className="hidden"
+                                />
+                                <input
+                                    type="file"
+                                    ref={cameraInputRef}
+                                    onChange={handleFileChange}
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                />
+
+                                {/* Mobilknappar: Ta foto och Välj bild sida vid sida (döljs på lg och uppåt) */}
+                                <div className="grid grid-cols-2 gap-3 mb-3 lg:hidden">
+                                    <button
+                                        type="button"
+                                        onClick={() => cameraInputRef.current?.click()}
+                                        className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        <span>📷</span>
+                                        <span>Ta foto</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        <span>🖼️</span>
+                                        <span>Välj bild</span>
+                                    </button>
+                                </div>
+
+                                {/* Vald bild-indikator på mobil för enskild bild (ej skyltfönster eller collage) */}
+                                {galleryImages.length > 0 && layout !== 'real-estate' && layout !== 'collage' && (
+                                    <div className="lg:hidden flex items-center gap-3 p-2.5 mb-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <img src={galleryImages[0]} alt="Vald bild" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                                        <div className="flex-grow min-w-0">
+                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">Bild vald</p>
+                                            <p className="text-[10px] text-slate-400">Används i detta inlägg</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={clearImage}
+                                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                                            title="Ta bort bild"
+                                        >
+                                            <TrashIcon className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                )}
+                                
+                                {/* Desktop dropzone (visas på lg och uppåt när ingen bild eller varken skyltfönster eller collage) */}
+                                {galleryImages.length === 0 || (layout !== 'real-estate' && layout !== 'collage' && galleryImages.length > 0) ? (
+                                    <div 
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="hidden lg:flex border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 rounded-2xl p-6 flex-col items-center justify-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-900/30 gap-2 text-center"
+                                    >
+                                        <div className="p-2.5 bg-teal-50 dark:bg-teal-950/30 text-teal-600 dark:text-teal-400 rounded-xl">
+                                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-sm text-slate-700 dark:text-slate-300">
+                                                {galleryImages.length > 0 ? "Klicka för att byta bild" : "Klicka eller dra bild hit för att ladda upp"}
+                                            </p>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">Stöder JPG, PNG, WEBP</p>
+                                        </div>
+                                    </div>
+                                ) : null}
+
+                                {(layout === 'real-estate' || layout === 'collage') && galleryImages.length > 0 && (
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-4 gap-3">
+                                             {galleryImages.map((img, idx) => {
+                                                const isUnused = layout === 'collage' && idx >= collageSlotCount;
+                                                return (
+                                                    <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-sm flex items-center justify-center">
+                                                        <img
+                                                            src={img}
+                                                            alt=""
+                                                            className={`w-full h-full object-cover transition-opacity ${isUnused ? 'opacity-40 grayscale' : ''}`}
+                                                        />
+                                                        <div className={`absolute top-1 left-1 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-sm ${
+                                                            isUnused ? 'bg-slate-600 dark:bg-slate-700' : 'bg-teal-500'
+                                                        }`}>
+                                                            {isUnused ? "Används inte" : (idx === 0 ? "Huvud" : idx + 1)}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const next = [...galleryImages];
+                                                                next.splice(idx, 1);
+                                                                setGalleryImages(next);
+                                                                if (fileInputRef.current) fileInputRef.current.value = '';
+                                                                if (cameraInputRef.current) cameraInputRef.current.value = '';
+                                                            }}
+                                                            className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1 rounded-full shadow-md hover:scale-110 transition-all cursor-pointer flex items-center justify-center"
+                                                        >
+                                                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
+                                                    {idx > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const next = [...galleryImages];
+                                                                const temp = next[idx];
+                                                                next[idx] = next[idx - 1];
+                                                                next[idx - 1] = temp;
+                                                                setGalleryImages(next);
+                                                            }}
+                                                            className="absolute bottom-1 left-1 bg-slate-900/85 hover:bg-slate-950 text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex gap-0.5 items-center"
+                                                            title="Flytta framåt"
+                                                        >
+                                                            ◀
+                                                        </button>
+                                                    )}
+                                                    {idx < galleryImages.length - 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const next = [...galleryImages];
+                                                                const temp = next[idx];
+                                                                next[idx] = next[idx + 1];
+                                                                next[idx + 1] = temp;
+                                                                setGalleryImages(next);
+                                                            }}
+                                                            className="absolute bottom-1 right-1 bg-slate-900/85 hover:bg-slate-950 text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex gap-0.5 items-center"
+                                                            title="Flytta bakåt"
+                                                        >
+                                                            ▶
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                            {Array.from({ length: 4 - galleryImages.length }).map((_, i) => (
+                                                <div 
+                                                    key={i} 
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    className="aspect-square rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all hover:bg-teal-500/5 text-slate-400 hover:text-teal-500"
+                                                >
+                                                    <span className="text-xl font-light">+</span>
+                                                    <span className="text-[9px] font-medium">BILD {galleryImages.length + i + 1}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {galleryImages.length < 4 && (
+                                            <p className="text-[11px] text-slate-400">
+                                                Tips: Du kan klicka på de tomma rutorna för att ladda upp fler bilder (upp till 4 st) eller markera flera bilder i filväljaren på en gång.
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1255,7 +1396,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                             <div className="sticky bottom-0 z-20 -mx-4 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-white/95 dark:bg-slate-800/95 backdrop-blur border-t border-slate-200 dark:border-slate-700 lg:static lg:mx-0 lg:px-0 lg:pb-0 lg:bg-transparent lg:border-0 lg:backdrop-blur-none">
                                 <PrimaryButton
                                     type="submit"
-                                    disabled={isSubmitting || !imageBase64 || !headline.trim()}
+                                    disabled={isSubmitting || !headline.trim() || (layout === 'collage' ? galleryImages.length < 2 : !imageBase64)}
                                     className="w-full py-3.5 bg-teal-600 hover:bg-teal-500 dark:bg-teal-600 font-bold tracking-wide rounded-xl shadow-lg hover:shadow-xl transition-all select-none flex items-center justify-center gap-2 text-base"
                                 >
                                     {isSubmitting ? (
@@ -1335,7 +1476,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                             {showActiveList && (
                                 <div className="space-y-4 pt-2 animate-fade-in border-t border-slate-200/50 dark:border-slate-800/60 mt-2">
                                     {activeExpressPosts.map(post => {
-                                        const isSold = post.isExpressSold;
+                                        const soldEnabled = isSoldStampEnabled(organization);
+                                        const isSold = soldEnabled && post.isExpressSold;
                                         return (
                                             <div 
                                                 key={post.id}
@@ -1381,24 +1523,26 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                                                     {/* Specific actions bar inside info card */}
                                                     <div className="flex items-center gap-2 mt-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleToggleSold(post.id)}
-                                                            disabled={isSoldUpdating === post.id}
-                                                            className={`px-2 py-0.5 text-xs font-extrabold rounded-lg border flex items-center gap-1 transition-all select-none active:scale-95 ${
-                                                                isSold 
-                                                                    ? 'bg-red-50 dark:bg-red-955/20 text-red-600 dark:text-red-450 border-red-200 dark:border-red-900 hover:bg-white dark:hover:bg-slate-800'
-                                                                    : 'bg-emerald-50 dark:bg-emerald-955/20 text-emerald-600 dark:text-emerald-450 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/30'
-                                                            }`}
-                                                        >
-                                                            {isSoldUpdating === post.id ? (
-                                                                <LoadingSpinnerIcon className="h-3.5 w-3.5 animate-spin" />
-                                                            ) : isSold ? (
-                                                                <span>Ångra Såld</span>
-                                                            ) : (
-                                                                <span>Märk som SÅLD ✅</span>
-                                                            )}
-                                                        </button>
+                                                        {soldEnabled && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleToggleSold(post.id)}
+                                                                disabled={isSoldUpdating === post.id}
+                                                                className={`px-2 py-0.5 text-xs font-extrabold rounded-lg border flex items-center gap-1 transition-all select-none active:scale-95 ${
+                                                                    isSold 
+                                                                        ? 'bg-red-50 dark:bg-red-955/20 text-red-600 dark:text-red-450 border-red-200 dark:border-red-900 hover:bg-white dark:hover:bg-slate-800'
+                                                                        : 'bg-emerald-50 dark:bg-emerald-955/20 text-emerald-600 dark:text-emerald-450 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/30'
+                                                                }`}
+                                                            >
+                                                                {isSoldUpdating === post.id ? (
+                                                                    <LoadingSpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                                                                ) : isSold ? (
+                                                                    <span>Ångra Såld</span>
+                                                                ) : (
+                                                                    <span>Märk som SÅLD ✅</span>
+                                                                )}
+                                                            </button>
+                                                        )}
 
                                                         <button
                                                             type="button"

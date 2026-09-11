@@ -7,19 +7,21 @@ import {
     ShareIcon, DownloadIcon, 
     VideoCameraIcon, MagnifyingGlassIcon,
     ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
-    ChevronDownIcon, CalendarIcon
+    ChevronDownIcon, CalendarIcon, DuplicateIcon
 } from '../icons';
 import { RemixModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ScaledPreviewWrapper } from './PreviewPanes';
 import { listenToQrScanCounts } from '../../services/firebaseService';
 import { parseToDate } from '../../utils/dateUtils';
+import { isSoldStampEnabled } from '../../utils/orgFeatures';
 
 interface ControlPanelProps {
     screen: DisplayScreen;
     organization: Organization;
     onUpdateScreen: (data: Partial<DisplayScreen>) => Promise<void>;
     onEditPost: (post: DisplayPost) => void;
+    onDuplicatePost: (post: DisplayPost) => void;
     onDeletePost: (id: string) => void;
     onDownloadPost: (post: DisplayPost) => void;
     onInitiateCreatePost: () => void;
@@ -38,6 +40,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     organization,
     onUpdateScreen,
     onEditPost,
+    onDuplicatePost,
     onDeletePost,
     onDownloadPost,
     onInitiateCreatePost,
@@ -555,32 +558,34 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 select-none">
                                                 <span>Stämplar:</span>
                                             </div>
-                                            <div className="flex flex-wrap items-center gap-1.5">
+                                             <div className="flex flex-wrap items-center gap-1.5">
                                                 {/* SÅLD Stamp */}
-                                                <button
-                                                    type="button"
-                                                    disabled={screen.postsUnreadable}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleToggleSold(post);
-                                                    }}
-                                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 select-none ${
-                                                        screen.postsUnreadable 
-                                                            ? 'opacity-50 cursor-not-allowed' 
-                                                            : 'cursor-pointer active:scale-95'
-                                                    } ${
-                                                        post.isExpressSold
-                                                            ? 'bg-[#ef4444] text-white border-[#ef4444]'
-                                                            : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
-                                                    }`}
-                                                    title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : (post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld')}
-                                                >
-                                                    <span>🔴</span>
-                                                    <span>SÅLD</span>
-                                                    {post.isExpressSold && (
-                                                        <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
-                                                    )}
-                                                </button>
+                                                {isSoldStampEnabled(organization) && (
+                                                    <button
+                                                        type="button"
+                                                        disabled={screen.postsUnreadable}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleToggleSold(post);
+                                                        }}
+                                                        className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 select-none ${
+                                                            screen.postsUnreadable 
+                                                                ? 'opacity-50 cursor-not-allowed' 
+                                                                : 'cursor-pointer active:scale-95'
+                                                        } ${
+                                                            post.isExpressSold
+                                                                ? 'bg-[#ef4444] text-white border-[#ef4444]'
+                                                                : 'border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/30'
+                                                        }`}
+                                                        title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : (post.isExpressSold ? 'Klicka för att ta bort SÅLD' : 'Klicka för att markera som såld')}
+                                                    >
+                                                        <span>🔴</span>
+                                                        <span>SÅLD</span>
+                                                        {post.isExpressSold && (
+                                                            <span className="text-[9px] bg-white/20 dark:bg-black/20 px-1 rounded ml-1 font-mono font-extrabold text-white">AKTIV</span>
+                                                        )}
+                                                    </button>
+                                                )}
 
                                                 {organization.tags && organization.tags.length > 0 ? (
                                                     organization.tags.map(tag => {
@@ -655,6 +660,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                         <>
                                                             <button onClick={() => { onEditPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
                                                                 <PencilIcon className="w-4 h-4 text-slate-400" /> Redigera
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { onDuplicatePost(post); setOpenDropdownId(null); }}
+                                                                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3"
+                                                            >
+                                                                <DuplicateIcon className="w-4 h-4 text-slate-400" /> Duplicera
                                                             </button>
                                                             <button onClick={() => { setRemixPost(post); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3">
                                                                 <SparklesIcon className="w-4 h-4 text-purple-500" /> Remixa med AI

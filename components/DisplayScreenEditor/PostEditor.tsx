@@ -10,7 +10,6 @@ import { Step3_Atmosphere } from './PostEditorSteps/Step3_Atmosphere';
 import { Step4_Publishing } from './PostEditorSteps/Step4_Publishing';
 import { useToast } from '../../context/ToastContext';
 import { updateSuggestedPost } from '../../services/firebaseService';
-import { InputDialog } from './Modals'; 
 import { useLocation } from '../../context/StudioContext';
 
 export interface PostEditorProps {
@@ -58,7 +57,6 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     
     const [isSaving, setIsSaving] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
-    const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false);
     const [isNoDateConfirmOpen, setIsNoDateConfirmOpen] = useState(false);
     const { showToast } = useToast();
 
@@ -111,23 +109,6 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
             bodyFontFamily: template?.postData.bodyFontFamily ?? organization.bodyFontFamily,
         };
         onPostChange(newPost); 
-    };
-
-    const handleSaveTemplate = async (templateName: string) => {
-        setIsSaveTemplateModalOpen(false);
-        try {
-            const { id, startDate, endDate, internalTitle, ...postDataWithoutId } = post;
-            const newTemplate: PostTemplate = {
-                id: `template-${Date.now()}`,
-                templateName,
-                postData: postDataWithoutId
-            };
-            const updatedTemplates = [...(organization.postTemplates || []), newTemplate];
-            await onUpdateOrganization(organization.id, { postTemplates: updatedTemplates });
-            showToast({ message: 'Mallen har sparats!', type: 'success' });
-        } catch (error) {
-            showToast({ message: 'Kunde inte spara mallen.', type: 'error' });
-        }
     };
 
     const handleConfirmCancel = () => {
@@ -242,11 +223,6 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                 <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center">
                     {/* Vänstergrupp: inte navigering, flödar normalt även på mobil */}
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:gap-4">
-                        {isLastStep && post.layout !== 'ai-ad' && (
-                            <SecondaryButton onClick={() => setIsSaveTemplateModalOpen(true)} disabled={isSaving} className="w-full sm:w-auto min-h-[44px] lg:min-h-0">
-                                Spara som mall
-                            </SecondaryButton>
-                        )}
                         {post.suggestionOriginId && isLastStep && (
                             <DestructiveButton onClick={handleRejectSuggestion} disabled={isSaving} className="w-full sm:w-auto min-h-[44px] lg:min-h-0">
                                 Förkasta Förslag
@@ -278,15 +254,6 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                     </div>
                 </div>
             </div>
-            
-            <InputDialog
-                isOpen={isSaveTemplateModalOpen}
-                onClose={() => setIsSaveTemplateModalOpen(false)}
-                onSave={handleSaveTemplate}
-                title="Spara som mall"
-                labelText="Namn på mallen"
-                initialValue={post.internalTitle || 'Ny mall'}
-            />
 
             <ConfirmDialog
                 isOpen={isCancelConfirmOpen}

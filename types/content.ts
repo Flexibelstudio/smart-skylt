@@ -224,9 +224,12 @@ export interface DisplayPost {
 export interface PostTemplate {
   id: string;
   templateName: string; // E.g., "Nytt Objekt", "Dagens Lunch"
+  description?: string;
   // The post object contains all styling and layout, but no scheduling.
   // Content fields can be used as placeholders/defaults.
   postData: Omit<DisplayPost, 'id' | 'startDate' | 'endDate' | 'internalTitle'>;
+  businessTypes?: string[];   // vilka verksamhetstyper mallen passar
+  sortOrder?: number;         // ordning inom sin grupp
 }
 
 export interface CustomCategoryWithPrompt {

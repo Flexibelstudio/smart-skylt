@@ -3,7 +3,6 @@ import { onCall, HttpsError, onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { randomUUID } from "crypto";
-import ical from "node-ical";
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
@@ -931,6 +930,12 @@ async function computeTodaysSlotsForOrg(orgId, orgData, nowDate) {
   if (bookingCalendars.length === 0) {
     return null;
   }
+
+  // node-ical laddas först här, inte vid uppstart. Biblioteket drar in hela
+  // tidszonsdatabasen och tog så lång tid att ladda att "firebase deploy"
+  // hann slå i sin 10-sekundersgräns när den läser ut vilka funktioner som
+  // finns. Nu betalas den kostnaden bara när en kalender faktiskt ska läsas.
+  const ical = (await import("node-ical")).default;
 
   const byCalendar = {};
 

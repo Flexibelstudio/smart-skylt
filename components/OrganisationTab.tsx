@@ -6,11 +6,12 @@ import { useToast } from '../context/ToastContext';
 import { ConfirmDialog } from './ConfirmDialog';
 import { PrimaryButton, SecondaryButton, DestructiveButton } from './Buttons';
 import { StyledInput, StyledSelect, FontSelector } from './Forms';
-import { ChevronDownIcon, PencilIcon, TrashIcon, FacebookIcon, SparklesIcon, HandThumbUpIcon, HandThumbDownIcon, UserCircleIcon, UsersIcon, ChatBubbleLeftRightIcon, PaintBrushIcon, MegaphoneIcon, LinkIcon, LoadingSpinnerIcon } from './icons';
+import { ChevronDownIcon, PencilIcon, TrashIcon, FacebookIcon, SparklesIcon, HandThumbUpIcon, HandThumbDownIcon, UserCircleIcon, UsersIcon, ChatBubbleLeftRightIcon, PaintBrushIcon, MegaphoneIcon, LinkIcon, LoadingSpinnerIcon, ToggleSwitch } from './icons';
 import QRCode from 'qrcode';
 import { DisplayPostRenderer } from './DisplayPostRenderer';
 import { uploadMediaForGallery } from '../services/firebaseService';
 import { generateDnaAnalysis, analyzeWebsiteContent, generateTagOrStampWithAi } from '../services/geminiService';
+import { isSoldStampEnabled } from '../utils/orgFeatures';
 
 interface SuperAdminScreenProps {
     organization: Organization;
@@ -695,81 +696,6 @@ const TagManager: React.FC<{
     );
 };
 
-interface PostTemplateManagerProps {
-    organization: Organization;
-    onUpdatePostTemplates: (organizationId: string, templates: PostTemplate[]) => Promise<void>;
-}
-
-const PostTemplateManager: React.FC<PostTemplateManagerProps> = ({ organization, onUpdatePostTemplates }) => {
-    const { showToast } = useToast();
-    const [templateToDelete, setTemplateToDelete] = useState<PostTemplate | null>(null);
-
-    const templates = organization.postTemplates || [];
-
-    const handleDelete = (template: PostTemplate) => {
-        setTemplateToDelete(template);
-    };
-
-    const confirmDelete = async () => {
-        if (!templateToDelete) return;
-
-        const updatedTemplates = templates.filter(t => t.id !== templateToDelete.id);
-        try {
-            await onUpdatePostTemplates(organization.id, updatedTemplates);
-            showToast({ message: `Mallen "${templateToDelete.templateName}" togs bort.`, type: 'success' });
-        } catch (error) {
-            showToast({ message: "Kunde inte ta bort mallen.", type: 'error' });
-        } finally {
-            setTemplateToDelete(null);
-        }
-    };
-
-    return (
-        <div className="space-y-3">
-            {templates.length > 0 ? (
-                templates.map(template => {
-                    const postForPreview: DisplayPost = {
-                        id: template.id,
-                        internalTitle: template.templateName,
-                        ...template.postData
-                    };
-                    return (
-                        <div key={template.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg flex items-center gap-3 border border-slate-200 dark:border-slate-700">
-                            <div className="flex-shrink-0 w-24 h-14 bg-black rounded-md overflow-hidden">
-                                <DisplayPostRenderer 
-                                    post={postForPreview}
-                                    mode="preview"
-                                    allTags={organization.tags}
-                                    showTags={false}
-                                    organization={organization}
-                                />
-                            </div>
-                            <div className="flex-grow">
-                                <p className="font-semibold text-slate-900 dark:text-white">{template.templateName}</p>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">{template.postData.layout}</p>
-                            </div>
-                            <div className="flex gap-1">
-                                {/* Edit button could be added here later */}
-                                <DestructiveButton onClick={() => handleDelete(template)}>Ta bort</DestructiveButton>
-                            </div>
-                        </div>
-                    )
-                })
-            ) : (
-                <p className="text-slate-500 dark:text-slate-400 text-center py-4">Inga mallar har sparats än.</p>
-            )}
-             <ConfirmDialog
-                isOpen={!!templateToDelete}
-                onClose={() => setTemplateToDelete(null)}
-                onConfirm={confirmDelete}
-                title="Ta bort mall"
-            >
-               <p>Är du säker på att du vill ta bort mallen "{templateToDelete?.templateName}"? Detta kan inte ångras.</p>
-            </ConfirmDialog>
-        </div>
-    );
-};
-
 export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
     const { organization, onUpdateLogos, onUpdateTags, onUpdateDisplayScreens, onUpdateOrganization, onUpdatePostTemplates } = props;
     
@@ -1197,7 +1123,7 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
         });
     };
     
-    const businessTypes = ['Bageri', 'Butik', 'Café', 'Event', 'Förening', 'Företag/Kontor', 'Gym/Hälsa', 'Hantverk', 'Hotell', 'Inredning', 'Kampanj', 'Kedja', 'Klädesbutik', 'Köpcentrum', 'Massage', 'Mäklare', 'Optiker', 'Restaurang', 'Skola', 'Skönhet', 'Spa', 'Teknik', 'Tjänster', 'Annat'];
+    const businessTypes = ['Bageri', 'Bilhandlare', 'Butik', 'Café', 'Event', 'Förening', 'Företag/Kontor', 'Gym/Hälsa', 'Hantverk', 'Hotell', 'Inredning', 'Kampanj', 'Kedja', 'Klädesbutik', 'Köpcentrum', 'Massage', 'Mäklare', 'Optiker', 'Restaurang', 'Skola', 'Skönhet', 'Spa', 'Teknik', 'Tjänster', 'Annat'];
 
     return (
         <div className="space-y-6">
@@ -1638,7 +1564,33 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
 
             {/* SUB-TAB 4: Design-Resurser (Tags & Badge Manager) */}
             {activeSubTab === 'tags' && (
-                <div className="animate-fade-in">
+                <div className="animate-fade-in space-y-6">
+                    <Card 
+                        title="SÅLD-stämpel för snabbinlägg" 
+                        subTitle="Styr om SÅLD-stämpeln ska finnas tillgänglig för snabbpublicering och på skärmar. Förvald automatiskt för mäklare och bilhandlare."
+                    >
+                        <div className="max-w-md space-y-2">
+                            <ToggleSwitch
+                                label="Aktivera SÅLD-stämpel"
+                                checked={isSoldStampEnabled(organization)}
+                                onChange={async (checked) => {
+                                    try {
+                                        await onUpdateOrganization(organization.id, { enableSoldStamp: checked });
+                                        showToast({ 
+                                            message: checked ? "SÅLD-stämpel har aktiverats." : "SÅLD-stämpel har inaktiverats.", 
+                                            type: 'success' 
+                                        });
+                                    } catch (e) {
+                                        showToast({ message: "Kunde inte spara inställningen.", type: 'error' });
+                                    }
+                                }}
+                            />
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Stängs den av visas inga såld-stämplar på skärmen, även för inlägg som redan är märkta.
+                            </p>
+                        </div>
+                    </Card>
+
                     <Card title="Design- & Innehållsresurser" subTitle="Skapa dina egna återanvändbara designbrickor, runda kampanjstämplar eller märken (t.ex. 'NYHET', '-20%', 'EKO') för att enkelt dra och släppa dem på dina skyltar.">
                         <div className="space-y-6">
                             <TagManager tags={tags} onSave={handleSaveTag} onDelete={(tag) => setTagToDelete(tag)} editingTag={editingTag} setEditingTag={setEditingTag} organization={organization} />

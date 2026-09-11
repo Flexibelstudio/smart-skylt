@@ -94,6 +94,7 @@ export interface Organization {
   discountScreen?: number; // Percentage, e.g., 10 for 10%
   maxScreens?: number;           // Antal skärmar som ingår i abonnemanget (default 1)
   aiMonthlyCreditLimit?: number; // Månadstak för AI-krediter (läses av backend, default 4000)
+  enableSoldStamp?: boolean;
   // NEW: Customer information fields
   address?: string;
   email?: string;
@@ -111,6 +112,8 @@ export interface Organization {
   aiAutomations?: AiAutomation[]; // NEW: AI automation configurations.
   suggestedPosts?: SuggestedPost[];
   bookingCalendars?: BookingCalendarEntry[];
+  bookingCalendarsRepresent?: 'staff' | 'services';
+  showCalendarNames?: boolean;
   todaysAvailableSlots?: TodaysSlots; // Skrivs av backend, läses av skärmen
 }
 

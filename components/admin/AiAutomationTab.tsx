@@ -28,6 +28,26 @@ const getFrequencyText = (auto: AiAutomation) => {
     }
 };
 
+const toMinutes = (t?: string): number => {
+    if (!t || !/^\d{2}:\d{2}$/.test(t)) return -1;
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+};
+
+// 'invalid' = omöjligt fönster, 'tooShort' = ryms inget pass, null = ok
+const getDayProblem = (
+    day: { enabled?: boolean; start?: string; end?: string } | undefined,
+    slotMinutes: number
+): 'invalid' | 'tooShort' | null => {
+    if (!day?.enabled) return null;
+    const start = toMinutes(day.start || '09:00');
+    const end = toMinutes(day.end || '17:00');
+    if (start < 0 || end < 0) return null;
+    if (start >= end) return 'invalid';
+    if (end - start < (slotMinutes || 30)) return 'tooShort';
+    return null;
+};
+
 interface AiAutomationTabProps {
     organization: Organization;
     onUpdateOrganization: (organizationId: string, data: Partial<Organization>) => Promise<void>;
@@ -107,6 +127,12 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
     const [calendars, setCalendars] = useState<BookingCalendarEntry[]>(() => {
         return getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded);
     });
+    const [bookingCalendarsRepresent, setBookingCalendarsRepresent] = useState<'staff' | 'services'>(() => {
+        return organization.bookingCalendarsRepresent || 'staff';
+    });
+    const [showCalendarNames, setShowCalendarNames] = useState<boolean>(() => {
+        return organization.showCalendarNames ?? false;
+    });
     const [isCalendarsDirty, setIsCalendarsDirty] = useState(false);
 
     const [expandedCalendarId, setExpandedCalendarId] = useState<string | null>(null);
@@ -121,7 +147,17 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
     useEffect(() => {
         if (isCalendarsDirty) return;
         setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded));
-    }, [organization.bookingCalendars, icsUrlsLoaded, isCalendarsDirty]);
+        setBookingCalendarsRepresent(organization.bookingCalendarsRepresent || 'staff');
+        setShowCalendarNames(organization.showCalendarNames ?? false);
+    }, [organization.bookingCalendars, organization.bookingCalendarsRepresent, organization.showCalendarNames, icsUrlsLoaded, isCalendarsDirty]);
+
+    const isServices = bookingCalendarsRepresent === 'services';
+    const entityOne = isServices ? 'tjänst' : 'person';        // "en tjänst" / "en person"
+    const entityMany = isServices ? 'tjänster' : 'personal';
+
+    const hasInvalidHours = calendars.some(cal =>
+        weekdaysList.some(({ key }) => getDayProblem(cal.workingHours?.[key], cal.slotMinutes) === 'invalid')
+    );
 
     const handleTestCalendar = async () => {
         setIsTestingCalendar(true);
@@ -162,7 +198,11 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
 
         try {
             await saveOrgIcsUrls(organization.id, icsUrlsToSave);
-            await onUpdateOrganization(organization.id, { bookingCalendars: normalizedListForOrg });
+            await onUpdateOrganization(organization.id, {
+                bookingCalendars: normalizedListForOrg,
+                bookingCalendarsRepresent,
+                showCalendarNames
+            });
             setIcsUrlsLoaded(icsUrlsToSave);
             setIsCalendarsDirty(false);
             showToast({ message: "Bokningskalendrar har sparats framgångsrikt.", type: 'success' });
@@ -176,7 +216,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
     const handleAddCalendar = () => {
         const newEntry: BookingCalendarEntry = {
             id: 'cal_' + Math.random().toString(36).substring(2, 9),
-            staffName: 'Ny personal',
+            staffName: isServices ? 'Ny tjänst' : 'Ny personal',
             enabled: true,
             icsUrl: '',
             bookingUrl: '',
@@ -447,16 +487,102 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                             onClick={handleAddCalendar}
                             className="text-xs font-bold py-1.5 px-3 flex items-center gap-1.5"
                         >
-                            <span>+ Lägg till personal</span>
+                            <span>{isServices ? '+ Lägg till tjänst' : '+ Lägg till personal'}</span>
                         </SecondaryButton>
                     </div>
                 }
-                subTitle="Visa dagens lediga tider på skyltfönstret för din personal — koppla iCal-länkar (t.ex. från Bokadirekt)."
+                subTitle="Visa dagens lediga tider på skyltfönstret — koppla iCal-länkar (t.ex. från Bokadirekt)."
             >
                 <div className="space-y-6">
+                    {/* Vad är kalendrarna? */}
+                    <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-3">
+                        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            Vad är kalendrarna?
+                        </label>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (bookingCalendarsRepresent !== 'staff') {
+                                        setBookingCalendarsRepresent('staff');
+                                        setIsCalendarsDirty(true);
+                                    }
+                                }}
+                                className={`min-h-[44px] p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1.5 ${
+                                    bookingCalendarsRepresent === 'staff'
+                                        ? 'border-teal-500 bg-teal-500/5 dark:bg-teal-500/10 text-slate-800 dark:text-white shadow-sm ring-1 ring-teal-500'
+                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                            bookingCalendarsRepresent === 'staff' ? 'border-teal-500 bg-teal-500' : 'border-slate-400 dark:border-slate-500'
+                                        }`}>
+                                            {bookingCalendarsRepresent === 'staff' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                        </span>
+                                        Personer
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Anna, Micke, Sara. Skärmen visar alla lediga tider i en gemensam lista — den som går förbi vill veta om det går att komma in, inte hos vem.
+                                </p>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (bookingCalendarsRepresent !== 'services') {
+                                        setBookingCalendarsRepresent('services');
+                                        setIsCalendarsDirty(true);
+                                    }
+                                }}
+                                className={`min-h-[44px] p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1.5 ${
+                                    bookingCalendarsRepresent === 'services'
+                                        ? 'border-teal-500 bg-teal-500/5 dark:bg-teal-500/10 text-slate-800 dark:text-white shadow-sm ring-1 ring-teal-500'
+                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                            bookingCalendarsRepresent === 'services' ? 'border-teal-500 bg-teal-500' : 'border-slate-400 dark:border-slate-500'
+                                        }`}>
+                                            {bookingCalendarsRepresent === 'services' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                        </span>
+                                        Tjänster
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Klippning, massage, ansiktsbehandling. Tiderna visas per tjänst med namnet utskrivet, eftersom de inte är utbytbara mot varandra.
+                                </p>
+                            </button>
+                        </div>
+
+                        {bookingCalendarsRepresent === 'staff' && (
+                            <div className="pt-2 pl-0.5 border-t border-slate-200/60 dark:border-slate-800">
+                                <label className="inline-flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={showCalendarNames}
+                                        onChange={(e) => {
+                                            setShowCalendarNames(e.target.checked);
+                                            setIsCalendarsDirty(true);
+                                        }}
+                                        className="w-4 h-4 rounded text-teal-600 border-slate-300 dark:border-slate-600 focus:ring-teal-500 dark:bg-slate-700"
+                                    />
+                                    <span className="font-medium">Visa även namnen på skärmen</span>
+                                </label>
+                            </div>
+                        )}
+                    </div>
+
                     {calendars.length === 0 ? (
                         <div className="text-center py-8 bg-slate-50 dark:bg-slate-900/10 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Ingen personal eller kalender har lagts till ännu.</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                                {isServices ? 'Ingen tjänst eller kalender har lagts till ännu.' : 'Ingen personal eller kalender har lagts till ännu.'}
+                            </p>
                             <PrimaryButton onClick={handleAddCalendar} className="text-xs">
                                 Lägg till din första kalender
                             </PrimaryButton>
@@ -480,7 +606,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                                 <div className="flex flex-col">
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-bold text-slate-800 dark:text-white">
-                                                            {cal.staffName || 'Namnlös personal'}
+                                                            {cal.staffName || (isServices ? 'Namnlös tjänst' : 'Namnlös personal')}
                                                         </span>
                                                         {!cal.enabled && (
                                                             <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded text-[10px] font-bold uppercase">
@@ -511,7 +637,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                                 <button
                                                     onClick={() => handleRemoveCalendar(cal.id)}
                                                     className="p-1.5 text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors"
-                                                    title="Ta bort personal"
+                                                    title={isServices ? 'Ta bort tjänst' : 'Ta bort personal'}
                                                 >
                                                     <TrashIcon className="w-4 h-4" />
                                                 </button>
@@ -528,13 +654,13 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                     <div>
                                                         <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                                                            Personalens namn
+                                                            {isServices ? 'Tjänstens namn' : 'Personalens namn'}
                                                         </label>
                                                         <StyledInput
                                                             type="text"
                                                             value={cal.staffName}
                                                             onChange={(e) => handleUpdateCalendarField(cal.id, 'staffName', e.target.value)}
-                                                            placeholder="T.ex. Anna, Erik"
+                                                            placeholder={isServices ? 't.ex. Klippning eller Lymfmassage' : 't.ex. Anna eller Micke'}
                                                         />
                                                     </div>
 
@@ -605,39 +731,61 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                                         {weekdaysList.map(({ key, name }) => {
                                                             const dayConfig = cal.workingHours?.[key] || { enabled: false, start: '09:00', end: '17:00' };
                                                             const isDayEnabled = dayConfig.enabled;
+                                                            const problem = getDayProblem(dayConfig, cal.slotMinutes);
                                                             
                                                             return (
-                                                                <div key={key} className="flex items-center justify-between gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/45">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            id={`day-${cal.id}-${key}`}
-                                                                            checked={isDayEnabled}
-                                                                            onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'enabled', e.target.checked)}
-                                                                            className="w-4 h-4 rounded text-teal-600 bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-600 focus:ring-teal-500 focus:ring-2 disabled:opacity-50"
-                                                                        />
-                                                                        <label htmlFor={`day-${cal.id}-${key}`} className={`text-sm font-semibold select-none ${isDayEnabled ? 'text-slate-800 dark:text-white' : 'text-slate-400 dark:text-slate-500'}`}>
-                                                                            {name}
-                                                                        </label>
+                                                                <div
+                                                                    key={key}
+                                                                    className={`p-3 rounded-xl bg-slate-50 dark:bg-slate-900/10 border ${
+                                                                        problem === 'invalid'
+                                                                            ? 'border-red-500 dark:border-red-500/80'
+                                                                            : problem === 'tooShort'
+                                                                            ? 'border-amber-500 dark:border-amber-500/80'
+                                                                            : 'border-slate-100 dark:border-slate-800/45'
+                                                                    } flex flex-col gap-2`}
+                                                                >
+                                                                    <div className="flex items-center justify-between gap-4">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                id={`day-${cal.id}-${key}`}
+                                                                                checked={isDayEnabled}
+                                                                                onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'enabled', e.target.checked)}
+                                                                                className="w-4 h-4 rounded text-teal-600 bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-600 focus:ring-teal-500 focus:ring-2 disabled:opacity-50"
+                                                                            />
+                                                                            <label htmlFor={`day-${cal.id}-${key}`} className={`text-sm font-semibold select-none ${isDayEnabled ? 'text-slate-800 dark:text-white' : 'text-slate-400 dark:text-slate-500'}`}>
+                                                                                {name}
+                                                                            </label>
+                                                                        </div>
+                                                                        
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <input
+                                                                                type="time"
+                                                                                value={dayConfig.start || '09:00'}
+                                                                                disabled={!isDayEnabled}
+                                                                                onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'start', e.target.value)}
+                                                                                className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white p-1 px-2 text-xs rounded border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-40"
+                                                                            />
+                                                                            <span className="text-[10px] text-slate-400 font-bold uppercase">till</span>
+                                                                            <input
+                                                                                type="time"
+                                                                                value={dayConfig.end || '17:00'}
+                                                                                disabled={!isDayEnabled}
+                                                                                onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'end', e.target.value)}
+                                                                                className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white p-1 px-2 text-xs rounded border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-40"
+                                                                            />
+                                                                        </div>
                                                                     </div>
-                                                                    
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <input
-                                                                            type="time"
-                                                                            value={dayConfig.start || '09:00'}
-                                                                            disabled={!isDayEnabled}
-                                                                            onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'start', e.target.value)}
-                                                                            className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white p-1 px-2 text-xs rounded border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-40"
-                                                                        />
-                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase">till</span>
-                                                                        <input
-                                                                            type="time"
-                                                                            value={dayConfig.end || '17:00'}
-                                                                            disabled={!isDayEnabled}
-                                                                            onChange={(e) => handleUpdateWorkingHours(cal.id, key, 'end', e.target.value)}
-                                                                            className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white p-1 px-2 text-xs rounded border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-40"
-                                                                        />
-                                                                    </div>
+                                                                    {problem === 'invalid' && (
+                                                                        <p className="text-[11px] text-red-600 dark:text-red-400">
+                                                                            Sluttiden måste vara efter starttiden. Inga tider visas den här dagen.
+                                                                        </p>
+                                                                    )}
+                                                                    {problem === 'tooShort' && (
+                                                                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                                                                            Tidsfönstret är kortare än behandlingslängden på {cal.slotMinutes} minuter, så inga tider ryms.
+                                                                        </p>
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
@@ -652,40 +800,54 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                     )}
 
                     {/* Action Block */}
-                    {calendars.length > 0 && (
-                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-end gap-3">
-                            {isCalendarsDirty && (
-                                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                                    Osparade ändringar
-                                </span>
+                    {(calendars.length > 0 || isCalendarsDirty) && (
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-col items-end gap-2">
+                            {hasInvalidHours && (
+                                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                                    Några arbetstider har sluttid före starttid och måste rättas innan du kan spara.
+                                </p>
                             )}
-                            {isCalendarsDirty && (
-                                <button
+                            <div className="flex flex-wrap items-center justify-end gap-3 w-full">
+                                {isCalendarsDirty && (
+                                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                                        Osparade ändringar
+                                    </span>
+                                )}
+                                {isCalendarsDirty && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded));
+                                            setBookingCalendarsRepresent(organization.bookingCalendarsRepresent || 'staff');
+                                            setShowCalendarNames(organization.showCalendarNames ?? false);
+                                            setIsCalendarsDirty(false);
+                                            setTestResult(null);
+                                        }}
+                                        className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                                    >
+                                        Ångra ändringar
+                                    </button>
+                                )}
+                                <SecondaryButton
                                     type="button"
-                                    onClick={() => { setCalendars(getCombinedCalendars(organization.bookingCalendars, icsUrlsLoaded)); setIsCalendarsDirty(false); setTestResult(null); }}
-                                    className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                                    onClick={handleTestCalendar}
+                                    disabled={isTestingCalendar || isCalendarsDirty}
+                                    title={isCalendarsDirty ? "Spara dina ändringar först" : undefined}
+                                    className="text-xs font-bold flex items-center gap-1.5"
                                 >
-                                    Ångra ändringar
-                                </button>
-                            )}
-                            <SecondaryButton
-                                type="button"
-                                onClick={handleTestCalendar}
-                                disabled={isTestingCalendar || isCalendarsDirty}
-                                title={isCalendarsDirty ? "Spara dina ändringar först" : undefined}
-                                className="text-xs font-bold flex items-center gap-1.5"
-                            >
-                                {isTestingCalendar && <LoadingSpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
-                                <span>{isTestingCalendar ? 'Testar...' : 'Testa kalendern nu'}</span>
-                            </SecondaryButton>
-                            <PrimaryButton
-                                type="button"
-                                onClick={() => handleSaveCalendar()}
-                                disabled={isSavingCalendar}
-                                className="bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-2"
-                            >
-                                {isSavingCalendar ? 'Sparar...' : 'Spara inställningar'}
-                            </PrimaryButton>
+                                    {isTestingCalendar && <LoadingSpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
+                                    <span>{isTestingCalendar ? 'Testar...' : 'Testa kalendern nu'}</span>
+                                </SecondaryButton>
+                                <PrimaryButton
+                                    type="button"
+                                    onClick={() => handleSaveCalendar()}
+                                    disabled={isSavingCalendar || hasInvalidHours}
+                                    title={hasInvalidHours ? 'Rätta arbetstiderna där sluttiden ligger före starttiden.' : undefined}
+                                    className="bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-2"
+                                >
+                                    {isSavingCalendar ? 'Sparar...' : 'Spara inställningar'}
+                                </PrimaryButton>
+                            </div>
                         </div>
                     )}
 
@@ -714,7 +876,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                 <div className="space-y-2">
                                     {testResult.results.map((res, index) => (
                                         <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2.5 bg-white dark:bg-slate-800/60 rounded-lg border border-slate-100 dark:border-slate-700/50">
-                                            <span className="font-bold text-slate-800 dark:text-slate-200">{res.staffName || 'Personal'}</span>
+                                            <span className="font-bold text-slate-800 dark:text-slate-200">{res.staffName || (isServices ? 'Tjänst' : 'Personal')}</span>
                                             {res.error ? (
                                                 <span className="text-red-600 dark:text-red-400 font-semibold">{res.error}</span>
                                             ) : res.closed ? (
