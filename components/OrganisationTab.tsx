@@ -1830,121 +1830,73 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
         paddingClass = isPreview ? 'px-4 py-2' : 'px-8 py-4';
     }
 
-    // Gorgeous preset designs to fast click
-    const PRESETS = [
+    // Purpose-based preset designs to fast click
+    const PRESETS = useMemo(() => [
         {
-            name: 'Klassisk Röd Retro',
-            displayType: 'stamp',
+            name: 'SÅLD',
+            icon: '🔴',
+            text: 'SÅLD',
+            displayType: 'stamp' as const,
             backgroundColor: '#dc2626',
-            textColor: '#FFFFFF',
-            fontSize: 'xl',
-            fontWeight: 'black',
-            fontFamily: 'display',
-            animation: 'pulse',
-            shape: 'circle',
-            border: 'dashed',
+            textColor: '#FFFFFF' as const,
+            fontSize: '4xl' as const,
+            fontWeight: 'black' as const,
+            fontFamily: 'display' as const,
+            shape: 'rectangle' as const,
+            border: 'none' as const,
+            animation: 'none' as const,
             opacity: 0.95,
-            icon: '🏷️'
+            rotation: -12
         },
         {
-            name: 'Ekologisk Mjukgrön',
-            displayType: 'tag',
-            backgroundColor: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-            textColor: '#FFFFFF',
-            fontSize: 'md',
-            fontWeight: 'bold',
-            fontFamily: 'sans',
-            animation: 'none',
-            shape: 'rectangle',
-            border: 'none',
+            name: 'NYHET',
+            icon: '✨',
+            text: 'NYHET',
+            displayType: 'stamp' as const,
+            backgroundColor: organization.accentColor || organization.primaryColor || '#ec4899',
+            textColor: '#FFFFFF' as const,
+            fontSize: '2xl' as const,
+            fontWeight: 'black' as const,
+            fontFamily: 'display' as const,
+            shape: 'rectangle' as const,
+            border: 'none' as const,
+            animation: 'none' as const,
             opacity: 1,
-            icon: '🌿'
+            rotation: -8
         },
         {
-            name: 'Guld Lyx',
-            displayType: 'stamp',
-            backgroundColor: 'linear-gradient(135deg, #b45309 0%, #f59e0b 50%, #b45309 100%)',
-            textColor: '#FFFFFF',
-            fontSize: 'lg',
-            fontWeight: 'black',
-            fontFamily: 'display',
-            animation: 'none',
-            shape: 'circle',
-            border: 'solid',
+            name: '-20 %',
+            icon: '🏷️',
+            text: '-20%',
+            displayType: 'stamp' as const,
+            backgroundColor: organization.primaryColor || '#14b8a6',
+            textColor: '#FFFFFF' as const,
+            fontSize: '3xl' as const,
+            fontWeight: 'black' as const,
+            fontFamily: 'display' as const,
+            shape: 'circle' as const,
+            border: 'dashed' as const,
+            animation: 'pulse' as const,
             opacity: 1,
-            icon: '✨'
+            rotation: 8
         },
         {
-            name: 'Neon Cyber Glow',
-            displayType: 'tag',
-            backgroundColor: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
-            textColor: '#FFFFFF',
-            fontSize: 'lg',
-            fontWeight: 'black',
-            fontFamily: 'display',
-            animation: 'glow',
-            shape: 'rectangle',
-            border: 'none',
+            name: 'VISNING',
+            icon: '📅',
+            text: 'VISNING',
+            displayType: 'tag' as const,
+            backgroundColor: organization.primaryColor || '#14b8a6',
+            textColor: '#FFFFFF' as const,
+            fontSize: 'md' as const,
+            fontWeight: 'bold' as const,
+            fontFamily: 'sans' as const,
+            shape: 'rectangle' as const,
+            border: 'none' as const,
+            animation: 'none' as const,
             opacity: 1,
-            icon: '🌈'
-        },
-        {
-            name: 'Frostat Ljust Glas',
-            displayType: 'tag',
-            backgroundColor: 'rgba(255, 255, 255, 0.22)',
-            textColor: '#FFFFFF',
-            fontSize: 'md',
-            fontWeight: 'black',
-            fontFamily: 'sans',
-            animation: 'none',
-            shape: 'rectangle',
-            border: 'none',
-            opacity: 1,
-            icon: '🧊'
-        },
-        {
-            name: 'Orange Solnedgång',
-            displayType: 'tag',
-            backgroundColor: 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)',
-            textColor: '#FFFFFF',
-            fontSize: 'xl',
-            fontWeight: 'black',
-            fontFamily: 'display',
-            animation: 'pulse',
-            shape: 'rectangle',
-            border: 'none',
-            opacity: 1,
-            icon: '🔥'
-        },
-        {
-            name: 'Gul Rabattstämpel',
-            displayType: 'stamp',
-            backgroundColor: '#fbbf24',
-            textColor: '#000000',
-            fontSize: '2xl',
-            fontWeight: 'black',
-            fontFamily: 'display',
-            animation: 'none',
-            shape: 'square',
-            border: 'solid',
-            opacity: 1,
-            icon: '⚡'
-        },
-        {
-            name: 'Mörk Premium',
-            displayType: 'tag',
-            backgroundColor: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            textColor: '#FFFFFF',
-            fontSize: 'sm',
-            fontWeight: 'bold',
-            fontFamily: 'sans',
-            animation: 'none',
-            shape: 'rectangle',
-            border: 'none',
-            opacity: 1,
-            icon: '🎯'
+            rotation: 0
         }
-    ];
+    ], [organization.accentColor, organization.primaryColor]);
 
     const GRADIENT_PRESETS = [
         { name: 'Sunset', c1: '#f97316', c2: '#ec4899' },
@@ -2030,15 +1982,17 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
 
                     {/* Visual Preset Choices */}
                     <div className="space-y-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">Snabba Förinställningar (Klicka och bygg vidare)</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">Färdiga stämplar (klicka och justera vid behov)</label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {PRESETS.map((p, idx) => {
-                                const active = currentTag.displayType === p.displayType && 
+                                const active = currentTag.text === p.text &&
+                                               currentTag.displayType === p.displayType && 
                                                currentTag.backgroundColor === p.backgroundColor &&
                                                currentTag.textColor === p.textColor &&
                                                currentTag.fontSize === p.fontSize &&
                                                currentTag.shape === p.shape &&
-                                               currentTag.border === p.border;
+                                               currentTag.border === p.border &&
+                                               (currentTag.rotation ?? 0) === p.rotation;
                                 return (
                                     <button
                                         key={idx}
@@ -2046,6 +2000,7 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                                         onClick={() => {
                                             setCurrentTag(t => ({
                                                 ...t,
+                                                text: p.text,
                                                 displayType: p.displayType as any,
                                                 backgroundColor: p.backgroundColor,
                                                 textColor: p.textColor as any,
@@ -2056,6 +2011,7 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                                                 shape: p.shape as any,
                                                 border: p.border as any,
                                                 opacity: p.opacity,
+                                                rotation: p.rotation,
                                             }));
                                             if (p.backgroundColor.startsWith('linear-gradient')) {
                                                 setBackgroundType('gradient');
@@ -2387,6 +2343,31 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                                         ))}
                                     </div>
                                 </div>
+
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <label className="block text-xs font-bold text-slate-400 uppercase">Lutning</label>
+                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-955 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                                        <input
+                                            type="range"
+                                            min="-25"
+                                            max="25"
+                                            step="1"
+                                            value={currentTag.rotation ?? 0}
+                                            onChange={e => setCurrentTag({...currentTag, rotation: parseInt(e.target.value, 10)})}
+                                            className="flex-1 accent-teal-600 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                        <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 min-w-[3rem] text-right">
+                                            {currentTag.rotation ?? 0}°
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentTag({...currentTag, rotation: 0})}
+                                            className="text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shrink-0 shadow-sm"
+                                        >
+                                            Nollställ
+                                        </button>
+                                    </div>
+                                </div>
                             </>
                         )}
 
@@ -2476,7 +2457,8 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                                     boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255,255,255,0.2)',
                                     border: '1px solid rgba(255,255,255,0.15)',
                                     backdropFilter: 'blur(8px)',
-                                })
+                                }),
+                                transform: isStamp ? `rotate(${currentTag.rotation ?? 0}deg)` : undefined,
                             }}
                             className={`
                                 inline-flex items-center shadow-lg transition-all z-10 duration-200
@@ -2512,6 +2494,7 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                         <div className="flex justify-between"><span>Storlek:</span><span className="font-bold text-slate-600 dark:text-slate-300">{currentTag.fontSize}</span></div>
                         <div className="flex justify-between"><span>Typsnitt:</span><span className="font-bold text-slate-600 dark:text-slate-300">{currentTag.fontFamily || 'sans'}</span></div>
                         {isStamp && <div className="flex justify-between"><span>Form & ram:</span><span className="font-bold text-slate-600 dark:text-slate-300 uppercase">{shape} / {currentTag.border || 'none'}</span></div>}
+                        {isStamp && <div className="flex justify-between"><span>Lutning:</span><span className="font-bold text-slate-600 dark:text-slate-300">{currentTag.rotation ?? 0}°</span></div>}
                         <div className="flex justify-between"><span>Rörelseeffekt:</span><span className="font-bold text-slate-600 dark:text-slate-300 uppercase">{currentTag.animation || 'ingen'}</span></div>
                     </div>
 

@@ -977,18 +977,33 @@ const DraggableTag: React.FC<any> = ({ tag, override, mode, onUpdatePosition, ta
         : longest * fontCqw * 0.62 + 9; // 9cqw ≈ vänster+höger padding
     const minCenterX = approxWidthCqw / 2 + 2; // 2cqw marginal till kanten
 
-    // Bestäm standardkoordinater i det övre vänstra hörnet, vackert utspridda horisontellt baserat på tagIndex
+    const approxHeightCqw = isStampShape
+        ? parseFloat(String(visual.styles.width)) || 16   // runda/fyrkantiga är kvadratiska
+        : lines.length * fontCqw * 1.2 + 5;               // 5cqw ≈ topp- och bottenpadding
+
+    const minCenterY = approxHeightCqw / 2 + 2;           // 2cqw marginal till kanten
+
+    // Bestäm standardkoordinater baserat på typ (stämpel vs etikett) och tagIndex
     const tagIndex = tagIds.indexOf(tag.id) >= 0 ? tagIds.indexOf(tag.id) : 0;
-    const rawDefaultX = isPortrait ? (12 + tagIndex * 16) : (10 + tagIndex * 12);
+    const isBigStamp = tag.displayType === 'stamp';
+
+    const rawDefaultX = isBigStamp
+        ? (isPortrait ? 50 + tagIndex * 6 : 50 + tagIndex * 5)
+        : (isPortrait ? 12 + tagIndex * 16 : 10 + tagIndex * 12);
+
+    const rawDefaultY = isBigStamp
+        ? (isPortrait ? 40 + tagIndex * 6 : 38 + tagIndex * 5)
+        : (isPortrait ? 5.2 : 8);
+
     const defaultX = Math.min(Math.max(rawDefaultX, minCenterX), 100 - minCenterX);
-    const defaultY = isPortrait ? 5.2 : 8;
+    const defaultY = Math.min(Math.max(rawDefaultY, minCenterY), 100 - minCenterY);
 
     const style: React.CSSProperties = {
         position: 'absolute',
         left: `${override?.x ?? defaultX}%`,
         top: `${override?.y ?? defaultY}%`,
         // We apply transform here for position centering and rotation
-        transform: `translate(-50%, -50%) rotate(${override?.rotation || 0}deg) scale(${override?.scale || 1})`,
+        transform: `translate(-50%, -50%) rotate(${override?.rotation ?? tag.rotation ?? 0}deg) scale(${override?.scale || 1})`,
         zIndex: 40,
         maxWidth: '90%', // Safety cap
         
@@ -1229,27 +1244,19 @@ export interface DisplayPostRendererProps {
 
 interface BookingSlotsBlockProps {
     organization?: Organization;
-    x?: number;
-    y?: number;
-    width?: number;
     isPortrait?: boolean;
     fontScale?: number;
-    color?: string;
-    anchor?: 'center' | 'top';
+    cardStyle?: 'dark' | 'light' | 'subtle' | string;
 }
 
-const SLOT_SCALE = 1.5;    // brickornas storlek relativt brödtextens skala
-const LABEL_RATIO = 0.5;   // etikettens storlek relativt brickorna
+const SLOT_SCALE = 1.5;    // tidernas storlek relativt brödtextens skala
+const LABEL_RATIO = 0.5;   // etikettens storlek relativt tiderna
 
 const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
     organization,
-    x = 50,
-    y = 50,
-    width = 80,
     isPortrait = false,
     fontScale,
-    color,
-    anchor = 'center',
+    cardStyle = 'dark',
 }) => {
     const view = useMemo(() => getBookingSlotsView(organization), [organization]);
 
@@ -1259,118 +1266,153 @@ const BookingSlotsBlock: React.FC<BookingSlotsBlockProps> = ({
     const timeFontSize = `${chipScale}cqw`;
     const labelFontSize = `${chipScale * LABEL_RATIO}cqw`;
 
-    const totalChips = (view.groups || []).reduce((acc, g) => acc + (g.chips ? g.chips.length : 0), 0);
-    const hasChips = totalChips > 0;
+    const effectiveCardStyle = cardStyle || 'dark';
+    const cardPreset = effectiveCardStyle === 'light'
+        ? { bg: 'rgba(255, 255, 255, 0.92)', text: '#0f172a' }
+        : effectiveCardStyle === 'subtle'
+        ? { bg: 'rgba(2, 6, 23, 0.55)', text: '#ffffff' }
+        : { bg: 'rgba(2, 6, 23, 0.85)', text: '#ffffff' };
 
-    const containerStyle: React.CSSProperties = {
+    const totalSlots = (view.groups || []).reduce((acc, g) => acc + (g.chips ? g.chips.length : 0), 0);
+    const hasSlots = totalSlots > 0;
+
+    const panelStyle: React.CSSProperties = {
         position: 'absolute',
-        top: `${y}%`,
-        left: `${x}%`,
-        transform: `translate(-50%, ${anchor === 'top' ? '0' : '-50%'})`,
-        width: `${width}%`,
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: isPortrait ? '70%' : '50%',
+        backgroundColor: cardPreset.bg,
+        borderRadius: `${chipScale * 0.35}cqw`,
+        padding: `${chipScale * 0.55}cqw ${chipScale * 0.7}cqw`,
+        border: `1px solid ${effectiveCardStyle === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.2)'}`,
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
         zIndex: 40,
         pointerEvents: 'none',
+        boxSizing: 'border-box',
     };
 
-    const brickStyle: React.CSSProperties = {
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-        fontSize: timeFontSize,
-        lineHeight: 1.3,
-        padding: `${chipScale * 0.22}cqw ${chipScale * 0.55}cqw`,
-        borderRadius: `${chipScale * 0.25}cqw`,
-        color: '#ffffff',
+    // Format intervall med tankstreck och mellanslag: "19:00 – 21:00"
+    const formatSlotText = (slot: string): string => {
+        return slot.replace(/\s*[–-]\s*/g, ' – ');
     };
 
-    return (
-        <div style={containerStyle} className="flex flex-col items-center select-none">
-            {/* a) Överst en etikett i versaler: "LEDIGA TIDER I DAG" (visas endast när det finns tider) */}
-            {hasChips && (
-                <div
-                    style={{
-                        fontSize: labelFontSize,
-                        color: 'rgba(255, 255, 255, 0.75)',
-                        lineHeight: 1.3,
-                        marginBottom: `${chipScale * 0.38}cqw`,
-                    }}
-                    className="uppercase tracking-widest font-bold text-center"
-                >
-                    LEDIGA TIDER I DAG
-                </div>
-            )}
-
-            {/* e) Finns ingen tid att visa renderas i stället view.status som en enda rad text */}
-            {!hasChips ? (
+    // Statusläge när det inte finns några tider att visa
+    if (!hasSlots) {
+        return (
+            <div style={panelStyle} className="select-none flex items-center justify-center">
                 <div
                     style={{
                         fontSize: timeFontSize,
-                        color: color || '#ffffff',
+                        color: cardPreset.text,
                         lineHeight: 1.3,
+                        textAlign: 'center',
                     }}
-                    className="font-bold text-center whitespace-nowrap drop-shadow-md"
+                    className="font-bold w-full"
                 >
                     {view.status || 'Se lediga tider på vår bokningssida'}
                 </div>
-            ) : isPortrait ? (
-                /* c) Stående skärm: brickorna staplas i en kolumn, tidigast överst */
-                <div className="flex flex-col items-center w-full" style={{ gap: `${chipScale * 0.35}cqw` }}>
-                    {view.groups.map((group, gIdx) => (
-                        <div key={gIdx} className="flex flex-col items-center w-full" style={{ gap: `${chipScale * 0.25}cqw` }}>
-                            {/* d) Gruppens label om den finns */}
-                            {group.label && (
-                                <div
-                                    style={{
-                                        fontSize: labelFontSize,
-                                        color: 'rgba(255, 255, 255, 0.75)',
-                                        lineHeight: 1.3,
-                                    }}
-                                    className="font-bold text-center uppercase tracking-wide mt-[0.5cqw]"
-                                >
-                                    {group.label}
-                                </div>
-                            )}
+            </div>
+        );
+    }
+
+    // Tak på högst sex rader: om > 6 visas 5 tidsrader + rad 6 "+N fler tider"
+    const maxSlotsToShow = totalSlots > 6 ? 5 : totalSlots;
+    const overflowCount = totalSlots > 6 ? totalSlots - 5 : 0;
+
+    let remainingAllowance = maxSlotsToShow;
+    const renderedGroups: { label?: string; chips: string[] }[] = [];
+
+    for (const group of view.groups || []) {
+        if (remainingAllowance <= 0) break;
+        const chipsInGroup = group.chips || [];
+        if (chipsInGroup.length === 0) continue;
+
+        const countToTake = Math.min(chipsInGroup.length, remainingAllowance);
+        const visibleChips = chipsInGroup.slice(0, countToTake);
+        renderedGroups.push({
+            label: group.label,
+            chips: visibleChips,
+        });
+        remainingAllowance -= countToTake;
+    }
+
+    return (
+        <div style={panelStyle} className="flex flex-col select-none">
+            {/* Etiketten "LEDIGA TIDER I DAG" överst inuti panelen */}
+            <div
+                style={{
+                    fontSize: labelFontSize,
+                    color: cardPreset.text,
+                    opacity: 0.75,
+                    lineHeight: 1.3,
+                    letterSpacing: '0.12em',
+                    marginBottom: `${chipScale * 0.45}cqw`,
+                }}
+                className="uppercase font-bold text-left tracking-wider"
+            >
+                LEDIGA TIDER I DAG
+            </div>
+
+            {/* Grupper och tidsrader */}
+            <div className="flex flex-col w-full">
+                {renderedGroups.map((group, gIdx) => (
+                    <div
+                        key={gIdx}
+                        className="flex flex-col w-full"
+                        style={{ marginTop: gIdx > 0 ? `${chipScale * 0.45}cqw` : undefined }}
+                    >
+                        {group.label && (
+                            <div
+                                style={{
+                                    fontSize: labelFontSize,
+                                    color: cardPreset.text,
+                                    opacity: 0.75,
+                                    lineHeight: 1.3,
+                                    letterSpacing: '0.08em',
+                                    marginBottom: `${chipScale * 0.25}cqw`,
+                                }}
+                                className="font-bold text-left uppercase tracking-wide"
+                            >
+                                {group.label}
+                            </div>
+                        )}
+                        <div className="flex flex-col w-full" style={{ gap: `${chipScale * 0.45}cqw` }}>
                             {group.chips.map((chip, cIdx) => (
                                 <div
                                     key={cIdx}
-                                    style={brickStyle}
-                                    className="font-bold shadow-md whitespace-nowrap text-center"
-                                >
-                                    {chip}
-                                </div>
-                            ))}
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                /* c) Liggande skärm: brickorna ligger på rad, tidigast till vänster, med radbrytning */
-                /* d) Grupperna följer efter varandra i samma riktning */
-                <div className="flex flex-wrap items-center justify-center w-full" style={{ gap: `${chipScale * 0.45}cqw` }}>
-                    {view.groups.map((group, gIdx) => (
-                        <div key={gIdx} className="inline-flex flex-wrap items-center justify-center" style={{ gap: `${chipScale * 0.3}cqw` }}>
-                            {group.label && (
-                                <span
                                     style={{
-                                        fontSize: labelFontSize,
-                                        color: 'rgba(255, 255, 255, 0.75)',
-                                        lineHeight: 1.3,
+                                        fontSize: timeFontSize,
+                                        color: cardPreset.text,
+                                        lineHeight: 1.2,
                                     }}
-                                    className="font-bold whitespace-nowrap uppercase tracking-wide mr-[0.3cqw]"
+                                    className="font-bold text-left whitespace-nowrap"
                                 >
-                                    {group.label}
-                                </span>
-                            )}
-                            {group.chips.map((chip, cIdx) => (
-                                <div
-                                    key={cIdx}
-                                    style={brickStyle}
-                                    className="font-bold shadow-md whitespace-nowrap text-center inline-block"
-                                >
-                                    {chip}
+                                    {formatSlotText(chip)}
                                 </div>
                             ))}
                         </div>
-                    ))}
-                </div>
-            )}
+                    </div>
+                ))}
+
+                {/* Sjätte raden om fler tider finns än som ryms */}
+                {overflowCount > 0 && (
+                    <div
+                        style={{
+                            fontSize: labelFontSize,
+                            color: cardPreset.text,
+                            opacity: 0.75,
+                            lineHeight: 1.3,
+                            marginTop: `${chipScale * 0.45}cqw`,
+                        }}
+                        className="font-bold text-left whitespace-nowrap"
+                    >
+                        +{overflowCount} fler tider
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -2107,13 +2149,9 @@ export const DisplayPostRenderer: React.FC<DisplayPostRendererProps> = ({
                 showsBookingSlots ? (
                     <BookingSlotsBlock
                         organization={organization}
-                        x={bX}
-                        y={bY}
-                        width={bW}
                         isPortrait={isPortrait}
                         fontScale={bFontScale}
-                        color={post.bodyTextColor || post.textColor}
-                        anchor={post.bodyAnchor || 'center'}
+                        cardStyle={post.cardStyle}
                     />
                 ) : (
                     <DraggableTextElement

@@ -15,6 +15,7 @@ export interface Tag {
   shape?: 'rectangle' | 'circle' | 'square';
   border?: 'none' | 'solid' | 'dashed';
   opacity?: number; // 0 to 1 for stamps
+  rotation?: number; // grader, -25 till 25. Stämpelns egen lutning.
 }
 
 export interface SubImage {
