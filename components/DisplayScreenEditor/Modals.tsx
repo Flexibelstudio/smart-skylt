@@ -1462,7 +1462,17 @@ export const PostPreviewModal: React.FC<{
     aspectRatio: DisplayScreen['aspectRatio'];
     onClose: () => void;
 }> = ({ post, organization, aspectRatio, onClose }) => {
-    const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
+    // Bredd/höjd för varje skärmformat, samma bas som ScaledPreviewWrapper.
+    const RATIOS: Record<string, number> = {
+        '9:16': 640 / 1138,
+        '3:4': 768 / 1024,
+        '4:3': 1024 / 768,
+        '16:9': 1138 / 640,
+    };
+    const ratio = RATIOS[aspectRatio as string] ?? 1138 / 640;
+    // Så stor som får plats: begränsas av skärmens bredd, av höjden omräknad
+    // till bredd via proportionen, och av ett tak på riktigt breda skärmar.
+    const frameWidth = `min(1400px, 94vw, ${(ratio * 82).toFixed(1)}vh)`;
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -1473,14 +1483,15 @@ export const PostPreviewModal: React.FC<{
     }, [onClose]);
 
     return ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
             <div
                 className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm cursor-pointer"
                 onClick={onClose}
             />
             <div className="relative z-10 flex flex-col items-center gap-4 max-h-full">
                 <div
-                    className={`w-full shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-900 bg-slate-950 ${isPortrait ? 'max-w-[min(420px,90vw)]' : 'max-w-[min(1100px,92vw)]'}`}
+                    className="shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-900 bg-slate-950"
+                    style={{ width: frameWidth }}
                 >
                     <ScaledPreviewWrapper aspectRatio={aspectRatio}>
                         <DisplayPostRenderer
@@ -1493,17 +1504,17 @@ export const PostPreviewModal: React.FC<{
                     </ScaledPreviewWrapper>
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap justify-center">
-                    <span className="text-white font-bold text-sm truncate max-w-[60vw]">
-                        {post.internalTitle || post.headline || 'Inlägg'}
+                <div className="flex items-center gap-3 justify-center min-w-0" style={{ width: frameWidth }}>
+                    <span className="text-white font-bold text-sm truncate min-w-0 flex-1">
+                        {(post.internalTitle || post.headline || 'Inlägg').replace(/^⚡ Express:\s*/, '')}
                     </span>
-                    <span className="text-slate-300 text-xs font-mono bg-white/10 px-2 py-0.5 rounded">
+                    <span className="text-slate-300 text-xs font-mono bg-white/10 px-2 py-0.5 rounded shrink-0">
                         {post.durationSeconds}s
                     </span>
                     <button
                         type="button"
                         onClick={onClose}
-                        className="text-xs font-bold text-white/80 hover:text-white underline underline-offset-2 cursor-pointer"
+                        className="text-xs font-bold text-white/80 hover:text-white underline underline-offset-2 cursor-pointer shrink-0"
                     >
                         Stäng
                     </button>
