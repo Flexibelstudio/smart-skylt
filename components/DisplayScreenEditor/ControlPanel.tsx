@@ -9,7 +9,7 @@ import {
     ListBulletIcon, FunnelIcon, ArrowUturnLeftIcon,
     ChevronDownIcon, CalendarIcon, DuplicateIcon
 } from '../icons';
-import { RemixModal } from './Modals';
+import { RemixModal, PostPreviewModal } from './Modals';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
 import { ScaledPreviewWrapper } from './PreviewPanes';
 import { listenToQrScanCounts } from '../../services/firebaseService';
@@ -24,7 +24,6 @@ interface ControlPanelProps {
     onDuplicatePost: (post: DisplayPost) => void;
     onDeletePost: (id: string) => void;
     onDownloadPost: (post: DisplayPost) => void;
-    onInitiateCreatePost: () => void;
     onInitiateExpressPublish: () => void;
     onSharePost: (post: DisplayPost) => void;
     openDropdownId: string | null;
@@ -43,7 +42,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     onDuplicatePost,
     onDeletePost,
     onDownloadPost,
-    onInitiateCreatePost,
     onInitiateExpressPublish,
     onSharePost,
     openDropdownId,
@@ -51,6 +49,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     dropdownRef
 }) => {
     const [remixPost, setRemixPost] = useState<DisplayPost | null>(null);
+    const [postToPreview, setPostToPreview] = useState<DisplayPost | null>(null);
     const [scheduleEditorPostId, setScheduleEditorPostId] = useState<string | null>(null);
     const { showToast } = useToast();
 
@@ -360,18 +359,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
 
                     <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5 justify-end">
-                        <button
-                            type="button"
-                            onClick={onInitiateExpressPublish}
-                            disabled={screen.postsUnreadable}
-                            title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
-                            className={`py-2 px-4 shadow-sm text-sm font-semibold flex items-center justify-center gap-1.5 bg-teal-50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-900/50 hover:bg-teal-100 dark:hover:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-xl transition-all h-[38px] ${screen.postsUnreadable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
-                        >
-                            <span>Skapa snabb-inlägg</span>
-                            <span className="text-amber-500 font-bold">⚡</span>
-                        </button>
                         <PrimaryButton 
-                            onClick={onInitiateCreatePost} 
+                            onClick={onInitiateExpressPublish} 
                             disabled={screen.postsUnreadable}
                             title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
                             className="shadow-lg shadow-primary/20 !h-[38px] flex items-center justify-center"
@@ -477,9 +466,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         const isExpress = post.internalTitle?.startsWith('⚡ Express:');
                         const displayTitle = isExpress ? post.internalTitle.replace(/^⚡ Express:\s*/, '') : post.internalTitle;
                         
-                        const cardBorders = isExpress
-                            ? 'border-l-[5px] border-l-amber-500 dark:border-l-amber-600 bg-amber-500/[0.01] dark:bg-amber-500/[0.02]'
-                            : '';
+                        const cardBorders = '';
                         
                         let opacityClass = status === 'ended' || status === 'archived' ? 'opacity-75 bg-slate-50 dark:bg-slate-800/50' : 'opacity-100';
                         
@@ -513,7 +500,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                     )}
                                     
                                     {/* Thumbnail - Responsive to Aspect Ratio */}
-                                    <div className={`${thumbClass} bg-slate-100 dark:bg-slate-900 rounded overflow-hidden flex-shrink-0 relative border border-slate-100 dark:border-slate-700 shadow-sm mt-1`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPostToPreview(post)}
+                                        title="Visa inlägget i stort"
+                                        aria-label="Visa inlägget i stort"
+                                        className={`${thumbClass} bg-slate-100 dark:bg-slate-900 rounded overflow-hidden flex-shrink-0 relative border border-slate-100 dark:border-slate-700 shadow-sm mt-1 cursor-pointer group/thumb hover:border-primary transition-colors`}
+                                    >
                                         <ScaledPreviewWrapper aspectRatio={screen.aspectRatio}>
                                             <DisplayPostRenderer 
                                                 post={post} 
@@ -524,16 +517,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             />
                                         </ScaledPreviewWrapper>
                                         {post.layout.includes('video') && <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none"><VideoCameraIcon className="w-4 h-4 text-white drop-shadow-md"/></div>}
-                                    </div>
+                                        <span className="absolute inset-0 hidden group-hover/thumb:flex items-center justify-center bg-slate-900/45 pointer-events-none">
+                                            <MagnifyingGlassIcon className="w-4 h-4 text-white drop-shadow" />
+                                        </span>
+                                    </button>
      
                                     {/* Info */}
                                     <div className="flex-grow min-w-0 flex flex-col justify-start">
                                         <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                            {isExpress && (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/45 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-805/40 select-none">
-                                                    <span>⚡ Snabb-inlägg</span>
-                                                </span>
-                                            )}
                                             {post.qrCodeUrl && (qrScanCounts[post.id]?.count ?? 0) > 0 && (
                                                 <span
                                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50 select-none"
@@ -542,7 +533,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                     📱 {qrScanCounts[post.id].count} skanningar
                                                 </span>
                                             )}
-                                            <h4 className="font-bold text-slate-800 dark:text-slate-200 truncate text-sm sm:text-base" title={post.internalTitle}>{displayTitle}</h4>
+                                            <h4
+                                                className="font-bold text-slate-800 dark:text-slate-200 truncate text-sm sm:text-base cursor-pointer hover:text-primary transition-colors"
+                                                title={post.internalTitle}
+                                                onClick={() => setPostToPreview(post)}
+                                            >
+                                                {displayTitle}
+                                            </h4>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2">
                                             <StatusPill status={status} post={post} />
@@ -745,7 +742,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         </p>
                         {filterStatus === 'all' && (
                             <PrimaryButton 
-                                onClick={onInitiateCreatePost}
+                                onClick={onInitiateExpressPublish}
                                 disabled={screen.postsUnreadable}
                                 title={screen.postsUnreadable ? "Inläggen kunde inte läsas — ladda om sidan först." : undefined}
                             >
@@ -764,6 +761,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     post={remixPost} 
                     organization={organization} 
                     onSelectVariant={handleRemixSelect} 
+                />
+            )}
+            {postToPreview && (
+                <PostPreviewModal
+                    post={postToPreview}
+                    organization={organization}
+                    aspectRatio={screen.aspectRatio}
+                    onClose={() => setPostToPreview(null)}
                 />
             )}
         </div>

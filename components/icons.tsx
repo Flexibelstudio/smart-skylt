@@ -371,6 +371,14 @@ export const LayoutCollageIcon: React.FC<{className?: string}> = ({className}) =
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="3" x2="12" y2="21"></line><line x1="3" y1="12" x2="12" y2="12"></line>
     </svg>
 );
+export const LayoutCenteredCardIcon: React.FC<{className?: string}> = ({className}) => (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <rect x="7" y="7" width="10" height="10" rx="1"></rect>
+        <line x1="9.5" y1="11" x2="14.5" y2="11"></line>
+        <line x1="9.5" y1="14" x2="13" y2="14"></line>
+    </svg>
+);
 export const LayoutWebpageIcon: React.FC<{className?: string}> = ({className}) => (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>

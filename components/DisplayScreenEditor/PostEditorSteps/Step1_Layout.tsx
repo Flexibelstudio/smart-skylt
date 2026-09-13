@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { DisplayPost, DisplayScreen, CollageItem, Organization } from '../../../types';
-import { LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon, LayoutImageTopIcon, LayoutImageBottomIcon, HomeIcon, SparklesIcon, ToggleSwitch } from '../../icons';
+import { LayoutTextOnlyIcon, LayoutImageFullscreenIcon, VideoCameraIcon, LayoutImageLeftIcon, LayoutImageRightIcon, LayoutCenteredCardIcon, LayoutCollageIcon, LayoutWebpageIcon, InstagramIcon, LayoutImageTopIcon, LayoutImageBottomIcon, HomeIcon, SparklesIcon, ToggleSwitch } from '../../icons';
 import { ConfirmDialog } from '../../ConfirmDialog';
 
 // --- Layout Selectors ---
@@ -51,6 +51,7 @@ const LayoutSelector: React.FC<{
             label: isPortrait ? 'Bild Nederst' : 'Bild till höger', 
             icon: isPortrait ? <LayoutImageBottomIcon className="w-full h-full" /> : <LayoutImageRightIcon className="w-full h-full" /> 
         },
+        { id: 'real-estate', label: 'Centrerad ruta', icon: <LayoutCenteredCardIcon className="w-full h-full" /> },
         { id: 'collage', label: 'Bildercollage', icon: <LayoutCollageIcon className="w-full h-full" />, badge: 'Flera' },
     ];
 
@@ -75,7 +76,7 @@ const LayoutSelector: React.FC<{
             {/* Media/Visuals Group */}
             <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-2">Bilder & Video</span>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-3">
                     {mediaLayouts.map(l => (
                         <LayoutButton key={l.id} label={l.label} icon={l.icon} isActive={currentLayout === l.id} onClick={() => onChange(l.id)} badge={l.badge} />
                     ))}
@@ -219,7 +220,7 @@ export const Step1_Layout: React.FC<{
         }
 
         // 2. Logic for switching FROM Collage TO Single Media (Image/Video layouts)
-        const isSingleMediaTarget = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right'].includes(newLayout);
+        const isSingleMediaTarget = ['image-fullscreen', 'video-fullscreen', 'image-left', 'image-right', 'real-estate'].includes(newLayout);
         if (post.layout === 'collage' && isSingleMediaTarget) {
             // Take the first item from collage and promote it to main media
             if (currentCollageItems.length > 0) {

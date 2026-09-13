@@ -1575,8 +1575,8 @@ export const OrganisationTab: React.FC<SuperAdminScreenProps> = (props) => {
             {activeSubTab === 'tags' && (
                 <div className="animate-fade-in space-y-6">
                     <Card 
-                        title="SÅLD-stämpel för snabbinlägg" 
-                        subTitle="Styr om SÅLD-stämpeln ska finnas tillgänglig för snabbpublicering och på skärmar. Förvald automatiskt för mäklare och bilhandlare."
+                        title="SÅLD-stämpel" 
+                        subTitle="Styr om SÅLD-stämpeln ska kunna sättas på inlägg. Förvald automatiskt för mäklare och bilhandlare."
                     >
                         <div className="max-w-md space-y-2">
                             <ToggleSwitch

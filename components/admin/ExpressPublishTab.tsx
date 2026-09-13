@@ -13,12 +13,14 @@ import { DisplayScreenPreviewModal } from '../SuperAdminScreen';
 import { EmojiPicker } from '../EmojiPicker';
 import { resizeImageFile } from '../../utils/imageResize';
 import { isSoldStampEnabled } from '../../utils/orgFeatures';
+import { getPostDefaults } from '../../utils/postDefaults';
 
 interface ExpressPublishTabProps {
     organization: Organization;
     onUpdateOrganization: (organizationId: string, data: Partial<Organization>) => Promise<void>;
     preselectedScreenId?: string;
     onClose?: () => void;
+    onOpenFullEditor?: (post: DisplayPost) => void;
 }
 
 // Interactive Live QR Code preview component inside speed editor
@@ -88,7 +90,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     organization, 
     onUpdateOrganization,
     preselectedScreenId,
-    onClose
+    onClose,
+    onOpenFullEditor
 }) => {
     const { displayScreens, updateDisplayScreen } = useLocation();
     const { showToast } = useToast();
@@ -201,18 +204,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         return collageStyle === 'three' ? 'landscape-1-top-2-bottom' : 'landscape-4-grid';
     };
 
-    // Active express posts on the selected channel
-    const activeExpressPosts = useMemo(() => {
+    const activePosts = useMemo(() => {
         if (!activeScreen) return [];
-        return (activeScreen.posts || []).filter(post => post.isExpressPost === true && post.status !== 'archived');
-    }, [activeScreen]);
-
-    // Antal vanliga (icke-express) aktiva inlägg i kanalen
-    const activeRegularPostsCount = useMemo(() => {
-        if (!activeScreen) return 0;
         return (activeScreen.posts || []).filter(post =>
-            !post.isExpressPost && post.status !== 'archived' && post.status !== 'draft'
-        ).length;
+            post.status !== 'archived' && post.status !== 'draft'
+        );
     }, [activeScreen]);
 
     // Live virtual previewPost object mapping inputs in real-time
@@ -226,54 +222,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         
         const defaultBody = description.trim() || 'Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.';
         
-        // Dynamic coords reflecting express publish formula exactly
-        let hX = 50, hY = 50, hW = 100;
-        let bX = 50, bY = 48, bW = 100;
-        let qrX = 89, qrY = 84, qrW = 15;
-
-        if (layout === 'image-fullscreen') {
-            hX = 50; hY = 68; hW = 84;
-            bX = 50; bY = 75; bW = 84;
-            qrX = isPortraitScreen ? 86 : 89;
-            qrY = isPortraitScreen ? 89 : 84;
-            qrW = 15;
-        } else if (layout === 'image-left') {
-            if (isPortraitScreen) {
-                hX = 50; hY = 64; hW = 84;
-                bX = 50; bY = 73; bW = 84;
-                qrX = 86; qrY = 89; qrW = 15;
-            } else {
-                hX = 75; hY = 40; hW = 42;
-                bX = 75; bY = 50; bW = 42;
-                qrX = 89; qrY = 84; qrW = 15;
-            }
-        } else if (layout === 'image-right') {
-            if (isPortraitScreen) {
-                hX = 50; hY = 20; hW = 84;
-                bX = 50; bY = 29; bW = 84;
-                qrX = 86; qrY = 89; qrW = 15;
-            } else {
-                hX = 25; hY = 40; hW = 42;
-                bX = 25; bY = 50; bW = 42;
-                qrX = 89; qrY = 84; qrW = 15;
-            }
-        } else if (layout === 'real-estate') {
-            hX = 50; hY = 30; hW = 80;
-            bX = 50; bY = 53; bW = 80;
-            qrX = 50; qrY = 82; qrW = 15;
-        } else if (layout === 'collage') {
-            hX = 50;
-            hY = 45;
-            hW = 90;
-
-            bX = 50;
-            bY = 55;
-            bW = 90;
-
-            qrX = isPortraitScreen ? 86 : 89;
-            qrY = isPortraitScreen ? 89 : 84;
-            qrW = 15;
-        }
+        const defaults = getPostDefaults(layout, isPortraitScreen);
 
         const collageCardColors = cardStyle === 'light'
             ? { bg: 'rgba(255, 255, 255, 0.92)', headline: '#0f172a', body: '#334155' }
@@ -309,39 +258,39 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             } : {}),
             isExpressPost: true,
             isExpressSold: false,
-            durationSeconds: 15,
             tagIds: selectedTagIds,
             scheduleDays: scheduleDays,
             scheduleTimeRanges: scheduleTimeRanges,
             ...(cleanUrl ? { qrCodeUrl: cleanUrl } : {}),
 
             // Font rendering matching engine rules
-            headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
-            bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
+            headlineFontScale: defaults.headlineFontScale,
+            bodyFontScale: defaults.bodyFontScale,
             headlineTextColor: layout === 'collage' ? collageCardColors.headline : '#ffffff',
             bodyTextColor: layout === 'collage' ? collageCardColors.body : '#cbd5e1',
             backgroundColor: '#0f172a',
 
-            headlinePositionX: hX,
-            headlinePositionY: hY,
-            headlineWidth: hW,
-            bodyPositionX: bX,
-            bodyPositionY: bY,
-            bodyWidth: bW,
-            bodyAnchor: 'top',
-            bodyMaxLines: 4,
-            qrPositionX: qrX,
-            qrPositionY: qrY,
-            qrWidth: qrW,
+            durationSeconds: defaults.durationSeconds,
+            bodyAnchor: defaults.bodyAnchor,
+            bodyMaxLines: defaults.bodyMaxLines,
+            textAlign: defaults.textAlign,
+            headlineShadowType: defaults.headlineShadowType,
+            headlineShadowColor: defaults.headlineShadowColor,
+            bodyShadowType: defaults.bodyShadowType,
+            bodyShadowColor: defaults.bodyShadowColor,
+
+            headlinePositionX: defaults.headlinePositionX,
+            headlinePositionY: defaults.headlinePositionY,
+            headlineWidth: defaults.headlineWidth,
+            bodyPositionX: defaults.bodyPositionX,
+            bodyPositionY: defaults.bodyPositionY,
+            bodyWidth: defaults.bodyWidth,
+            qrPositionX: defaults.qrPositionX,
+            qrPositionY: defaults.qrPositionY,
+            qrWidth: defaults.qrWidth,
 
             imageOverlayEnabled: false,
-            imageOverlayColor: 'transparent',
-            textAlign: 'center',
-
-            headlineShadowType: 'soft',
-            headlineShadowColor: 'rgba(0, 0, 0, 0.95)',
-            bodyShadowType: 'soft',
-            bodyShadowColor: 'rgba(0, 0, 0, 0.95)'
+            imageOverlayColor: 'transparent'
         };
     }, [headline, description, webpageUrl, layout, cardStyle, collageStyle, selectedTagIds, imageBase64, galleryImages, isPortraitScreen, scheduleDays, scheduleTimeRanges]);
 
@@ -419,115 +368,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             }
             const defaultBody = description.trim() || "Skanna QR-koden för specifikationer, pris samt att läsa mer på vår sida.";
 
-            // Samma värden finns i utils/postGeometry.ts — håll i synk.
-            // Calculate pristine coordinate positions based on selected layout and screen shape
-            // This ensures text fits perfectly in its dedicated containers, and never overlaps or darkens the beautiful pictures.
-            let hX = 50;
-            let hY = 40;
-            let hW = 80;
-            
-            let bX = 50;
-            let bY = 58;
-            let bW = 80;
-
-            let qrX = 92;
-            let qrY = 92;
-            let qrW = 15;
-
-            if (layout === 'image-fullscreen') {
-                // Placed gracefully on lower third, styled with robust shadows
-                hX = 50;
-                hY = 68; // Lowered to render beautifully at the bottom like preview
-                hW = 90;
-
-                bX = 50;
-                bY = 75; // Positioned tightly and elegantly below the title (gap reduced to 9% for cohesive fit)
-                bW = 90;
-
-                qrX = isPortraitScreen ? 86 : 89;
-                qrY = isPortraitScreen ? 89 : 84;
-                qrW = 15;
-            } else if (layout === 'image-left') {
-                if (isPortraitScreen) {
-                    // Portrait split: Image on Top (hY 0-50), Text Area on Bottom (hY 50-100)
-                    hX = 50;
-                    hY = 64; // middle of bottom text half, lowered slightly
-                    hW = 90;
-
-                    bX = 50;
-                    bY = 73; // reduced gap to 11%
-                    bW = 90;
-
-                    qrX = 86;
-                    qrY = 89;
-                    qrW = 15;
-                } else {
-                    // Landscape split: Image on Left (wX 0-50), Text Area on Right (wX 50-100)
-                    hX = 75; // middle of right text half
-                    hY = 40;
-                    hW = 42;
-
-                    bX = 75;
-                    bY = 50; // reduced gap
-                    bW = 42;
-
-                    qrX = 89;
-                    qrY = 84;
-                    qrW = 15;
-                }
-            } else if (layout === 'image-right') {
-                if (isPortraitScreen) {
-                    // Portrait split: Text Area on Top (hY 0-50), Image on Bottom (hY 50-100)
-                    hX = 50;
-                    hY = 20; // middle of top text half (pulled down from 16 to avoid clashing borders)
-                    hW = 90;
-
-                    bX = 50;
-                    bY = 29; // snug text gap decreased to 11% (originally 30 - gap 14%)
-                    bW = 90;
-
-                    qrX = 86;
-                    qrY = 89;
-                    qrW = 15;
-                } else {
-                    // Landscape split: Text Area on Left (wX 0-50), Image on Right (wX 50-100)
-                    hX = 25; // middle of left text half
-                    hY = 40;
-                    hW = 42;
-
-                    bX = 25;
-                    bY = 50;
-                    bW = 42;
-
-                    qrX = 89;
-                    qrY = 84;
-                    qrW = 15;
-                }
-            } else if (layout === 'real-estate') {
-                hX = 50;
-                hY = 30;
-                hW = 80;
-
-                bX = 50;
-                bY = 53;
-                bW = 80;
-
-                qrX = 50;
-                qrY = 82;
-                qrW = 15;
-            } else if (layout === 'collage') {
-                hX = 50;
-                hY = 45;
-                hW = 90;
-
-                bX = 50;
-                bY = 55;
-                bW = 90;
-
-                qrX = isPortraitScreen ? 86 : 89;
-                qrY = isPortraitScreen ? 89 : 84;
-                qrW = 15;
-            }
+            const defaults = getPostDefaults(layout, isPortraitScreen);
 
             const collageCardColors = cardStyle === 'light'
                 ? { bg: 'rgba(255, 255, 255, 0.92)', headline: '#0f172a', body: '#334155' }
@@ -564,39 +405,38 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                 ...(cleanUrl ? { qrCodeUrl: cleanUrl } : {}),
                 isExpressPost: true,
                 isExpressSold: false,
-                durationSeconds: 15,
                 startDate: new Date().toISOString(), // Automatiskt sätta dagens datum och tid som start så att det visas direkt och ej som utkast!
                 scheduleDays: scheduleDays,
                 scheduleTimeRanges: scheduleTimeRanges,
-                headlineFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 8.5 : 5.5) : (isPortraitScreen ? 5.5 : 3.6),
-                bodyFontScale: layout === 'image-fullscreen' ? (isPortraitScreen ? 4.2 : 3.0) : (isPortraitScreen ? 3.8 : 2.5),
+                headlineFontScale: defaults.headlineFontScale,
+                bodyFontScale: defaults.bodyFontScale,
                 headlineTextColor: layout === 'collage' ? collageCardColors.headline : '#ffffff',
                 bodyTextColor: layout === 'collage' ? collageCardColors.body : '#cbd5e1',
                 backgroundColor: '#0f172a',
                 tagIds: selectedTagIds,
                 
-                // Position properties
-                headlinePositionX: hX,
-                headlinePositionY: hY,
-                headlineWidth: hW,
-                bodyPositionX: bX,
-                bodyPositionY: bY,
-                bodyWidth: bW,
-                bodyAnchor: 'top',
-                bodyMaxLines: 4,
-                qrPositionX: qrX,
-                qrPositionY: qrY,
-                qrWidth: qrW,
+                durationSeconds: defaults.durationSeconds,
+                bodyAnchor: defaults.bodyAnchor,
+                bodyMaxLines: defaults.bodyMaxLines,
+                textAlign: defaults.textAlign,
+                headlineShadowType: defaults.headlineShadowType,
+                headlineShadowColor: defaults.headlineShadowColor,
+                bodyShadowType: defaults.bodyShadowType,
+                bodyShadowColor: defaults.bodyShadowColor,
+
+                headlinePositionX: defaults.headlinePositionX,
+                headlinePositionY: defaults.headlinePositionY,
+                headlineWidth: defaults.headlineWidth,
+                bodyPositionX: defaults.bodyPositionX,
+                bodyPositionY: defaults.bodyPositionY,
+                bodyWidth: defaults.bodyWidth,
+                qrPositionX: defaults.qrPositionX,
+                qrPositionY: defaults.qrPositionY,
+                qrWidth: defaults.qrWidth,
 
                 // High-End Readability: Disable muddy global image darken overlay, use elegant crisp text shadows
                 imageOverlayEnabled: false,
-                imageOverlayColor: 'transparent',
-                textAlign: 'center',
-                
-                headlineShadowType: 'soft',
-                headlineShadowColor: 'rgba(0, 0, 0, 0.95)',
-                bodyShadowType: 'soft',
-                bodyShadowColor: 'rgba(0, 0, 0, 0.95)'
+                imageOverlayColor: 'transparent'
             };
 
             const updatedPosts = [newPost, ...(activeScreen.posts || [])];
@@ -625,6 +465,18 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleOpenFullEditor = () => {
+        if (!onOpenFullEditor) return;
+        const trimmedHeadline = headline.trim();
+        onOpenFullEditor({
+            ...previewPost,
+            id: `new-${Date.now()}`,
+            internalTitle: trimmedHeadline || 'Nytt inlägg',
+            headline: trimmedHeadline,
+            startDate: new Date().toISOString(),
+        });
     };
 
     // Toggle Sold Stamp (Märk som SÅLD)
@@ -781,7 +633,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 {/* Form column (Left) */}
                 <div className="lg:col-span-3">
-                    <Card title={preselectedScreenId ? "Snabb-inlägg" : "Skapa snabb-inlägg"} subTitle="Fyll i detaljerna så publiceras det direkt">
+                    <Card title={preselectedScreenId ? "Nytt inlägg" : "Skapa inlägg"} subTitle="Fyll i detaljerna så publiceras det direkt">
                         <form onSubmit={handlePublishDirect} className="space-y-6">
                             {/* Screen dropdown */}
                             {!preselectedScreenId && (
@@ -1439,6 +1291,16 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         </>
                                     )}
                                 </PrimaryButton>
+                                {onOpenFullEditor && (
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenFullEditor}
+                                        disabled={isSubmitting}
+                                        className="w-full mt-2 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                                    >
+                                        Fler inställningar →
+                                    </button>
+                                )}
                             </div>
                         </form>
                     </Card>
@@ -1470,14 +1332,11 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                     {/* Active posts quick list */}
                     <Card
-                        title={`Aktiva snabbinlägg (${activeExpressPosts.length})`}
+                        title={`Aktiva inlägg (${activePosts.length})`}
                         subTitle="Hantera inlägg, markera som sålda eller ta bort från skärmen"
                     >
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between gap-3 flex-wrap">
-                                <span className="text-xs text-slate-500 dark:text-slate-400">
-                                    + {activeRegularPostsCount} vanliga inlägg i kanalen — totalt {activeExpressPosts.length + activeRegularPostsCount} i flödet
-                                </span>
+                            <div className="flex items-center justify-end gap-3 flex-wrap">
                                 <button
                                     type="button"
                                     onClick={() => setShowFeedPreview(true)}
@@ -1494,8 +1353,8 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                 className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl border border-slate-250 dark:border-slate-800 flex justify-between items-center text-xs font-bold text-slate-700 dark:text-slate-300 transition-all active:scale-[0.99]"
                             >
                                 <span className="flex items-center gap-2">
-                                    <span className={`inline-block w-2 h-2 rounded-full ${activeExpressPosts.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
-                                    <span>Visa aktiva snabbinlägg på skärmen</span>
+                                    <span className={`inline-block w-2 h-2 rounded-full ${activePosts.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                    <span>Visa aktiva inlägg på skärmen</span>
                                 </span>
                                 <span className="text-slate-400 font-mono text-[10px]">
                                     {showActiveList ? '[ Dölj listan ▲ ]' : '[ Visa listan ▼ ]'}
@@ -1504,7 +1363,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
 
                             {showActiveList && (
                                 <div className="space-y-4 pt-2 animate-fade-in border-t border-slate-200/50 dark:border-slate-800/60 mt-2">
-                                    {activeExpressPosts.map(post => {
+                                    {activePosts.map(post => {
                                         const soldEnabled = isSoldStampEnabled(organization);
                                         const isSold = soldEnabled && post.isExpressSold;
                                         return (
@@ -1535,7 +1394,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                                 <div className="flex-grow min-w-0 flex flex-col justify-between">
                                                     <div className="space-y-0.5">
                                                         <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 leading-snug truncate group-hover/item:text-teal-600 dark:group-hover/item:text-teal-400 transition-colors">
-                                                            {post.headline}
+                                                            {post.headline || post.internalTitle || 'Inlägg utan rubrik'}
                                                         </h4>
                                                         
                                                         {post.qrCodeUrl && (
@@ -1587,7 +1446,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                         );
                                     })}
 
-                                    {activeExpressPosts.length === 0 && (
+                                    {activePosts.length === 0 && (
                                         <div className="text-center py-8 px-4 bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/80 rounded-2xl flex flex-col items-center justify-center gap-2">
                                             <div className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
                                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">

@@ -24,7 +24,7 @@ import { syncSharedPosts, copyPostToScreens } from './DisplayScreenEditor/shared
 import { ConfirmDialog } from './ConfirmDialog';
 import { ExpressPublishTab } from './admin/ExpressPublishTab';
 import { createPortal } from 'react-dom';
-import { getPostGeometry } from '../utils/postGeometry';
+import { getPostDefaults } from '../utils/postDefaults';
 
 
 interface DisplayScreenEditorScreenProps {
@@ -351,32 +351,30 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
     const handleCreatePost = () => {
         if (!organization) return;
         const isPortrait = screen.aspectRatio === '9:16' || screen.aspectRatio === '3:4';
-        const geometry = getPostGeometry('image-fullscreen', isPortrait);
+        const defaults = getPostDefaults('image-fullscreen', isPortrait);
 
         const newPost: DisplayPost = {
+            ...defaults,
             internalTitle: 'Nytt inlägg',
             layout: 'image-fullscreen',
             startDate: new Date().toISOString(),
-            durationSeconds: 10,
             headline: '',
             body: '',
             headlineTextColor: 'white',
             bodyTextColor: 'white',
             backgroundColor: 'black',
-            textAlign: 'center',
-            bodyAnchor: 'top',
-            bodyMaxLines: 3,
-            headlineShadowType: 'soft',
-            headlineShadowColor: 'rgba(0, 0, 0, 0.95)',
-            bodyShadowType: 'soft',
-            bodyShadowColor: 'rgba(0, 0, 0, 0.95)',
-            ...geometry,
             id: `new-${Date.now()}`,
             headlineFontFamily: organization.headlineFontFamily,
             bodyFontFamily: organization.bodyFontFamily,
         };
         setOriginalPost(JSON.parse(JSON.stringify(newPost)));
         setEditingPost(newPost);
+    };
+
+    const handleOpenFullEditorFromExpress = (post: DisplayPost) => {
+        setIsExpressPublishOpen(false);
+        setOriginalPost(JSON.parse(JSON.stringify(post)));
+        setEditingPost(post);
     };
 
     const handleDuplicatePost = (post: DisplayPost) => {
@@ -648,7 +646,6 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                         onDuplicatePost={handleDuplicatePost}
                         onDeletePost={(id) => setPostIdToDelete(id)}
                         onDownloadPost={setPostToDownloadAssets}
-                        onInitiateCreatePost={() => handleCreatePost()}
                         onInitiateExpressPublish={() => setIsExpressPublishOpen(true)}
                         onSharePost={handleSharePost}
                         openDropdownId={openDropdownId}
@@ -728,10 +725,10 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                 <span className="text-xl">⚡</span>
                                 <div>
                                     <h3 className="font-bold text-lg text-slate-950 dark:text-white leading-none">
-                                        Snabb-inlägg: {screen.name}
+                                        Skapa inlägg: {screen.name}
                                     </h3>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                        Skapa och hantera snabb-inlägg för den här kanalen
+                                        Skapa och hantera inlägg för den här kanalen
                                     </p>
                                 </div>
                             </div>
@@ -749,6 +746,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
                                 onUpdateOrganization={onUpdateOrganization}
                                 preselectedScreenId={screen.id}
                                 onClose={() => setIsExpressPublishOpen(false)}
+                                onOpenFullEditor={handleOpenFullEditorFromExpress}
                             />
                         </div>
                     </div>

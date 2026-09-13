@@ -796,7 +796,7 @@ export const SuperAdminScreen: React.FC<SuperAdminScreenProps> = (props) => {
                         Galleri
                     </TabButton>
                     <TabButton tabId="automation" activeTab={activeTab} setActiveTab={setActiveTab}>
-                        Automation & lediga tider
+                        Förslag & lediga tider
                         {pendingSuggestionsCount > 0 && (
                             <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-purple-600 text-white text-[10px] font-black align-middle">
                                 {pendingSuggestionsCount}

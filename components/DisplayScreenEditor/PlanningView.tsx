@@ -133,70 +133,38 @@ export const PlanningView: React.FC<PlanningViewProps> = ({ screen, posts, organ
         return allEvents.filter(event => event.date >= timelineRange.start && event.date <= timelineRange.end);
     }, [organization.customEvents, timelineRange]);
 
-    const scheduledPosts = useMemo(() => {
-        const getDates = (p: DisplayPost) => {
-            let start: Date | null = null;
-            let end: Date | null = timelineRange.end;
-            if (p.isExpressPost === true) {
-                let ts = Date.now();
-                if (p.id && p.id.startsWith('express_')) {
-                    const parts = p.id.split('_');
-                    if (parts[1]) {
-                        const parsedTs = parseInt(parts[1], 10);
-                        if (!isNaN(parsedTs)) {
-                            ts = parsedTs;
-                        }
-                    }
-                }
-                start = new Date(ts);
-                end = new Date();
-            } else if (p.startDate) {
-                start = parseToDate(p.startDate);
-                end = parseToDate(p.endDate) || timelineRange.end;
-            }
-            return { start, end };
-        };
+    const getPostDates = useCallback((p: DisplayPost) => {
+        let start: Date | null = p.startDate ? parseToDate(p.startDate) : null;
 
+        // Reserv för gammal data: snabbinlägg utan startDate bar tidpunkten
+        // i sitt id, t.ex. "express_1757779200000_ab12cd".
+        if (!start && p.isExpressPost === true && p.id?.startsWith('express_')) {
+            const parsedTs = parseInt(p.id.split('_')[1], 10);
+            if (!isNaN(parsedTs)) start = new Date(parsedTs);
+        }
+
+        const end = parseToDate(p.endDate) || timelineRange.end;
+        return { start, end };
+    }, [timelineRange.end]);
+
+    const scheduledPosts = useMemo(() => {
         return localPosts.filter(p => {
             if (p.status === 'archived') return false;
-            const { start, end } = getDates(p);
+            const { start, end } = getPostDates(p);
             if (!start || !end) return false;
             return start <= timelineRange.end && end >= timelineRange.start;
         }).sort((a, b) => {
-            const startA = getDates(a).start?.getTime() || 0;
-            const startB = getDates(b).start?.getTime() || 0;
+            const startA = getPostDates(a).start?.getTime() || 0;
+            const startB = getPostDates(b).start?.getTime() || 0;
             return startA - startB;
         });
-    }, [localPosts, timelineRange]);
+    }, [localPosts, timelineRange, getPostDates]);
     
     const postLayout = useMemo(() => {
-        const getDates = (p: DisplayPost) => {
-            let start: Date | null = null;
-            let end: Date | null = timelineRange.end;
-            if (p.isExpressPost === true) {
-                let ts = Date.now();
-                if (p.id && p.id.startsWith('express_')) {
-                    const parts = p.id.split('_');
-                    if (parts[1]) {
-                        const parsedTs = parseInt(parts[1], 10);
-                        if (!isNaN(parsedTs)) {
-                            ts = parsedTs;
-                        }
-                    }
-                }
-                start = new Date(ts);
-                end = new Date();
-            } else if (p.startDate) {
-                start = parseToDate(p.startDate);
-                end = parseToDate(p.endDate) || timelineRange.end;
-            }
-            return { start, end };
-        };
-
         const lanes: Date[] = [];
         const layout: { post: DisplayPost; lane: number }[] = [];
         scheduledPosts.forEach(post => {
-            const { start, end } = getDates(post);
+            const { start, end } = getPostDates(post);
             if (!start || !end) return;
             let placed = false;
             for (let i = 0; i < lanes.length; i++) {
@@ -205,7 +173,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({ screen, posts, organ
             if (!placed) { lanes.push(end); layout.push({ post, lane: lanes.length - 1 }); }
         });
         return { layout, laneCount: lanes.length };
-    }, [scheduledPosts, timelineRange.end]);
+    }, [scheduledPosts, timelineRange.end, getPostDates]);
         
     const handleSaveEvents = (updatedEvents: CustomEvent[]) => onUpdateOrganization(organization.id, { customEvents: updatedEvents });
 
@@ -351,29 +319,14 @@ export const PlanningView: React.FC<PlanningViewProps> = ({ screen, posts, organ
                             </div>
                             {postLayout.layout.map(({ post, lane }) => {
                                 const isExpress = post.isExpressPost === true;
-                                const start = isExpress 
-                                    ? (() => {
-                                        let ts = Date.now();
-                                        if (post.id && post.id.startsWith('express_')) {
-                                            const parts = post.id.split('_');
-                                            if (parts[1]) {
-                                                const parsedTs = parseInt(parts[1], 10);
-                                                if (!isNaN(parsedTs)) {
-                                                    ts = parsedTs;
-                                                }
-                                            }
-                                        }
-                                        return new Date(ts);
-                                      })()
-                                    : parseToDate(post.startDate!);
-                                const end = isExpress ? new Date() : (parseToDate(post.endDate) || timelineRange.end);
+                                const { start, end } = getPostDates(post);
                                 if (!start) return null;
                                 const startDay = daysIntoRange(start);
                                 const endDay = daysIntoRange(end);
                                 const left = (startDay / timelineRange.totalDays) * 100;
                                 const width = (Math.max(1, endDay - startDay) / timelineRange.totalDays) * 100;
                                 const isDragged = draggedPostInfo?.post.id === post.id;
-                                const daysActive = isExpress ? Math.max(0, Math.floor((Date.now() - start.getTime()) / (1000 * 3600 * 24))) : 0;
+                                const daysActive = Math.max(0, Math.floor((Date.now() - start.getTime()) / (1000 * 3600 * 24)));
                                 
                                 return (
                                     <div 
@@ -418,9 +371,9 @@ export const PlanningView: React.FC<PlanningViewProps> = ({ screen, posts, organ
                                                 : 'invisible opacity-0 translate-y-1 scale-95 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100'
                                         }`}>
                                             <div className="bg-slate-900/95 dark:bg-slate-950/95 text-white font-semibold text-[10px] tracking-wide py-1 px-2.5 rounded-lg shadow-xl border border-slate-700/80 dark:border-slate-800 flex items-center gap-1.5 whitespace-nowrap">
-                                                {isExpress ? (
+                                                {!post.endDate ? (
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="font-extrabold text-orange-400">⚡ SNABBINLÄGG (TILLSVIDARE)</span>
+                                                        <span className="font-extrabold text-orange-400">PUBLICERAT TILLSVIDARE</span>
                                                         <span className="text-slate-400">|</span>
                                                         <span>Skapat {new Date(start).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                                         {daysActive >= 0 && (

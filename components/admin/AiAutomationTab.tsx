@@ -279,11 +279,11 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
 
         try {
             await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
-            showToast({ message: `Automation ${isNew ? 'skapades' : 'uppdaterades'}.`, type: 'success' });
+            showToast({ message: `Återkommande förslag ${isNew ? 'skapades' : 'uppdaterades'}.`, type: 'success' });
             setIsEditorOpen(false);
             setEditingAutomation(null);
         } catch (e) {
-            showToast({ message: "Kunde inte spara automationen.", type: 'error' });
+            showToast({ message: "Kunde inte spara det återkommande förslaget.", type: 'error' });
         }
     };
 
@@ -292,10 +292,10 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
         const updatedAutomations = (organization.aiAutomations || []).filter(a => a.id !== automationToDelete.id);
         try {
             await onUpdateOrganization(organization.id, { aiAutomations: updatedAutomations });
-            showToast({ message: "Automationen togs bort.", type: 'success' });
+            showToast({ message: "Det återkommande förslaget togs bort.", type: 'success' });
             setAutomationToDelete(null);
         } catch (e) {
-            showToast({ message: "Kunde inte ta bort automationen.", type: 'error' });
+            showToast({ message: "Kunde inte ta bort det återkommande förslaget.", type: 'error' });
         }
     };
     
@@ -368,7 +368,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                     <div className="flex-shrink-0 self-start md:self-center">
                         <PrimaryButton onClick={() => { setEditingAutomation(null); setIsEditorOpen(true); }} className="shadow-lg hover:shadow-xl hover:translate-y-[-1px] transition-all bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-2">
                             <SparklesIcon className="w-4 h-4" />
-                            Skapa ny automation
+                            Skapa återkommande förslag
                         </PrimaryButton>
                     </div>
                 </div>
@@ -379,7 +379,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                 title={
                     <div className="flex items-center gap-2">
                         <span className="p-1 px-2.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-sm font-bold">Smart</span>
-                        <span>Aktiva Automationer</span>
+                        <span>Återkommande förslag</span>
                     </div>
                 }
                 subTitle="Hantera dina löpande AI-uppdateringar och tidscheman."
@@ -447,7 +447,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                                             <button 
                                                 onClick={() => { setEditingAutomation(auto); setIsEditorOpen(true); }} 
                                                 className="p-2 text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-white dark:hover:bg-slate-700 rounded-lg shadow-sm transition-all"
-                                                title="Redigera automation"
+                                                title="Redigera återkommande förslag"
                                             >
                                                 <PencilIcon className="w-4 h-4" />
                                             </button>
@@ -466,9 +466,9 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                     ) : (
                         <div className="col-span-1 md:col-span-2 py-8">
                             <SkylieEmptyState
-                                title="Skapa din första automation!"
-                                message="Låt AI:n jobba åt dig! Skapa en automation för att regelbundet få nya inlogg och hälsotips publicerade direkt på skärmen."
-                                action={{ text: 'Skapa ny automation', onClick: () => { setEditingAutomation(null); setIsEditorOpen(true); } }}
+                                title="Låt AI:n föreslå inlägg åt dig"
+                                message="Bestäm hur ofta du vill ha nya inläggsförslag, så tar AI:n fram dem åt dig. Du granskar och godkänner alltid själv innan något hamnar på skärmen."
+                                action={{ text: 'Skapa återkommande förslag', onClick: () => { setEditingAutomation(null); setIsEditorOpen(true); } }}
                             />
                         </div>
                     )}
@@ -579,7 +579,7 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                 ) : (
                      <SkylieEmptyState
                         title="Inga nya förslag just nu"
-                        message="Dina automationer analyserar löpande ditt schema. När nya hälsotips eller peppande inlägg skapas dyker de upp här direkt."
+                        message="Dina återkommande förslag analyserar löpande ditt schema. När nya hälsotips eller peppande inlägg skapas dyker de upp här direkt."
                     />
                 )}
             </Card>
@@ -1088,9 +1088,9 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                 isOpen={!!automationToDelete}
                 onClose={() => setAutomationToDelete(null)}
                 onConfirm={handleDeleteAutomation}
-                title="Ta bort automation"
+                title="Ta bort återkommande förslag"
             >
-                Är du säker på att du vill ta bort automationen "{automationToDelete?.name}"?
+                Är du säker på att du vill ta bort det återkommande förslaget "{automationToDelete?.name}"?
             </ConfirmDialog>
         </div>
     );

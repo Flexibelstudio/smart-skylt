@@ -26,6 +26,7 @@ import { useToast } from '../../context/ToastContext';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { toPng } from 'html-to-image';
 import { DisplayPostRenderer } from '../DisplayPostRenderer';
+import { ScaledPreviewWrapper } from './PreviewPanes';
 import { generateRemixVariants, generateDisplayPostImage } from '../../services/geminiService';
 
 // ------------------------------------------------------------
@@ -1454,3 +1455,62 @@ export const PostAnalysisModal: React.FC<{
     portalRoot
   );
 };
+
+export const PostPreviewModal: React.FC<{
+    post: DisplayPost;
+    organization: Organization;
+    aspectRatio: DisplayScreen['aspectRatio'];
+    onClose: () => void;
+}> = ({ post, organization, aspectRatio, onClose }) => {
+    const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4';
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
+    return ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8">
+            <div
+                className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm cursor-pointer"
+                onClick={onClose}
+            />
+            <div className="relative z-10 flex flex-col items-center gap-4 max-h-full">
+                <div
+                    className={`w-full shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-900 bg-slate-950 ${isPortrait ? 'max-w-[min(420px,90vw)]' : 'max-w-[min(1100px,92vw)]'}`}
+                >
+                    <ScaledPreviewWrapper aspectRatio={aspectRatio}>
+                        <DisplayPostRenderer
+                            post={post}
+                            organization={organization}
+                            mode="preview"
+                            showTags={true}
+                            aspectRatio={aspectRatio}
+                        />
+                    </ScaledPreviewWrapper>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap justify-center">
+                    <span className="text-white font-bold text-sm truncate max-w-[60vw]">
+                        {post.internalTitle || post.headline || 'Inlägg'}
+                    </span>
+                    <span className="text-slate-300 text-xs font-mono bg-white/10 px-2 py-0.5 rounded">
+                        {post.durationSeconds}s
+                    </span>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="text-xs font-bold text-white/80 hover:text-white underline underline-offset-2 cursor-pointer"
+                    >
+                        Stäng
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
+

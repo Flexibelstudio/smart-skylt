@@ -14,8 +14,8 @@ export interface PostGeometry {
     qrWidth: number;
 }
 
-// OBS: samma värden används i ExpressPublishTab. Ändras de på ett ställe ska de
-// ändras på båda tills snabbinlägget hunnit gå över till den här funktionen.
+// Enda källan för inläggens typografi och textpositioner. Används av både
+// editorn och snabbinlägget. Ändras ett värde här ändras det överallt.
 export const getPostGeometry = (layout: GeometryLayout, isPortrait: boolean): PostGeometry => {
     const headlineFontScale = layout === 'image-fullscreen' ? (isPortrait ? 8.5 : 5.5) : (isPortrait ? 5.5 : 3.6);
     const bodyFontScale = layout === 'image-fullscreen' ? (isPortrait ? 4.2 : 3.0) : (isPortrait ? 3.8 : 2.5);
@@ -51,13 +51,13 @@ export const getPostGeometry = (layout: GeometryLayout, isPortrait: boolean): Po
             headlineFontScale,
             bodyFontScale,
             headlinePositionX: 50,
-            headlinePositionY: 80,
+            headlinePositionY: 45,
             headlineWidth: 90,
             bodyPositionX: 50,
-            bodyPositionY: 89,
+            bodyPositionY: 55,
             bodyWidth: 90,
             qrPositionX: isPortrait ? 86 : 89,
-            qrPositionY: 12,
+            qrPositionY: isPortrait ? 89 : 84,
             qrWidth: 15
         };
     }

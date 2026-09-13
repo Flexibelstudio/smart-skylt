@@ -105,7 +105,7 @@ export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 sm:p-8 w-full max-w-2xl text-slate-900 dark:text-white shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold">{automation ? 'Redigera automation' : 'Skapa ny automation'}</h2>
+                    <h2 className="text-2xl font-bold">{automation ? 'Redigera återkommande förslag' : 'Nytt återkommande förslag'}</h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                         <XCircleIcon className="w-8 h-8" />
                     </button>
@@ -114,7 +114,7 @@ export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = (
                 <div className="space-y-6">
                     {/* Basic Info */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Namn på automation</label>
+                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Namn</label>
                         <StyledInput 
                             type="text" 
                             value={current.name} 
@@ -125,7 +125,7 @@ export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = (
 
                     {/* Mode Selector */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Typ av automation</label>
+                        <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Typ av förslag</label>
                         <div className="flex gap-4">
                             <button
                                 type="button"
@@ -346,7 +346,7 @@ export const AiAutomationEditorModal: React.FC<AiAutomationEditorModalProps> = (
                         loading={isSaving} 
                         disabled={!current.name || (mode === 'create' && !current.topic) || (mode === 'remix' && !current.remixBasePostId)}
                     >
-                        Spara automation
+                        Spara
                     </PrimaryButton>
                 </div>
             </div>
