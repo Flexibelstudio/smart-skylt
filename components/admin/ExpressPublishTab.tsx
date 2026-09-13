@@ -108,7 +108,7 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [webpageUrl, setWebpageUrl] = useState('');
     const [galleryImages, setGalleryImages] = useState<string[]>([]);
     const imageBase64 = galleryImages[0] || null;
-    const [layout, setLayout] = useState<'image-left' | 'image-right' | 'image-fullscreen' | 'real-estate' | 'collage'>('image-left');
+    const [layout, setLayout] = useState<'image-left' | 'image-right' | 'image-fullscreen' | 'real-estate' | 'collage'>('image-fullscreen');
     const [collageStyle, setCollageStyle] = useState<'three' | 'four'>('three');
     const collageSlotCount = collageStyle === 'three' ? 3 : 4;
     const [cardStyle, setCardStyle] = useState<'dark' | 'light' | 'subtle'>('dark');
@@ -136,6 +136,13 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
     const [showActiveList, setShowActiveList] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
+    const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+        };
+    }, []);
 
     // Emoji picker states and refs
     const [showHeadlineEmoji, setShowHeadlineEmoji] = useState(false);
@@ -606,6 +613,12 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
             setScheduleDays([]);
             setScheduleTimeRanges([]);
             clearImage();
+
+            if (onClose) {
+                closeTimerRef.current = setTimeout(() => {
+                    onClose();
+                }, 350);
+            }
         } catch (error) {
             console.error(error);
             showToast({ message: "Kunde inte spara inlägget.", type: 'error' });
@@ -801,6 +814,14 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                                     <button
                                         type="button"
+                                        onClick={() => setLayout('image-fullscreen')}
+                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-fullscreen' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                    >
+                                        <div className="w-10 h-6 border rounded bg-slate-300 dark:bg-slate-600 flex items-end p-0.5"><div className="h-2 w-3/4 bg-slate-800/40 rounded-sm" /></div>
+                                        Helskärmsbild
+                                    </button>
+                                    <button
+                                        type="button"
                                         onClick={() => setLayout('image-left')}
                                         className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-left' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                     >
@@ -820,14 +841,6 @@ export const ExpressPublishTab: React.FC<ExpressPublishTabProps> = ({
                                             <div className="w-2/5 h-full bg-slate-300 dark:bg-slate-600" />
                                         </div>
                                         {isPortraitScreen ? "Bild Nederst" : "Bild Höger"}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setLayout('image-fullscreen')}
-                                        className={`min-h-[44px] p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 ${layout === 'image-fullscreen' ? 'border-teal-500 bg-teal-500/5 text-teal-600 dark:text-teal-400 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
-                                    >
-                                        <div className="w-10 h-6 border rounded bg-slate-300 dark:bg-slate-600 flex items-end p-0.5"><div className="h-2 w-3/4 bg-slate-800/40 rounded-sm" /></div>
-                                        Helskärm
                                     </button>
                                     <button
                                         type="button"
