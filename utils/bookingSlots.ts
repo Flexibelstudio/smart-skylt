@@ -196,12 +196,12 @@ export const getBookingSlotsView = (organization?: Organization | null): Booking
         };
     }
 
-    // Är alla stängda: status "Stängt i dag"
+    // Är alla stängda: status "Inga lediga tider kvar i dag"
     const allClosed = nonErrorEntries.every(([_, cal]) => Boolean(cal.closed));
     if (allClosed) {
         return {
             isFresh: true,
-            status: 'Stängt i dag',
+            status: 'Inga lediga tider kvar i dag',
             groups: []
         };
     }
@@ -209,12 +209,12 @@ export const getBookingSlotsView = (organization?: Organization | null): Booking
     // Öppna kalendrar utan error
     const openEntries = nonErrorEntries.filter(([_, cal]) => !cal.closed);
 
-    // Finns kalendrar men inga lediga tider: status "Fullbokat i dag"
+    // Finns kalendrar men inga lediga tider: status "Inga lediga tider kvar i dag"
     const hasAnySlots = openEntries.some(([_, cal]) => Array.isArray(cal.slots) && cal.slots.length > 0);
     if (!hasAnySlots) {
         return {
             isFresh: true,
-            status: 'Fullbokat i dag',
+            status: 'Inga lediga tider kvar i dag',
             groups: []
         };
     }

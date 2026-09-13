@@ -71,6 +71,13 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
     const currentStepIndex = steps.indexOf(currentStep);
     const isLastStep = currentStepIndex === steps.length - 1;
 
+    const canSave = Boolean(
+        (post.headline || '').trim() ||
+        post.imageUrl ||
+        post.videoUrl ||
+        (post.collageItems && post.collageItems.length > 0)
+    );
+
     useEffect(() => {
         if (!steps.includes(currentStep)) {
             setCurrentStep('content');
@@ -224,6 +231,9 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                 <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center">
                     {/* Vänstergrupp: inte navigering, flödar normalt även på mobil */}
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:gap-4">
+                        <SecondaryButton onClick={handleCancel} disabled={isSaving} className="w-full sm:w-auto min-h-[44px] lg:min-h-0">
+                            Avbryt
+                        </SecondaryButton>
                         {post.suggestionOriginId && isLastStep && (
                             <DestructiveButton onClick={handleRejectSuggestion} disabled={isSaving} className="w-full sm:w-auto min-h-[44px] lg:min-h-0">
                                 Förkasta Förslag
@@ -234,23 +244,33 @@ export const PostEditor: React.FC<PostEditorProps> = (props) => {
                     {/* Navigeringsrad: fastnitad längst ner på mobil, vanlig rad på lg och uppåt */}
                     <div className="sticky bottom-0 z-20 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] px-3 bg-white/95 dark:bg-slate-800/95 backdrop-blur border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg lg:static lg:p-0 lg:bg-transparent lg:border-0 lg:rounded-none lg:shadow-none lg:backdrop-blur-none">
                         <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center lg:gap-4">
-                            <SecondaryButton onClick={handleCancel} disabled={isSaving} className="order-2 w-full lg:w-auto lg:order-1 min-h-[44px] lg:min-h-0">
-                                Avbryt
-                            </SecondaryButton>
                             {currentStepIndex > 0 && (
-                                <SecondaryButton onClick={handlePrevious} disabled={isSaving} className="order-3 w-full lg:w-auto lg:order-2 min-h-[44px] lg:min-h-0">
+                                <SecondaryButton
+                                    onClick={handlePrevious}
+                                    disabled={isSaving}
+                                    className={`${isLastStep ? 'col-span-2' : 'col-span-1'} order-2 w-full lg:w-auto lg:order-1 lg:col-span-1 min-h-[44px] lg:min-h-0`}
+                                >
                                     Föregående
                                 </SecondaryButton>
                             )}
-                            {isLastStep ? (
-                                <PrimaryButton onClick={handleSaveWrapper} loading={isSaving} className="col-span-2 order-1 w-full lg:w-auto lg:order-3 lg:col-span-1 min-h-[44px] lg:min-h-0">
-                                    {post.suggestionOriginId ? "Godkänn & Spara" : "Spara inlägg"}
-                                </PrimaryButton>
-                            ) : (
-                                <PrimaryButton onClick={handleNext} className="col-span-2 order-1 w-full lg:w-auto lg:order-3 lg:col-span-1 min-h-[44px] lg:min-h-0">
+                            {currentStepIndex < steps.length - 1 && (
+                                <SecondaryButton
+                                    onClick={handleNext}
+                                    disabled={isSaving}
+                                    className={`${currentStepIndex > 0 ? 'col-span-1' : 'col-span-2'} order-3 w-full lg:w-auto lg:order-2 lg:col-span-1 min-h-[44px] lg:min-h-0`}
+                                >
                                     Nästa
-                                </PrimaryButton>
+                                </SecondaryButton>
                             )}
+                            <PrimaryButton
+                                onClick={handleSaveWrapper}
+                                loading={isSaving}
+                                disabled={!canSave || isSaving}
+                                title={!canSave ? "Lägg till en rubrik eller en bild först" : undefined}
+                                className="col-span-2 order-1 w-full lg:w-auto lg:order-3 lg:col-span-1 min-h-[44px] lg:min-h-0"
+                            >
+                                {post.suggestionOriginId ? "Godkänn & Spara" : "Spara inlägg"}
+                            </PrimaryButton>
                         </div>
                     </div>
                 </div>

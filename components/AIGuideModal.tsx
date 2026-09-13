@@ -44,7 +44,7 @@ export const AIGuideModal: React.FC<AIGuideModalProps> = ({ isOpen, onClose }) =
                         I fliken Varumärke kan du ladda upp referensbilder, skriva exempeltexter och beskriva din verksamhet. AI:n använder detta som inspiration för att förstå din ton, färgskala och visuella stil.
                     </GuideSection>
                     <GuideSection icon={<Cog6ToothIcon className="w-6 h-6" />} title="Schemalägg och automatisera">
-                        Under fliken Automation kan du låta AI:n skapa nya inlägg automatiskt utifrån dina scheman. Ju mer du använder den, desto bättre lär den känna din stil och dina preferenser.
+                        Under fliken Automation & lediga tider kan du låta AI:n skapa nya inlägg automatiskt utifrån dina scheman. Ju mer du använder den, desto bättre lär den känna din stil och dina preferenser.
                     </GuideSection>
                     <GuideSection icon={<PencilIcon className="w-6 h-6" />} title="AI:n lär sig av dina val">
                         När du redigerar eller godkänner AI-förslag lär sig systemet hur du vill kommunicera – både i text och bild. Dina val används som feedback, så framtida förslag blir mer träffsäkra och personliga.

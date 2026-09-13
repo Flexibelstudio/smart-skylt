@@ -475,6 +475,115 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                 </div>
             </Card>
 
+            {/* Inläggsförslag till granskning section with actual preview phone/screen frames */}
+            <Card
+                title={
+                    <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+                        <div className="flex items-center gap-2">
+                            <span className="p-1 px-2.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-sm font-bold">Granska</span>
+                            <span>Inläggsförslag att granska</span>
+                        </div>
+                        <DnaStatusBadge organization={organization} onGoToBranding={onGoToBranding} />
+                    </div>
+                }
+                subTitle="Inlägg framtagna av AI-skribenten baserat på dina schemalagda önskemål. Granska, finjustera och klicka godkänn!"
+            >
+                {isLoadingSuggestions ? (
+                    <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                        <LoadingSpinnerIcon className="h-10 w-10 text-primary animate-spin"/>
+                        <p className="text-sm font-semibold text-slate-400 animate-pulse">Analyserar och hämtar förslag...</p>
+                    </div>
+                ) : pendingSuggestions.length > 0 ? (
+                    <div className="space-y-8">
+                        {pendingSuggestions.map(suggestion => {
+                            const targetScreen = organization.displayScreens?.find(s => s.id === suggestion.targetScreenId);
+                            return (
+                               <div key={suggestion.id} className="relative bg-white dark:bg-slate-800 rounded-3xl border border-slate-200/80 dark:border-slate-700/60 shadow-md hover:shadow-xl transition-all duration-300 p-6 flex flex-col md:flex-row gap-6 overflow-hidden">
+                                    {/* Background visual cue for AI-crafted quality */}
+                                    <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-teal-500 to-emerald-400"></div>
+                                    
+                                    {/* Lefthand phone/tablet-style simulation frame showcasing the active display renderer in perfect miniature */}
+                                    <div className="flex-shrink-0 self-center md:self-stretch flex items-center justify-center p-2 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                        <div className="relative aspect-[9/16] w-[130px] md:w-[150px] flex-shrink-0 bg-slate-950 border-[5px] border-slate-900 rounded-[20px] shadow-lg overflow-hidden transition-all duration-350 select-none group">
+                                            <div className="absolute top-1 left-1/2 -translate-x-1/2 w-12 h-3.5 bg-slate-900 rounded-b-md z-40"></div>
+                                            <div className="w-full h-full scale-[1.01] origin-center z-10">
+                                                <DisplayPostRenderer post={suggestion.postData} mode="preview" allTags={organization.tags} organization={organization}/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Righthand post details editor content */}
+                                    <div className="flex-grow flex flex-col justify-between space-y-6">
+                                        <div className="space-y-3">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="inline-flex items-center gap-1.5 bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 text-[10px] font-extrabold tracking-widest px-2.5 py-1 rounded-full uppercase">
+                                                    <SparklesIcon className="w-3 h-3" /> FÖRESLAGEN KAMPANJ
+                                                </span>
+                                                <span className="text-xs text-slate-400">
+                                                    Skapad: {new Date(suggestion.createdAt).toLocaleDateString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+
+                                            <p className="font-extrabold text-2xl text-slate-900 dark:text-white leading-tight tracking-tight font-sans">
+                                                {suggestion.postData.internalTitle}
+                                            </p>
+                                            
+                                            {/* Beautiful quote display for body text */}
+                                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/40 relative border-l-4 border-slate-200 dark:border-slate-700">
+                                                <p className="text-slate-600 dark:text-slate-300 text-sm md:text-base leading-relaxed tracking-wide font-medium">
+                                                    {suggestion.postData.body}
+                                                </p>
+                                            </div>
+
+                                            {/* Info items */}
+                                            <div className="grid grid-cols-2 gap-4 pt-3 text-xs border-t border-slate-100 dark:border-slate-700/60">
+                                                <div>
+                                                    <span className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase block">Visningstid</span>
+                                                    <p className="font-semibold text-slate-700 dark:text-slate-300 text-sm mt-0.5">{suggestion.postData.durationSeconds || 15} sekunder</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase block">Publiceringskanal</span>
+                                                    <p className="font-semibold text-primary dark:text-teal-400 text-sm mt-0.5">{targetScreen ? targetScreen.name : 'Välj kanal'}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Actions block with warm organic buttons and custom icons */}
+                                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap gap-3 items-center justify-end">
+                                             <button 
+                                                 onClick={() => handleRejectSuggestion(suggestion)} 
+                                                 className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/10 rounded-xl transition-all"
+                                             >
+                                                 Arkivera
+                                             </button>
+                                             <button 
+                                                 onClick={() => handleEditSuggestion(suggestion)} 
+                                                 className="px-5 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/85 rounded-xl transition-all flex items-center gap-1.5"
+                                             >
+                                                 <PencilIcon className="w-4 h-4" />
+                                                 Redigera inlägg
+                                             </button>
+                                             <button 
+                                                 onClick={() => handleApproveSuggestion(suggestion)} 
+                                                 className="px-6 py-2.5 text-sm font-extrabold text-white bg-teal-600 hover:bg-teal-500 active:scale-[0.98] rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
+                                             >
+                                                 <SparklesIcon className="w-4 h-4" />
+                                                 Godkänn & publicera
+                                             </button>
+                                        </div>
+                                    </div>
+                               </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                     <SkylieEmptyState
+                        title="Inga nya förslag just nu"
+                        message="Dina automationer analyserar löpande ditt schema. När nya hälsotips eller peppande inlägg skapas dyker de upp här direkt."
+                    />
+                )}
+            </Card>
+
             {/* Booking Calendar Config Card */}
             <Card
                 title={
@@ -963,115 +1072,6 @@ export const AiAutomationTab: React.FC<AiAutomationTabProps> = ({ organization, 
                         );
                     })()}
                 </div>
-            </Card>
-
-            {/* Inläggsförslag till granskning section with actual preview phone/screen frames */}
-            <Card
-                title={
-                    <div className="flex flex-wrap items-center gap-2 justify-between w-full">
-                        <div className="flex items-center gap-2">
-                            <span className="p-1 px-2.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-sm font-bold">Granska</span>
-                            <span>Inläggsförslag att granska</span>
-                        </div>
-                        <DnaStatusBadge organization={organization} onGoToBranding={onGoToBranding} />
-                    </div>
-                }
-                subTitle="Inlägg framtagna av AI-skribenten baserat på dina schemalagda önskemål. Granska, finjustera och klicka godkänn!"
-            >
-                {isLoadingSuggestions ? (
-                    <div className="flex flex-col items-center justify-center py-20 space-y-3">
-                        <LoadingSpinnerIcon className="h-10 w-10 text-primary animate-spin"/>
-                        <p className="text-sm font-semibold text-slate-400 animate-pulse">Analyserar och hämtar förslag...</p>
-                    </div>
-                ) : pendingSuggestions.length > 0 ? (
-                    <div className="space-y-8">
-                        {pendingSuggestions.map(suggestion => {
-                            const targetScreen = organization.displayScreens?.find(s => s.id === suggestion.targetScreenId);
-                            return (
-                               <div key={suggestion.id} className="relative bg-white dark:bg-slate-800 rounded-3xl border border-slate-200/80 dark:border-slate-700/60 shadow-md hover:shadow-xl transition-all duration-300 p-6 flex flex-col md:flex-row gap-6 overflow-hidden">
-                                    {/* Background visual cue for AI-crafted quality */}
-                                    <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-teal-500 to-emerald-400"></div>
-                                    
-                                    {/* Lefthand phone/tablet-style simulation frame showcasing the active display renderer in perfect miniature */}
-                                    <div className="flex-shrink-0 self-center md:self-stretch flex items-center justify-center p-2 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-850">
-                                        <div className="relative aspect-[9/16] w-[130px] md:w-[150px] flex-shrink-0 bg-slate-950 border-[5px] border-slate-900 rounded-[20px] shadow-lg overflow-hidden transition-all duration-350 select-none group">
-                                            <div className="absolute top-1 left-1/2 -translate-x-1/2 w-12 h-3.5 bg-slate-900 rounded-b-md z-40"></div>
-                                            <div className="w-full h-full scale-[1.01] origin-center z-10">
-                                                <DisplayPostRenderer post={suggestion.postData} mode="preview" allTags={organization.tags} organization={organization}/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Righthand post details editor content */}
-                                    <div className="flex-grow flex flex-col justify-between space-y-6">
-                                        <div className="space-y-3">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="inline-flex items-center gap-1.5 bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 text-[10px] font-extrabold tracking-widest px-2.5 py-1 rounded-full uppercase">
-                                                    <SparklesIcon className="w-3 h-3" /> FÖRESLAGEN KAMPANJ
-                                                </span>
-                                                <span className="text-xs text-slate-400">
-                                                    Skapad: {new Date(suggestion.createdAt).toLocaleDateString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                            </div>
-
-                                            <p className="font-extrabold text-2xl text-slate-900 dark:text-white leading-tight tracking-tight font-sans">
-                                                {suggestion.postData.internalTitle}
-                                            </p>
-                                            
-                                            {/* Beautiful quote display for body text */}
-                                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/40 relative border-l-4 border-slate-200 dark:border-slate-700">
-                                                <p className="text-slate-600 dark:text-slate-300 text-sm md:text-base leading-relaxed tracking-wide font-medium">
-                                                    {suggestion.postData.body}
-                                                </p>
-                                            </div>
-
-                                            {/* Info items */}
-                                            <div className="grid grid-cols-2 gap-4 pt-3 text-xs border-t border-slate-100 dark:border-slate-700/60">
-                                                <div>
-                                                    <span className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase block">Visningstid</span>
-                                                    <p className="font-semibold text-slate-700 dark:text-slate-300 text-sm mt-0.5">{suggestion.postData.durationSeconds || 15} sekunder</p>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase block">Publiceringskanal</span>
-                                                    <p className="font-semibold text-primary dark:text-teal-400 text-sm mt-0.5">{targetScreen ? targetScreen.name : 'Välj kanal'}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Actions block with warm organic buttons and custom icons */}
-                                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap gap-3 items-center justify-end">
-                                             <button 
-                                                 onClick={() => handleRejectSuggestion(suggestion)} 
-                                                 className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/10 rounded-xl transition-all"
-                                             >
-                                                 Arkivera
-                                             </button>
-                                             <button 
-                                                 onClick={() => handleEditSuggestion(suggestion)} 
-                                                 className="px-5 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/85 rounded-xl transition-all flex items-center gap-1.5"
-                                             >
-                                                 <PencilIcon className="w-4 h-4" />
-                                                 Redigera inlägg
-                                             </button>
-                                             <button 
-                                                 onClick={() => handleApproveSuggestion(suggestion)} 
-                                                 className="px-6 py-2.5 text-sm font-extrabold text-white bg-teal-600 hover:bg-teal-500 active:scale-[0.98] rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
-                                             >
-                                                 <SparklesIcon className="w-4 h-4" />
-                                                 Godkänn & publicera
-                                             </button>
-                                        </div>
-                                    </div>
-                               </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                     <SkylieEmptyState
-                        title="Inga nya förslag just nu"
-                        message="Dina automationer analyserar löpande ditt schema. När nya hälsotips eller peppande inlägg skapas dyker de upp här direkt."
-                    />
-                )}
             </Card>
 
             {isEditorOpen && (

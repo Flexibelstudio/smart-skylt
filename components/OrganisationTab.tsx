@@ -1657,6 +1657,97 @@ const ColorPicker: React.FC<{
 // --- Tag Manager Component ---
 const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () => void, organization: Organization }> = ({ tag, onSave, onCancel, organization }) => {
     const { showToast } = useToast();
+
+    // Purpose-based preset designs to fast click
+    const PRESETS = useMemo(() => [
+        {
+            name: 'SÅLD',
+            icon: '🔴',
+            text: 'SÅLD',
+            displayType: 'stamp' as const,
+            backgroundColor: '#dc2626',
+            textColor: '#FFFFFF' as const,
+            fontSize: '4xl' as const,
+            fontWeight: 'black' as const,
+            fontFamily: 'display' as const,
+            shape: 'rectangle' as const,
+            border: 'none' as const,
+            animation: 'none' as const,
+            opacity: 0.95,
+            rotation: -12
+        },
+        {
+            name: 'NYHET',
+            icon: '✨',
+            text: 'NYHET',
+            displayType: 'stamp' as const,
+            backgroundColor: organization.accentColor || organization.primaryColor || '#ec4899',
+            textColor: '#FFFFFF' as const,
+            fontSize: '2xl' as const,
+            fontWeight: 'black' as const,
+            fontFamily: 'display' as const,
+            shape: 'rectangle' as const,
+            border: 'none' as const,
+            animation: 'none' as const,
+            opacity: 1,
+            rotation: -8
+        },
+        {
+            name: '-20 %',
+            icon: '🏷️',
+            text: '-20%',
+            displayType: 'stamp' as const,
+            backgroundColor: organization.primaryColor || '#14b8a6',
+            textColor: '#FFFFFF' as const,
+            fontSize: '3xl' as const,
+            fontWeight: 'black' as const,
+            fontFamily: 'display' as const,
+            shape: 'circle' as const,
+            border: 'dashed' as const,
+            animation: 'pulse' as const,
+            opacity: 1,
+            rotation: 8
+        },
+        {
+            name: 'VISNING',
+            icon: '📅',
+            text: 'VISNING',
+            displayType: 'tag' as const,
+            backgroundColor: organization.primaryColor || '#14b8a6',
+            textColor: '#FFFFFF' as const,
+            fontSize: 'md' as const,
+            fontWeight: 'bold' as const,
+            fontFamily: 'sans' as const,
+            shape: 'rectangle' as const,
+            border: 'none' as const,
+            animation: 'none' as const,
+            opacity: 1,
+            rotation: 0
+        }
+    ], [organization.accentColor, organization.primaryColor]);
+
+    const isNew = !tag.text?.trim() || !(organization.tags || []).some(t => t.id === tag.id);
+    const tagShape = tag.shape || (tag.displayType === 'stamp' ? 'circle' : 'rectangle');
+    const tagBorder = tag.border || 'none';
+    const tagRotation = tag.rotation ?? 0;
+    const matchesPreset = PRESETS.some(p =>
+        tag.text === p.text &&
+        tag.displayType === p.displayType &&
+        tag.backgroundColor === p.backgroundColor &&
+        tag.textColor === p.textColor &&
+        tag.fontSize === p.fontSize &&
+        tagShape === p.shape &&
+        tagBorder === p.border &&
+        tagRotation === p.rotation &&
+        !tag.url
+    );
+
+    const [isAppearanceOpen, setIsAppearanceOpen] = useState(!isNew && !matchesPreset);
+
+    useEffect(() => {
+        setIsAppearanceOpen(!isNew && !matchesPreset);
+    }, [tag.id, isNew, matchesPreset]);
+
     const [currentTag, setCurrentTag] = useState(tag);
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiGenerating, setAiGenerating] = useState(false);
@@ -1829,74 +1920,6 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
     } else { // it's a tag
         paddingClass = isPreview ? 'px-4 py-2' : 'px-8 py-4';
     }
-
-    // Purpose-based preset designs to fast click
-    const PRESETS = useMemo(() => [
-        {
-            name: 'SÅLD',
-            icon: '🔴',
-            text: 'SÅLD',
-            displayType: 'stamp' as const,
-            backgroundColor: '#dc2626',
-            textColor: '#FFFFFF' as const,
-            fontSize: '4xl' as const,
-            fontWeight: 'black' as const,
-            fontFamily: 'display' as const,
-            shape: 'rectangle' as const,
-            border: 'none' as const,
-            animation: 'none' as const,
-            opacity: 0.95,
-            rotation: -12
-        },
-        {
-            name: 'NYHET',
-            icon: '✨',
-            text: 'NYHET',
-            displayType: 'stamp' as const,
-            backgroundColor: organization.accentColor || organization.primaryColor || '#ec4899',
-            textColor: '#FFFFFF' as const,
-            fontSize: '2xl' as const,
-            fontWeight: 'black' as const,
-            fontFamily: 'display' as const,
-            shape: 'rectangle' as const,
-            border: 'none' as const,
-            animation: 'none' as const,
-            opacity: 1,
-            rotation: -8
-        },
-        {
-            name: '-20 %',
-            icon: '🏷️',
-            text: '-20%',
-            displayType: 'stamp' as const,
-            backgroundColor: organization.primaryColor || '#14b8a6',
-            textColor: '#FFFFFF' as const,
-            fontSize: '3xl' as const,
-            fontWeight: 'black' as const,
-            fontFamily: 'display' as const,
-            shape: 'circle' as const,
-            border: 'dashed' as const,
-            animation: 'pulse' as const,
-            opacity: 1,
-            rotation: 8
-        },
-        {
-            name: 'VISNING',
-            icon: '📅',
-            text: 'VISNING',
-            displayType: 'tag' as const,
-            backgroundColor: organization.primaryColor || '#14b8a6',
-            textColor: '#FFFFFF' as const,
-            fontSize: 'md' as const,
-            fontWeight: 'bold' as const,
-            fontFamily: 'sans' as const,
-            shape: 'rectangle' as const,
-            border: 'none' as const,
-            animation: 'none' as const,
-            opacity: 1,
-            rotation: 0
-        }
-    ], [organization.accentColor, organization.primaryColor]);
 
     const GRADIENT_PRESETS = [
         { name: 'Sunset', c1: '#f97316', c2: '#ec4899' },
@@ -2097,296 +2120,314 @@ const TagEditor: React.FC<{ tag: Tag, onSave: (tag: Tag) => void, onCancel: () =
                                 className="w-full bg-slate-50 dark:bg-slate-955 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all min-h-[70px]"
                             />
                         </div>
-
-                        <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">QR-kod förankring (Valfritt)</label>
-                            <div className="relative">
-                                <StyledInput 
-                                    type="url" 
-                                    placeholder="https://exempel.se/erbjudande" 
-                                    value={currentTag.url || ''} 
-                                    onChange={e => setCurrentTag({...currentTag, url: e.target.value.trim()})} 
-                                    className="pl-9 h-11"
-                                />
-                                <span className="absolute left-3.5 top-3.5 text-slate-400 text-xs">🔗</span>
-                            </div>
-                        </div>
                     </div>
 
-                    <div className="h-[1px] bg-slate-100 dark:bg-slate-800" />
+                    {/* Hopfällbar sektion: Anpassa utseende */}
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden">
+                        <button
+                            type="button"
+                            onClick={() => setIsAppearanceOpen(prev => !prev)}
+                            className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer select-none"
+                        >
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                Anpassa utseende
+                            </span>
+                            <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 flex-shrink-0 ${isAppearanceOpen ? 'rotate-180' : ''}`} />
+                        </button>
 
-                    {/* Background styling types */}
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Bakgrundsstil & Effekter</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => handleBackgroundTypeChange('solid')}
-                                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${backgroundType === 'solid' ? 'bg-slate-900 border-slate-900 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900 shadow-sm' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50'}`}
-                                >
-                                    🎨 Enfärgad
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleBackgroundTypeChange('gradient')}
-                                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${backgroundType === 'gradient' ? 'bg-slate-900 border-slate-900 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900 shadow-sm' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50'}`}
-                                >
-                                    🌈 Färggradient
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleBackgroundTypeChange('glass')}
-                                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${backgroundType === 'glass' ? 'bg-slate-900 border-slate-900 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900 shadow-sm' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50'}`}
-                                >
-                                    🧊 Frostat Glas
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Solid color configuration options */}
-                        {backgroundType === 'solid' && (
-                            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-850 animate-fade-in">
-                                <span className="text-xs font-bold text-slate-500">Välj kulör:</span>
-                                <input 
-                                    type="color" 
-                                    value={currentTag.backgroundColor.startsWith('#') ? currentTag.backgroundColor : '#ef4444'} 
-                                    onChange={e => setCurrentTag({...currentTag, backgroundColor: e.target.value})} 
-                                    className="w-10 h-10 p-0.5 bg-white rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer overflow-hidden rounded-full"
-                                />
-                                <input 
-                                    type="text" 
-                                    maxLength={7}
-                                    value={currentTag.backgroundColor.startsWith('#') ? currentTag.backgroundColor : '#ef4444'} 
-                                    onChange={e => setCurrentTag({...currentTag, backgroundColor: e.target.value})} 
-                                    className="w-24 px-3 py-1.5 bg-white dark:bg-slate-900 text-xs font-mono uppercase font-bold rounded-lg border border-slate-200 dark:border-slate-700"
-                                />
-                                <div className="flex gap-1 items-center flex-wrap ml-auto">
-                                    {['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#3f3f46'].map(col => (
-                                        <button
-                                            key={col}
-                                            type="button"
-                                            onClick={() => setCurrentTag({...currentTag, backgroundColor: col})}
-                                            className="w-6 h-6 rounded-full border border-white dark:border-slate-800 ring-1 ring-slate-200 dark:ring-slate-700 transition-transform transform hover:scale-110"
-                                            style={{ backgroundColor: col }}
+                        {isAppearanceOpen && (
+                            <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-6">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">QR-kod förankring (Valfritt)</label>
+                                    <div className="relative">
+                                        <StyledInput 
+                                            type="url" 
+                                            placeholder="https://exempel.se/erbjudande" 
+                                            value={currentTag.url || ''} 
+                                            onChange={e => setCurrentTag({...currentTag, url: e.target.value.trim()})} 
+                                            className="pl-9 h-11"
                                         />
-                                    ))}
+                                        <span className="absolute left-3.5 top-3.5 text-slate-400 text-xs">🔗</span>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
 
-                        {/* Gradient configuration options */}
-                        {backgroundType === 'gradient' && (
-                            <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-100 dark:border-slate-850 space-y-3 animate-fade-in">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-slate-500">Gradientförslag:</span>
-                                    <div className="flex gap-2 overflow-x-auto py-1">
-                                        {GRADIENT_PRESETS.map((gp, idx) => (
+                                <div className="h-[1px] bg-slate-100 dark:bg-slate-800" />
+
+                                {/* Background styling types */}
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Bakgrundsstil & Effekter</label>
+                                        <div className="grid grid-cols-3 gap-2">
                                             <button
-                                                key={idx}
                                                 type="button"
-                                                onClick={() => handleGradientColorChange(gp.c1, gp.c2)}
-                                                className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold"
+                                                onClick={() => handleBackgroundTypeChange('solid')}
+                                                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${backgroundType === 'solid' ? 'bg-slate-900 border-slate-900 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900 shadow-sm' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50'}`}
                                             >
-                                                <span className="w-3.5 h-3.5 rounded-full" style={{ background: `linear-gradient(135deg, ${gp.c1}, ${gp.c2})` }} />
-                                                {gp.name}
+                                                🎨 Enfärgad
                                             </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-4 py-2 border-t border-slate-200/50 dark:border-slate-800">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-slate-400 font-bold">Färg 1:</span>
-                                        <input 
-                                            type="color" 
-                                            value={gradientColor1} 
-                                            onChange={e => handleGradientColorChange(e.target.value, gradientColor2)} 
-                                            className="w-10 h-10 p-0.5 bg-white rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer rounded-full"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-slate-400 font-bold">Färg 2:</span>
-                                        <input 
-                                            type="color" 
-                                            value={gradientColor2} 
-                                            onChange={e => handleGradientColorChange(gradientColor1, e.target.value)} 
-                                            className="w-10 h-10 p-0.5 bg-white rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer rounded-full"
-                                        />
-                                    </div>
-                                    <div className="ml-auto w-24 h-10 rounded-xl border border-slate-200 dark:border-slate-800" style={{ background: `linear-gradient(135deg, ${gradientColor1}, ${gradientColor2})` }} />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Glassmorphism configuration options */}
-                        {backgroundType === 'glass' && (
-                            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-850 flex items-center gap-3 animate-fade-in">
-                                <span className="text-xs font-bold text-slate-500">Frostat tema:</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setCurrentTag(t => ({ ...t, backgroundColor: 'rgba(255, 255, 255, 0.22)', textColor: '#FFFFFF' }))}
-                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${currentTag.backgroundColor === 'rgba(255, 255, 255, 0.22)' ? 'bg-white border-white text-teal-600 shadow-sm font-black' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'}`}
-                                >
-                                    🧊 Ljust Glas (Frostvit)
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setCurrentTag(t => ({ ...t, backgroundColor: 'rgba(15, 23, 42, 0.45)', textColor: '#FFFFFF' }))}
-                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${currentTag.backgroundColor === 'rgba(15, 23, 42, 0.45)' ? 'bg-slate-800 border-slate-700 text-teal-400 shadow-sm font-black' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'}`}
-                                >
-                                    🦇 Mörkt Glas (Nattfrost)
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Text values foreground pickers */}
-                        <div className="flex gap-4 items-center pl-1">
-                            <span className="text-xs font-bold text-slate-400 uppercase">Textfärg:</span>
-                            <div className="flex gap-2 w-48">
-                                <button 
-                                    type="button"
-                                    onClick={() => setCurrentTag({...currentTag, textColor: '#FFFFFF'})} 
-                                    className={`flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl transition-all border font-bold text-xs ${currentTag.textColor === '#FFFFFF' ? 'border-teal-500 bg-teal-50 text-slate-900 ring-2 ring-teal-500/20' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200'}`}
-                                >
-                                    <span className="w-3.5 h-3.5 rounded-full bg-white border border-slate-400" /> Vit text
-                                </button>
-                                <button 
-                                    type="button"
-                                    onClick={() => setCurrentTag({...currentTag, textColor: '#000000'})} 
-                                    className={`flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl transition-all border font-bold text-xs ${currentTag.textColor === '#000000' ? 'border-teal-500 bg-teal-50 text-slate-900 ring-2 ring-teal-500/20' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200'}`}
-                                >
-                                    <span className="w-3.5 h-3.5 rounded-full bg-black border border-slate-800" /> Svart text
-                                </button>
-                            </div>
-
-                            {/* Transparent support for stamps */}
-                            {isStamp && (
-                                <div className="flex-grow pl-4">
-                                    <div className="flex justify-between items-center mb-1 text-xs font-bold text-slate-400">
-                                        <span>Opacitet:</span>
-                                        <span>{Math.round((currentTag.opacity ?? 1) * 100)}%</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="20"
-                                        max="100"
-                                        step="5"
-                                        value={Math.round((currentTag.opacity ?? 1) * 100)}
-                                        onChange={e => setCurrentTag({...currentTag, opacity: parseInt(e.target.value, 10) / 100 })}
-                                        className="w-full accent-teal-600 h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="h-[1px] bg-slate-100 dark:bg-slate-800" />
-
-                    {/* Shapes, sizes and Typography detail configuration */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        
-                        {/* Size slider / visual button selections */}
-                        <div className="space-y-1.5">
-                            <label className="block text-xs font-bold text-slate-400 uppercase">Textstorlek</label>
-                            <div className="flex flex-wrap gap-1.5">
-                                {SIZES.map(sz => (
-                                    <button
-                                        key={sz}
-                                        type="button"
-                                        onClick={() => setCurrentTag({...currentTag, fontSize: sz})}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${currentTag.fontSize === sz ? 'bg-teal-600 border-teal-600 text-white font-extrabold scale-102' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-white dark:bg-slate-950 hover:bg-slate-50'}`}
-                                    >
-                                        {sz.toUpperCase()}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Font Families */}
-                        <div className="space-y-1.5">
-                            <label className="block text-xs font-bold text-slate-400 uppercase">Typsnitt</label>
-                            <FontSelector value={currentTag.fontFamily || 'sans'} onChange={font => setCurrentTag({...currentTag, fontFamily: font})} />
-                        </div>
-
-                        {/* Additional shape options ONLY for STAMP and animations */}
-                        {isStamp && (
-                            <>
-                                <div className="space-y-1.5">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase">Stämpelform</label>
-                                    <div className="flex gap-2">
-                                        {(['circle', 'rectangle', 'square'] as Tag['shape'][]).map(sh => (
                                             <button
-                                                key={sh}
                                                 type="button"
-                                                onClick={() => setCurrentTag({...currentTag, shape: sh})}
-                                                className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border capitalize transition-all ${currentTag.shape === sh ? 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 border-transparent shadow' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-white dark:bg-slate-950 hover:bg-slate-50'}`}
+                                                onClick={() => handleBackgroundTypeChange('gradient')}
+                                                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${backgroundType === 'gradient' ? 'bg-slate-900 border-slate-900 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900 shadow-sm' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50'}`}
                                             >
-                                                {sh === 'circle' ? '🔴 Cirkel' : sh === 'square' ? '🟥 Kvadrat' : '➖ Rektangel'}
+                                                🌈 Färggradient
                                             </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase">Stämpelram</label>
-                                    <div className="flex gap-2">
-                                        {(['none', 'solid', 'dashed'] as Tag['border'][]).map(bd => (
                                             <button
-                                                key={bd}
                                                 type="button"
-                                                onClick={() => setCurrentTag({...currentTag, border: bd})}
-                                                className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border capitalize transition-all ${currentTag.border === bd ? 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 border-transparent shadow' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-white dark:bg-slate-950 hover:bg-slate-50'}`}
+                                                onClick={() => handleBackgroundTypeChange('glass')}
+                                                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${backgroundType === 'glass' ? 'bg-slate-900 border-slate-900 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900 shadow-sm' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50'}`}
                                             >
-                                                {bd === 'none' ? 'Utan ram' : bd === 'solid' ? 'Helfylld' : 'Streckad'}
+                                                🧊 Frostat Glas
                                             </button>
-                                        ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Solid color configuration options */}
+                                    {backgroundType === 'solid' && (
+                                        <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-850 animate-fade-in">
+                                            <span className="text-xs font-bold text-slate-500">Välj kulör:</span>
+                                            <input 
+                                                type="color" 
+                                                value={currentTag.backgroundColor.startsWith('#') ? currentTag.backgroundColor : '#ef4444'} 
+                                                onChange={e => setCurrentTag({...currentTag, backgroundColor: e.target.value})} 
+                                                className="w-10 h-10 p-0.5 bg-white rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer overflow-hidden rounded-full"
+                                            />
+                                            <input 
+                                                type="text" 
+                                                maxLength={7}
+                                                value={currentTag.backgroundColor.startsWith('#') ? currentTag.backgroundColor : '#ef4444'} 
+                                                onChange={e => setCurrentTag({...currentTag, backgroundColor: e.target.value})} 
+                                                className="w-24 px-3 py-1.5 bg-white dark:bg-slate-900 text-xs font-mono uppercase font-bold rounded-lg border border-slate-200 dark:border-slate-700"
+                                            />
+                                            <div className="flex gap-1 items-center flex-wrap ml-auto">
+                                                {['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#3f3f46'].map(col => (
+                                                    <button
+                                                        key={col}
+                                                        type="button"
+                                                        onClick={() => setCurrentTag({...currentTag, backgroundColor: col})}
+                                                        className="w-6 h-6 rounded-full border border-white dark:border-slate-800 ring-1 ring-slate-200 dark:ring-slate-700 transition-transform transform hover:scale-110"
+                                                        style={{ backgroundColor: col }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Gradient configuration options */}
+                                    {backgroundType === 'gradient' && (
+                                        <div className="bg-slate-50 dark:bg-slate-955 p-4 rounded-xl border border-slate-100 dark:border-slate-850 space-y-3 animate-fade-in">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-bold text-slate-500">Gradientförslag:</span>
+                                                <div className="flex gap-2 overflow-x-auto py-1">
+                                                    {GRADIENT_PRESETS.map((gp, idx) => (
+                                                        <button
+                                                            key={idx}
+                                                            type="button"
+                                                            onClick={() => handleGradientColorChange(gp.c1, gp.c2)}
+                                                            className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold"
+                                                        >
+                                                            <span className="w-3.5 h-3.5 rounded-full" style={{ background: `linear-gradient(135deg, ${gp.c1}, ${gp.c2})` }} />
+                                                            {gp.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-4 py-2 border-t border-slate-200/50 dark:border-slate-800">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-slate-400 font-bold">Färg 1:</span>
+                                                    <input 
+                                                        type="color" 
+                                                        value={gradientColor1} 
+                                                        onChange={e => handleGradientColorChange(e.target.value, gradientColor2)} 
+                                                        className="w-10 h-10 p-0.5 bg-white rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer rounded-full"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-slate-400 font-bold">Färg 2:</span>
+                                                    <input 
+                                                        type="color" 
+                                                        value={gradientColor2} 
+                                                        onChange={e => handleGradientColorChange(gradientColor1, e.target.value)} 
+                                                        className="w-10 h-10 p-0.5 bg-white rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer rounded-full"
+                                                    />
+                                                </div>
+                                                <div className="ml-auto w-24 h-10 rounded-xl border border-slate-200 dark:border-slate-800" style={{ background: `linear-gradient(135deg, ${gradientColor1}, ${gradientColor2})` }} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Glassmorphism configuration options */}
+                                    {backgroundType === 'glass' && (
+                                        <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-850 flex items-center gap-3 animate-fade-in">
+                                            <span className="text-xs font-bold text-slate-500">Frostat tema:</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCurrentTag(t => ({ ...t, backgroundColor: 'rgba(255, 255, 255, 0.22)', textColor: '#FFFFFF' }))}
+                                                className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${currentTag.backgroundColor === 'rgba(255, 255, 255, 0.22)' ? 'bg-white border-white text-teal-600 shadow-sm font-black' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'}`}
+                                            >
+                                                🧊 Ljust Glas (Frostvit)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCurrentTag(t => ({ ...t, backgroundColor: 'rgba(15, 23, 42, 0.45)', textColor: '#FFFFFF' }))}
+                                                className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${currentTag.backgroundColor === 'rgba(15, 23, 42, 0.45)' ? 'bg-slate-800 border-slate-700 text-teal-400 shadow-sm font-black' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'}`}
+                                            >
+                                                🦇 Mörkt Glas (Nattfrost)
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Text values foreground pickers */}
+                                    <div className="flex gap-4 items-center pl-1">
+                                        <span className="text-xs font-bold text-slate-400 uppercase">Textfärg:</span>
+                                        <div className="flex gap-2 w-48">
+                                            <button 
+                                                type="button"
+                                                onClick={() => setCurrentTag({...currentTag, textColor: '#FFFFFF'})} 
+                                                className={`flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl transition-all border font-bold text-xs ${currentTag.textColor === '#FFFFFF' ? 'border-teal-500 bg-teal-50 text-slate-900 ring-2 ring-teal-500/20' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200'}`}
+                                            >
+                                                <span className="w-3.5 h-3.5 rounded-full bg-white border border-slate-400" /> Vit text
+                                            </button>
+                                            <button 
+                                                type="button"
+                                                onClick={() => setCurrentTag({...currentTag, textColor: '#000000'})} 
+                                                className={`flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl transition-all border font-bold text-xs ${currentTag.textColor === '#000000' ? 'border-teal-500 bg-teal-50 text-slate-900 ring-2 ring-teal-500/20' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200'}`}
+                                            >
+                                                <span className="w-3.5 h-3.5 rounded-full bg-black border border-slate-800" /> Svart text
+                                            </button>
+                                        </div>
+
+                                        {/* Transparent support for stamps */}
+                                        {isStamp && (
+                                            <div className="flex-grow pl-4">
+                                                <div className="flex justify-between items-center mb-1 text-xs font-bold text-slate-400">
+                                                    <span>Opacitet:</span>
+                                                    <span>{Math.round((currentTag.opacity ?? 1) * 100)}%</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="20"
+                                                    max="100"
+                                                    step="5"
+                                                    value={Math.round((currentTag.opacity ?? 1) * 100)}
+                                                    onChange={e => setCurrentTag({...currentTag, opacity: parseInt(e.target.value, 10) / 100 })}
+                                                    className="w-full accent-teal-600 h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5 sm:col-span-2">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase">Lutning</label>
-                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-955 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                                        <input
-                                            type="range"
-                                            min="-25"
-                                            max="25"
-                                            step="1"
-                                            value={currentTag.rotation ?? 0}
-                                            onChange={e => setCurrentTag({...currentTag, rotation: parseInt(e.target.value, 10)})}
-                                            className="flex-1 accent-teal-600 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 min-w-[3rem] text-right">
-                                            {currentTag.rotation ?? 0}°
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setCurrentTag({...currentTag, rotation: 0})}
-                                            className="text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shrink-0 shadow-sm"
-                                        >
-                                            Nollställ
-                                        </button>
+                                <div className="h-[1px] bg-slate-100 dark:bg-slate-800" />
+
+                                {/* Shapes, sizes and Typography detail configuration */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    
+                                    {/* Size slider / visual button selections */}
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase">Textstorlek</label>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {SIZES.map(sz => (
+                                                <button
+                                                    key={sz}
+                                                    type="button"
+                                                    onClick={() => setCurrentTag({...currentTag, fontSize: sz})}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${currentTag.fontSize === sz ? 'bg-teal-600 border-teal-600 text-white font-extrabold scale-102' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-white dark:bg-slate-950 hover:bg-slate-50'}`}
+                                                >
+                                                    {sz.toUpperCase()}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Font Families */}
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase">Typsnitt</label>
+                                        <FontSelector value={currentTag.fontFamily || 'sans'} onChange={font => setCurrentTag({...currentTag, fontFamily: font})} />
+                                    </div>
+
+                                    {/* Additional shape options ONLY for STAMP and animations */}
+                                    {isStamp && (
+                                        <>
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-bold text-slate-400 uppercase">Stämpelform</label>
+                                                <div className="flex gap-2">
+                                                    {(['circle', 'rectangle', 'square'] as Tag['shape'][]).map(sh => (
+                                                        <button
+                                                            key={sh}
+                                                            type="button"
+                                                            onClick={() => setCurrentTag({...currentTag, shape: sh})}
+                                                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border capitalize transition-all ${currentTag.shape === sh ? 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 border-transparent shadow' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-white dark:bg-slate-950 hover:bg-slate-50'}`}
+                                                        >
+                                                            {sh === 'circle' ? '🔴 Cirkel' : sh === 'square' ? '🟥 Kvadrat' : '➖ Rektangel'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-bold text-slate-400 uppercase">Stämpelram</label>
+                                                <div className="flex gap-2">
+                                                    {(['none', 'solid', 'dashed'] as Tag['border'][]).map(bd => (
+                                                        <button
+                                                            key={bd}
+                                                            type="button"
+                                                            onClick={() => setCurrentTag({...currentTag, border: bd})}
+                                                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border capitalize transition-all ${currentTag.border === bd ? 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 border-transparent shadow' : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-white dark:bg-slate-950 hover:bg-slate-50'}`}
+                                                        >
+                                                            {bd === 'none' ? 'Utan ram' : bd === 'solid' ? 'Helfylld' : 'Streckad'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1.5 sm:col-span-2">
+                                                <label className="block text-xs font-bold text-slate-400 uppercase">Lutning</label>
+                                                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-955 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                                                    <input
+                                                        type="range"
+                                                        min="-25"
+                                                        max="25"
+                                                        step="1"
+                                                        value={currentTag.rotation ?? 0}
+                                                        onChange={e => setCurrentTag({...currentTag, rotation: parseInt(e.target.value, 10)})}
+                                                        className="flex-1 accent-teal-600 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                                    />
+                                                    <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 min-w-[3rem] text-right">
+                                                        {currentTag.rotation ?? 0}°
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setCurrentTag({...currentTag, rotation: 0})}
+                                                        className="text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shrink-0 shadow-sm"
+                                                    >
+                                                        Nollställ
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase">Styrka & Tjocklek</label>
+                                        <StyledSelect value={currentTag.fontWeight} onChange={e => setCurrentTag({...currentTag, fontWeight: e.target.value as Tag['fontWeight']})}>
+                                            <option value="bold">Fyllig (Bold)</option>
+                                            <option value="black">Kraftig (Black / Extra tjock)</option>
+                                        </StyledSelect>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase">Animation (Ska dra blickarna till sig)</label>
+                                        <StyledSelect value={currentTag.animation} onChange={e => setCurrentTag({...currentTag, animation: e.target.value as Tag['animation']})}>
+                                            <option value="none">Ingen rörelse</option>
+                                            <option value="pulse">Hemsidans mjuka puls</option>
+                                            <option value="glow">Skenande färgGLOW</option>
+                                        </StyledSelect>
                                     </div>
                                 </div>
-                            </>
+                            </div>
                         )}
-
-                        <div className="space-y-1.5">
-                            <label className="block text-xs font-bold text-slate-400 uppercase">Styrka & Tjocklek</label>
-                            <StyledSelect value={currentTag.fontWeight} onChange={e => setCurrentTag({...currentTag, fontWeight: e.target.value as Tag['fontWeight']})}>
-                                <option value="bold">Fyllig (Bold)</option>
-                                <option value="black">Kraftig (Black / Extra tjock)</option>
-                            </StyledSelect>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <label className="block text-xs font-bold text-slate-400 uppercase">Animation (Ska dra blickarna till sig)</label>
-                            <StyledSelect value={currentTag.animation} onChange={e => setCurrentTag({...currentTag, animation: e.target.value as Tag['animation']})}>
-                                <option value="none">Ingen rörelse</option>
-                                <option value="pulse">Hemsidans mjuka puls</option>
-                                <option value="glow">Skenande färgGLOW</option>
-                            </StyledSelect>
-                        </div>
                     </div>
 
                 </div>

@@ -356,6 +356,7 @@ export const DisplayScreenEditorScreen: React.FC<DisplayScreenEditorScreenProps>
         const newPost: DisplayPost = {
             internalTitle: 'Nytt inlägg',
             layout: 'image-fullscreen',
+            startDate: new Date().toISOString(),
             durationSeconds: 10,
             headline: '',
             body: '',

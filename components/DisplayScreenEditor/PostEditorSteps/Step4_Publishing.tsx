@@ -8,6 +8,7 @@ import { SparklesIcon, HandThumbUpIcon, ChevronDownIcon } from '../../icons';
 import { analyzePost } from '../../../services/geminiService';
 import { useToast } from '../../../context/ToastContext';
 import { PostAnalysisModal } from '../Modals';
+import { parseToDate } from '../../../utils/dateUtils';
 
 const toDateTimeLocal = (isoString?: string): string => {
     if (!isoString) return '';
@@ -29,6 +30,16 @@ const openPicker = (e: React.MouseEvent<HTMLInputElement>) => {
     }
 };
 
+const isSameDay = (d1: Date, d2: Date): boolean => {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+};
+
+const formatSwedishDate = (date: Date): string => {
+    return date.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' }).replace('.', '');
+};
+
 export const Step4_Publishing: React.FC<{
     post: DisplayPost;
     onPostChange: (updatedPost: DisplayPost) => void;
@@ -39,6 +50,24 @@ export const Step4_Publishing: React.FC<{
     const [analysisResult, setAnalysisResult] = useState<{ score: number; critique: string; improvements: string[]; positive: string } | null>(null);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
 
+    const startDateObj = parseToDate(post.startDate);
+    const endDateObj = parseToDate(post.endDate);
+    const isStartToday = startDateObj ? isSameDay(startDateObj, new Date()) : false;
+    const hasDateLimits = !startDateObj || !isStartToday || Boolean(endDateObj);
+
+    let dateSummary = '';
+    if (!startDateObj) {
+        dateSummary = endDateObj
+            ? `Inget startdatum · Till ${formatSwedishDate(endDateObj)}`
+            : 'Inget startdatum';
+    } else if (!isStartToday && !endDateObj) {
+        dateSummary = `Från ${formatSwedishDate(startDateObj)}`;
+    } else if (!isStartToday && endDateObj) {
+        dateSummary = `Från ${formatSwedishDate(startDateObj)} till ${formatSwedishDate(endDateObj)}`;
+    } else if (isStartToday && endDateObj) {
+        dateSummary = `Till ${formatSwedishDate(endDateObj)}`;
+    }
+
     const dayLabels: Record<number, string> = { 1: 'Mån', 2: 'Tis', 3: 'Ons', 4: 'Tor', 5: 'Fre', 6: 'Lör', 0: 'Sön' };
     const selectedDays = post.scheduleDays || [];
     const ranges = post.scheduleTimeRanges || [];
@@ -48,8 +77,10 @@ export const Step4_Publishing: React.FC<{
     const timesText = ranges.length === 0
         ? 'dygnet runt'
         : ranges.map(r => `${r.startTime || '08:00'}–${r.endTime || '17:00'}`).join(', ');
-    const scheduleSummary = `${daysText} · ${timesText}`;
-    const hasScheduleLimits = selectedDays.length > 0 || ranges.length > 0;
+
+    const summaryParts = [dateSummary, daysText, timesText].filter(Boolean);
+    const scheduleSummary = summaryParts.join(' · ');
+    const hasScheduleLimits = selectedDays.length > 0 || ranges.length > 0 || hasDateLimits;
 
     const [isAdvancedScheduleOpen, setIsAdvancedScheduleOpen] = useState<boolean>(() => hasScheduleLimits);
 
@@ -105,43 +136,17 @@ export const Step4_Publishing: React.FC<{
             <div className="space-y-4">
                 <h4 className="font-bold text-slate-800 dark:text-slate-200">Schema & Varaktighet</h4>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-1">
-                        <label className="block text-sm font-semibold text-slate-550 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
-                        <StyledInput 
-                            type="number" 
-                            min="3" 
-                            value={post.durationSeconds !== undefined && post.durationSeconds !== null ? String(post.durationSeconds) : "15"} 
-                            onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10) || 15)} 
-                        />
-                    </div>
-                    
-                    <div>
-                        <label className="block text-sm font-semibold text-slate-550 dark:text-slate-400 mb-1">Startdatum</label>
-                        <StyledInput 
-                            type="datetime-local" 
-                            value={toDateTimeLocal(post.startDate)} 
-                            onChange={e => handleFieldChange('startDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)} 
-                            onClick={openPicker}
-                            className="dark-date-input cursor-pointer"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-semibold text-slate-550 dark:text-slate-400 mb-1">Slutdatum (valfritt)</label>
-                        <StyledInput 
-                            type="datetime-local" 
-                            value={toDateTimeLocal(post.endDate)} 
-                            onChange={e => handleFieldChange('endDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)}
-                            onClick={openPicker}
-                            className="dark-date-input cursor-pointer"
-                        />
-                    </div>
-                    <p className="md:col-span-3 text-xs text-slate-400 dark:text-slate-500 -mt-2">
-                        Klicka i ett datumfält för att öppna kalendern. Lämna startdatum tomt för att visa inlägget direkt.
-                    </p>
+                <div className="max-w-xs">
+                    <label className="block text-sm font-semibold text-slate-550 dark:text-slate-400 mb-1">Visningstid (sekunder)</label>
+                    <StyledInput 
+                        type="number" 
+                        min="3" 
+                        value={post.durationSeconds !== undefined && post.durationSeconds !== null ? String(post.durationSeconds) : "15"} 
+                        onChange={e => handleFieldChange('durationSeconds', parseInt(e.target.value, 10) || 15)} 
+                    />
                 </div>
 
-                {/* Avancerad schemaläggning (Veckodagar & Tidsspann) */}
+                {/* Avancerad schemaläggning (Datum, Veckodagar & Tidsspann) */}
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                     <button
                         type="button"
@@ -161,8 +166,37 @@ export const Step4_Publishing: React.FC<{
 
                     {isAdvancedScheduleOpen && (
                         <div className="mt-3 space-y-6 pt-2">
-                            {/* Veckodagarsschemaläggning */}
+                            {/* Datum */}
                             <div className="space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-550 dark:text-slate-400 mb-1">Startdatum</label>
+                                        <StyledInput 
+                                            type="datetime-local" 
+                                            value={toDateTimeLocal(post.startDate)} 
+                                            onChange={e => handleFieldChange('startDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)} 
+                                            onClick={openPicker}
+                                            className="dark-date-input cursor-pointer"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-550 dark:text-slate-400 mb-1">Slutdatum (valfritt)</label>
+                                        <StyledInput 
+                                            type="datetime-local" 
+                                            value={toDateTimeLocal(post.endDate)} 
+                                            onChange={e => handleFieldChange('endDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)}
+                                            onClick={openPicker}
+                                            className="dark-date-input cursor-pointer"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-slate-400 dark:text-slate-500">
+                                    Klicka i ett datumfält för att öppna kalendern. Lämna startdatum tomt för att visa inlägget direkt.
+                                </p>
+                            </div>
+
+                            {/* Veckodagarsschemaläggning */}
+                            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Begränsa till specifika veckodagar</label>
